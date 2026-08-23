@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>생수면 대입면접 합격패스</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+:root{
+  --navy:#172554;
+  --navy-2:#1E3A8A;
+  --blue:#2563EB;
+  --sky:#DBEAFE;
+  --orange:#F97316;
+  --orange-2:#EA580C;
+  --orange-bg:#FFF1E6;
+  --paper:#F8FAFC;
+  --ink:#1F2937;
+  --gray:#6B7280;
+  --line:#E5E7EB;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Pretendard',-apple-system,sans-serif;color:var(--ink);background:#fff;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{max-width:960px;margin:0 auto;padding:0 24px}
+section{padding:80px 0}
+h2{font-size:34px;font-weight:800;letter-spacing:-.03em;line-height:1.3;color:var(--navy)}
+h3{font-size:20px;font-weight:700;letter-spacing:-.02em}
+.eyebrow{display:inline-block;font-size:14px;font-weight:700;color:var(--orange);letter-spacing:.02em;margin-bottom:14px}
+.lead{font-size:17px;color:var(--gray);margin-top:16px;line-height:1.75}
+
+/* 상단 바 */
+.topbar{background:var(--navy);color:#fff;text-align:center;font-size:14px;padding:11px 24px;font-weight:600;letter-spacing:-.01em}
+.topbar b{color:#FDBA74}
+
+/* 히어로 */
+.hero{background:linear-gradient(160deg,#FFA246 0%,#FC8622 28%,#F86E0C 62%,#EF5F04 100%);color:#fff;padding:64px 0 54px;text-align:center;position:relative;overflow:hidden}
+.hero:before{content:"";position:absolute;top:-14%;left:50%;transform:translateX(-50%);width:900px;height:520px;background:radial-gradient(ellipse at center,rgba(255,196,124,.55) 0%,rgba(255,196,124,0) 68%);pointer-events:none}
+.hero .wrap{position:relative}
+.hero .brandline{font-size:21px;font-weight:800;color:#7A2E06;letter-spacing:-.03em}
+.hero .disc{font-size:12.5px;color:#8F4A20;margin-top:9px;letter-spacing:-.02em}
+.hero .mid{font-size:35px;font-weight:800;color:#6B2603;letter-spacing:-.035em;line-height:1.4;margin-top:36px}
+.hero .mid u{text-decoration:none;border-bottom:3px solid #6B2603;font-style:italic;font-weight:900;padding:0 5px}
+.hero h1{font-size:76px;font-weight:900;letter-spacing:-.05em;line-height:1.16;margin:16px 0 0;color:#fff;text-shadow:0 3px 14px rgba(122,46,6,.22)}
+.hero .foot{font-size:12px;color:#8F4A20;margin-top:44px;line-height:1.8;letter-spacing:-.02em}
+.stats{display:flex;justify-content:center;gap:0;margin-top:40px;border-top:1px solid rgba(255,255,255,.4);border-bottom:1px solid rgba(255,255,255,.4)}
+.stat{flex:1;padding:22px 8px}
+.stat+.stat{border-left:1px solid rgba(255,255,255,.4)}
+.stat .num{font-size:28px;font-weight:900;color:#fff;letter-spacing:-.035em}
+.stat .lbl{font-size:13px;color:#FFE2C6;margin-top:5px;font-weight:600}
+
+/* 가격 박스 */
+.pricebox{background:var(--paper);border-top:3px solid var(--orange);padding:36px 0 40px}
+.price-row{display:flex;align-items:center;justify-content:space-between;background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px 26px;margin-bottom:12px}
+.price-row.main{border:2px solid var(--orange)}
+.price-left{display:flex;align-items:center;gap:14px}
+.badge-best{background:var(--orange);color:#fff;font-size:12px;font-weight:800;padding:5px 11px;border-radius:6px;white-space:nowrap}
+.badge-plain{background:var(--sky);color:var(--navy-2);font-size:12px;font-weight:800;padding:5px 11px;border-radius:6px;white-space:nowrap}
+.price-name{font-size:17px;font-weight:700;letter-spacing:-.02em}
+.price-name span{display:block;font-size:13px;font-weight:500;color:var(--gray);margin-top:3px}
+.price-right{display:flex;align-items:center;gap:20px}
+.price-num{text-align:right}
+.price-num del{font-size:14px;color:#9CA3AF}
+.price-num b{display:block;font-size:26px;font-weight:900;letter-spacing:-.03em;color:var(--navy)}
+.btn{display:inline-block;background:var(--orange);color:#fff;font-size:15px;font-weight:800;padding:14px 26px;border-radius:8px;text-decoration:none;white-space:nowrap;letter-spacing:-.02em}
+.btn.ghost{background:#fff;color:var(--navy);border:1.5px solid var(--navy)}
+.price-note{font-size:13px;color:var(--gray);margin-top:14px;text-align:center}
+
+/* 문제 */
+.problem{background:#fff}
+.plist{margin-top:38px;display:grid;gap:14px}
+.pitem{background:var(--paper);border-left:4px solid var(--orange);padding:22px 26px;font-size:17px;font-weight:600;letter-spacing:-.02em;color:var(--navy)}
+.pitem span{display:block;font-size:15px;font-weight:400;color:var(--gray);margin-top:6px}
+
+/* 해결 4단계 */
+.solve{background:var(--navy);color:#fff}
+.solve h2{color:#fff}
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:42px}
+.step{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:24px 20px}
+.step .n{font-size:13px;font-weight:900;color:#FDBA74;letter-spacing:.08em}
+.step .t{font-size:17px;font-weight:800;margin-top:12px;letter-spacing:-.02em}
+.step .d{font-size:14px;color:#9FB8E0;margin-top:8px;line-height:1.6}
+
+/* 커리큘럼 */
+.curri{background:var(--paper)}
+.ctable{margin-top:40px;border-top:2px solid var(--navy);background:#fff}
+.crow{display:grid;grid-template-columns:96px 1fr 250px;gap:0;border-bottom:1px solid var(--line);align-items:stretch}
+.crow.head{background:var(--navy);color:#fff;font-size:14px;font-weight:800}
+.crow.head>div{padding:14px 20px}
+.ckind{padding:22px 20px;font-size:14px;font-weight:800;color:var(--orange-2);background:var(--orange-bg);display:flex;align-items:center}
+.cmain{padding:22px 20px}
+.cmain b{font-size:18px;font-weight:800;letter-spacing:-.02em;color:var(--navy);display:block}
+.cmain span{font-size:14.5px;color:var(--gray);display:block;margin-top:6px;line-height:1.65}
+.cout{padding:22px 20px;background:#F9FAFB;border-left:1px dashed var(--line);display:flex;align-items:center}
+.cout em{font-style:normal;font-size:14.5px;font-weight:700;color:var(--navy-2);letter-spacing:-.02em}
+.cout em small{display:block;font-size:12px;font-weight:600;color:var(--orange-2);margin-bottom:4px;letter-spacing:.02em}
+.split-note{margin-top:22px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px 26px;font-size:15px;color:var(--gray);line-height:1.7}
+.split-note b{color:var(--navy)}
+
+/* 3탭 시스템 */
+.tabsec{background:#FDEBD9;padding:70px 0 84px}
+.tabhead{text-align:center;font-size:29px;font-weight:800;color:#3A2A1C;letter-spacing:-.035em;line-height:1.45}
+.tabhead b{color:#F97316;font-weight:800}
+.tabdisc{text-align:center;font-size:11px;color:#9A7A63;margin-top:12px;line-height:1.65;letter-spacing:-.02em}
+.tabbar{display:flex;justify-content:center;gap:8px;margin-top:34px;align-items:flex-end}
+.tab{background:#FBDCC1;color:#96562A;border:none;font-family:inherit;font-size:15px;font-weight:700;letter-spacing:-.025em;padding:15px 26px;border-radius:12px 12px 0 0;cursor:pointer;transition:.15s;line-height:1.4}
+.tab:hover{background:#F9D0AC}
+.tab.on{background:#F97316;color:#fff;font-weight:800;padding-bottom:22px}
+.tab.on:after{content:"↓";display:block;font-size:13px;margin-top:3px}
+.tabcard{background:#fff;border-radius:18px;padding:30px;max-width:760px;margin:0 auto}
+.tabpane{display:none}
+.tabpane.on{display:block}
+
+.tgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.tcard{background:#F4F4F5;border-radius:12px;padding:26px 24px;position:relative;min-height:230px}
+.tcard .tn{position:absolute;top:22px;right:24px;font-size:13px;font-weight:800;color:#B9B9BE}
+.tcard b{display:block;font-size:19px;font-weight:800;color:#2C2C31;letter-spacing:-.03em;line-height:1.35}
+.tcard p{font-size:14px;color:#75757D;margin-top:14px;line-height:1.75;letter-spacing:-.02em}
+.tcard p em{font-style:normal;font-weight:700;color:#4A4A52}
+.pillrow{display:flex;gap:8px;margin-top:20px;flex-wrap:wrap}
+.pill{background:#FDBA74;color:#7A3D0A;font-size:13px;font-weight:800;padding:14px 4px;border-radius:100px;width:74px;height:74px;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1.3;letter-spacing:-.03em}
+.pill.mid{background:#F97316;color:#fff}
+.tagbtn{display:inline-block;background:#F97316;color:#fff;font-size:13px;font-weight:800;padding:11px 16px;border-radius:8px;margin-top:18px;line-height:1.4;letter-spacing:-.02em}
+
+.stepbox{background:#F4F4F5;border-radius:12px;padding:24px 26px;position:relative;margin-bottom:14px;border-left:4px solid #F97316}
+.stepbox:nth-child(2){border-left-color:#86C46A}
+.stepbox:nth-child(3){border-left-color:#4A9BE0}
+.stepbox .sn{font-size:26px;font-weight:900;color:#DCDCE0;letter-spacing:-.03em;line-height:1}
+.stepbox b{display:block;font-size:19px;font-weight:800;color:#2C2C31;letter-spacing:-.03em;margin-top:8px}
+.stepbox ul{margin-top:12px;list-style:none}
+.stepbox li{font-size:14px;color:#75757D;line-height:1.8;letter-spacing:-.02em;padding-left:11px;position:relative}
+.stepbox li:before{content:"·";position:absolute;left:0}
+
+.bookhead{text-align:center;font-size:21px;font-weight:800;color:#2C2C31;letter-spacing:-.03em;line-height:1.5;margin-bottom:22px}
+.bookhead b{color:#F97316}
+.bookrow{display:grid;grid-template-columns:1fr 1fr;gap:22px;background:#F4F4F5;border-radius:12px;padding:26px;align-items:center}
+.bookrow.alt{background:#EAF3FC;margin-top:34px;position:relative}
+.plusmark{position:absolute;top:-27px;left:50%;transform:translateX(-50%);width:34px;height:34px;border-radius:50%;background:#fff;border:1px solid #E5E7EB;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;color:#F97316}
+.bookvis{background:#fff;border-radius:8px;height:170px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#B9B9BE;font-weight:600;text-align:center;padding:12px}
+.booklist{list-style:none}
+.booklist li{font-size:14px;color:#4A4A52;line-height:1.6;letter-spacing:-.02em;padding-left:12px;position:relative;margin-bottom:16px;font-weight:600}
+.booklist li:before{content:"·";position:absolute;left:0}
+.booknote{font-size:12px;color:#9A9AA2;margin-top:14px;text-align:right}
+.bookbadge{display:inline-block;background:#2F80ED;color:#fff;font-size:13px;font-weight:800;padding:7px 15px;border-radius:100px;margin-bottom:14px}
+
+/* 이용가이드 */
+.guide{background:#fff;padding:78px 0}
+.ghead{text-align:center;font-size:29px;font-weight:800;color:#1F1F23;letter-spacing:-.035em;margin-bottom:36px}
+.ghead b{color:#F97316;font-weight:800}
+.gwrap{max-width:720px;margin:0 auto}
+.grow{display:flex;align-items:stretch;gap:20px;background:#F4F4F5;border-radius:12px;padding:16px 18px 16px 24px;margin-bottom:14px}
+.gn{align-self:center;background:#fff;border-radius:100px;font-size:13px;font-weight:700;color:#6B6B73;padding:9px 17px;white-space:nowrap;letter-spacing:-.01em}
+.gn i{font-style:normal;color:#F97316;font-weight:800}
+.gt{flex:1;align-self:center;font-size:17px;font-weight:700;color:#2C2C31;letter-spacing:-.03em;line-height:1.45}
+.gact{width:260px;display:flex;flex-direction:column;justify-content:center;gap:8px}
+.gbtn{display:flex;align-items:center;justify-content:space-between;background:#F97316;color:#fff;font-size:14px;font-weight:700;padding:14px 18px;border-radius:10px;text-decoration:none;letter-spacing:-.02em}
+.gbtn.solo{padding:26px 18px}
+.gbtn.soft{background:linear-gradient(90deg,#FBBF24 0%,#F97316 100%);padding:12px 18px;font-size:13.5px}
+.gbtn .arw{width:20px;height:20px;border-radius:50%;background:rgba(255,255,255,.28);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;margin-left:10px}
+.gfoot{text-align:center;font-size:11.5px;color:#A0A0A8;margin-top:22px;letter-spacing:-.02em}
+
+/* 수강생 지원 이벤트 */
+.event{background:#F7F7F8;padding:78px 0}
+.ehead{text-align:center;font-size:29px;font-weight:800;color:#1F1F23;letter-spacing:-.035em;line-height:1.45;margin-bottom:38px}
+.ehead b{display:block;color:#F97316;font-weight:800}
+.ebox{display:flex;max-width:760px;margin:0 auto 20px;border-radius:14px;overflow:hidden;min-height:210px}
+.ebody{flex:1;background:#fff;padding:34px 36px;position:relative}
+.ebody .wm{position:absolute;top:26px;right:32px;font-size:44px;font-weight:900;color:#EFEFF1;letter-spacing:-.04em;line-height:1}
+.ebody h3{font-size:23px;font-weight:800;color:#F97316;letter-spacing:-.035em;line-height:1.4;position:relative}
+.ebody .edesc{font-size:14.5px;font-weight:700;color:#2C2C31;margin-top:20px;line-height:1.7;letter-spacing:-.025em}
+.ebody .econd{font-size:12.5px;color:#8E8E96;margin-top:16px;line-height:1.8;letter-spacing:-.02em}
+.ecta{width:212px;background:#F97316;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;text-decoration:none;position:relative;overflow:hidden;padding:20px}
+.ecta .chev{position:absolute;top:24px;left:0;right:0;text-align:center;font-size:26px;font-weight:900;color:rgba(255,255,255,.32);letter-spacing:-4px}
+.ecta b{font-size:17px;font-weight:800;letter-spacing:-.03em;text-align:center;line-height:1.45}
+.ecta .dot{margin-top:14px;width:26px;height:26px;border-radius:50%;background:#fff;color:#F97316;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900}
+
+/* 별도 상품 */
+.extra{background:#fff}
+.egrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:38px}
+.ecard{border:1px solid var(--line);border-radius:12px;padding:22px;text-align:center}
+.ecard b{display:block;font-size:16px;font-weight:800;color:var(--navy);letter-spacing:-.02em}
+.ecard span{display:block;font-size:13.5px;color:var(--gray);margin-top:8px;line-height:1.6}
+
+/* 마감 CTA */
+.final{background:var(--orange-bg);text-align:center}
+.final h2{font-size:32px}
+.final .btn{margin-top:28px;font-size:17px;padding:17px 44px}
+
+/* 유의사항 */
+.notice{background:var(--paper);border-top:1px solid var(--line);padding:44px 0 60px}
+.notice h4{font-size:14px;font-weight:800;color:var(--navy);margin-bottom:12px}
+.notice li{font-size:13px;color:var(--gray);line-height:1.9;list-style:none;padding-left:12px;position:relative}
+.notice li:before{content:"·";position:absolute;left:0}
+footer{background:var(--navy);color:#8FA9D4;font-size:13px;padding:30px 0;text-align:center}
+
+@media(max-width:760px){
+  section{padding:56px 0}
+  h2{font-size:26px}
+  .hero h1{font-size:38px;letter-spacing:-.045em}
+  .hero .mid{font-size:24px}
+  .hero .brandline{font-size:17px}
+  .hero .foot{font-size:11px}
+  .stats{flex-wrap:wrap}
+  .steps,.egrid,.tgrid,.bookrow{grid-template-columns:1fr}
+  .grow{flex-wrap:wrap}
+  .gact{width:100%}
+  .gbtn.solo{padding:14px 18px}
+  .ebox{flex-direction:column}
+  .ecta{width:100%;padding:22px}
+  .ghead,.ehead{font-size:21px}
+  .ebody{padding:26px 22px}
+  .tabbar{flex-wrap:wrap}
+  .tab{font-size:13px;padding:12px 14px}
+  .tabhead{font-size:21px}
+  .tabcard{padding:18px}
+  .crow{grid-template-columns:1fr}
+  .cout{border-left:none;border-top:1px dashed var(--line)}
+  .price-row{flex-direction:column;align-items:flex-start;gap:16px}
+  .price-right{width:100%;justify-content:space-between}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">2027 수시 대비 · <b>얼리버드 오픈 특가</b> 진행 중</div>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="brandline">대입면접 전문 세움스피치</p>
+    <p class="disc">[대입면접 전문] 인천 서구 소재 대입·고입 면접 전문 학원, 2019년 개원 이후 면접 단일 과정 운영 기준</p>
+    <p class="mid">대입면접 코칭 누적 <u>4,000</u> 명</p>
+    <h1>생수면 대입면접 합격패스</h1>
+    <p class="foot">[누적 4,000명] 세움스피치 대입·고입 면접 과정 누적 수강 인원 (2019.1.1~2025.12.31)<br>[합격률 93.7%] 2025학년도 수시 면접 과정 수강생 중 1개 대학 이상 최초합격 기준, 자체 집계</p>
+    <div class="stats">
+      <div class="stat"><div class="num">4,000명</div><div class="lbl">누적 면접 코칭</div></div>
+      <div class="stat"><div class="num">93.7%</div><div class="lbl">대입 수시 합격률</div></div>
+      <div class="stat"><div class="num">6강 · 24강의</div><div class="lbl">세부 커리큘럼</div></div>
+      <div class="stat"><div class="num">90일</div><div class="lbl">수강 기간</div></div>
+    </div>
+  </div>
+</header>
+
+<div class="pricebox">
+  <div class="wrap">
+    <div class="price-row main">
+      <div class="price-left">
+        <span class="badge-best">추천</span>
+        <div class="price-name">강의 + 워크북 PACK<span>6강 온라인 강의 · 워크북 PDF · 예상질문 워크시트 · 스터디 매칭</span></div>
+      </div>
+      <div class="price-right">
+        <div class="price-num"><del>490,000원</del><b>390,000원</b></div>
+        <a class="btn" href="#">수강 신청하기</a>
+      </div>
+    </div>
+    <div class="price-row">
+      <div class="price-left">
+        <span class="badge-plain">강의만</span>
+        <div class="price-name">강의 단독<span>6강 온라인 강의 · 워크북 PDF</span></div>
+      </div>
+      <div class="price-right">
+        <div class="price-num"><b>350,000원</b></div>
+        <a class="btn ghost" href="#">수강 신청하기</a>
+      </div>
+    </div>
+    <p class="price-note">수강 기간 90일 · 스터디 매칭은 신청 인원과 지원 계열에 따라 구성이 달라질 수 있습니다.</p>
+  </div>
+</div>
+
+<section class="problem">
+  <div class="wrap">
+    <span class="eyebrow">이런 학생들을 위한 강의입니다</span>
+    <h2>생기부는 채웠는데,<br>면접에서 무너지는 이유가 있습니다</h2>
+    <div class="plist">
+      <div class="pitem">활동은 많은데 어떤 걸 말해야 할지 모르겠습니다<span>3년치 생기부 중 면접관이 물어볼 활동을 골라내는 기준이 없습니다.</span></div>
+      <div class="pitem">지원동기는 외웠는데 꼬리질문이 나오면 막힙니다<span>답변을 암기하면 한 번은 넘어가지만 두 번째 질문에서 멈춥니다.</span></div>
+      <div class="pitem">혼자 연습하니 내 답변이 맞는지 알 수 없습니다<span>말은 해봤지만 평가자가 뭘 보는지 모른 채 연습하고 있습니다.</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="solve">
+  <div class="wrap">
+    <span class="eyebrow">생수면의 해결 방식</span>
+    <h2>답변을 외우기 전에,<br>무엇을 어떻게 말할지부터 배웁니다</h2>
+    <div class="steps">
+      <div class="step"><div class="n">STEP 01</div><div class="t">평가역량 이해</div><div class="d">면접관이 무엇을 보고 점수를 주는지 먼저 파악합니다.</div></div>
+      <div class="step"><div class="n">STEP 02</div><div class="t">학생부에서 질문 찾기</div><div class="d">내 생기부에서 나올 질문을 직접 뽑아냅니다.</div></div>
+      <div class="step"><div class="n">STEP 03</div><div class="t">답변 만들기</div><div class="d">근거가 있는 답변으로 재구성합니다.</div></div>
+      <div class="step"><div class="n">STEP 04</div><div class="t">실전처럼 말하기</div><div class="d">압박질문과 꼬리질문까지 실전으로 연습합니다.</div></div>
+    </div>
+  </div>
+</section>
+
+<section class="curri">
+  <div class="wrap">
+    <span class="eyebrow">6강 커리큘럼</span>
+    <h2>강의마다 결과물이 남습니다</h2>
+    <p class="lead">듣고 끝나는 강의가 아닙니다. 6강을 마치면 내 학생부로 만든 면접 자료가 손에 남습니다.</p>
+
+    <div class="ctable">
+      <div class="crow head"><div>구분</div><div>강의명</div><div>수강 후 남는 것</div></div>
+
+      <div class="crow">
+        <div class="ckind">이론 1</div>
+        <div class="cmain"><b>인성 · 공동체역량</b><span>자기이해, 협업, 갈등 상황, 리더십 경험을 면접 언어로 정리합니다.</span></div>
+        <div class="cout"><em><small>결과물</small>인성 경험 정리표</em></div>
+      </div>
+
+      <div class="crow">
+        <div class="ckind">이론 2</div>
+        <div class="cmain"><b>학업 · 전공역량</b><span>세특과 탐구활동을 학과와 연결하는 방법. 지금까지 무엇을 했는지 말하는 법.</span></div>
+        <div class="cout"><em><small>결과물</small>학생부 핵심활동 5개</em></div>
+      </div>
+
+      <div class="crow">
+        <div class="ckind">이론 3</div>
+        <div class="cmain"><b>미래발전가능성</b><span>학과 커리큘럼 리서치법, 지원동기와 학업계획. 앞으로 무엇을 할지 말하는 법.</span></div>
+        <div class="cout"><em><small>결과물</small>지원동기 · 학업계획서</em></div>
+      </div>
+
+      <div class="crow">
+        <div class="ckind">실습 1</div>
+        <div class="cmain"><b>인성 빈출질문 실습</b><span>경험질문, 상황질문, 꼬리질문. 가장 많이 나오는 질문부터 답변을 완성합니다.</span></div>
+        <div class="cout"><em><small>결과물</small>인성 답변 10개</em></div>
+      </div>
+
+      <div class="crow">
+        <div class="ckind">실습 2</div>
+        <div class="cmain"><b>학생부 심층면접 실습</b><span>내 학생부에서 예상질문을 추출하고, 탐구·세특 심층질문에 대응합니다.</span></div>
+        <div class="cout"><em><small>결과물</small>내 학생부 예상질문 30개</em></div>
+      </div>
+
+      <div class="crow">
+        <div class="ckind">실습 3</div>
+        <div class="cmain"><b>파이널 실전면접</b><span>대학별 기출, 압박질문 대응, 실전 모의면접과 평가표 체크.</span></div>
+        <div class="cout"><em><small>결과물</small>대학별 실전 점검표</em></div>
+      </div>
+    </div>
+
+    <div class="split-note"><b>6강은 24개 세부 강의로 나뉘어 있습니다.</b> 한 편이 15~25분이라 이동 중에도 끊어 들을 수 있고, 필요한 부분만 다시 찾아볼 수 있습니다. 예를 들어 이론 2강은 「면접관이 학생부에서 질문을 찾는 방법 / 세특과 탐구활동 설명법 / 학과와 활동을 연결하는 방법 / 전공질문과 꼬리질문 대응법」 4편으로 구성됩니다.</div>
+  </div>
+</section>
+
+<section class="tabsec">
+  <div class="wrap">
+    <p class="tabhead">이미 <b>4,000명</b>이 선택한 대입면접 전문 세움스피치,<br>6강만 따라오면 면접이 정리됩니다.</p>
+    <p class="tabdisc">[대입면접 전문] 인천 서구 소재 대입·고입 면접 전문 학원, 2019년 개원 이후 면접 단일 과정 운영 기준<br>[4,000명] 세움스피치 대입·고입 면접 과정 누적 수강 인원 (2019.1.1~2025.12.31)</p>
+
+    <div class="tabbar">
+      <button class="tab on" data-t="1">생수면 학습 관리</button>
+      <button class="tab" data-t="2">탄탄한 3단계 면접 시스템</button>
+      <button class="tab" data-t="3">계열별 맞춤 교재와 추가자료</button>
+    </div>
+
+    <div class="tabcard">
+
+      <div class="tabpane on" data-p="1">
+        <div class="tgrid">
+          <div class="tcard">
+            <span class="tn">01</span>
+            <b>온라인 강의 +<br>워크북 +<br>라이브 특강</b>
+            <p>한 번 신청하면 6강 전체가 열리고<br>강의를 들으며 워크북을 채웁니다<br>정기 라이브 특강까지 제공!</p>
+            <div class="pillrow">
+              <span class="pill">온라인<br>강의</span>
+              <span class="pill mid">라이브<br>특강</span>
+              <span class="pill">워크북<br>PDF</span>
+            </div>
+          </div>
+
+          <div class="tcard">
+            <span class="tn">02</span>
+            <b>수강생 전용<br>질문방</b>
+            <p>강의를 듣다 막힌 부분을 남기면<br>대입면접 전문 교육진이<br>직접 답변</p>
+            <span class="tagbtn">가장 빠르고 정확한<br>면접 정보 공유</span>
+          </div>
+
+          <div class="tcard">
+            <span class="tn">03</span>
+            <b>면접<br>스터디 구성</b>
+            <p>수강생이면 누구나 신청 가능<br>지원 대학·계열·면접 일정이<br>비슷한 학생끼리 구성<br><em>스터디원 매칭 + 주차별 질문지 제공</em></p>
+          </div>
+
+          <div class="tcard">
+            <span class="tn">04</span>
+            <b>1:1<br>코칭</b>
+            <p>· 일대일 실전 모의면접<br>· 학생부 개인 분석 리포트<br>· 대학별 파이널 점검<br><em>별도 신청 과정으로 운영됩니다</em></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="tabpane" data-p="2">
+        <div class="stepbox">
+          <div class="sn">STEP 01</div>
+          <b>평가역량 이해</b>
+          <ul>
+            <li>무료 오픈특강으로 가장 빠르게 면접 준비 시작</li>
+            <li>인성·전공·미래발전성, 면접관이 무엇을 보는지부터 파악</li>
+          </ul>
+        </div>
+        <div class="stepbox">
+          <div class="sn">STEP 02</div>
+          <b>학생부 실전 대비</b>
+          <ul>
+            <li>이론 3강으로 평가역량별 답변 프레임 완성</li>
+            <li>내 학생부에서 예상질문 추출, 세특·탐구 심층질문 대비</li>
+          </ul>
+        </div>
+        <div class="stepbox">
+          <div class="sn">STEP 03</div>
+          <b>파이널 실전 연습</b>
+          <ul>
+            <li>대학별 기출, 압박질문과 꼬리질문 대응</li>
+            <li>스터디 모의면접과 평가표로 실전 점검</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="tabpane" data-p="3">
+        <p class="bookhead"><b>가장 정확한, 가장 최신의</b> 대입면접<br>정보를 담은 교재와 자료</p>
+        <div class="bookrow">
+          <div class="bookvis">대입면접 워크북<br>표지 이미지 자리</div>
+          <ul class="booklist">
+            <li>인성·공동체역량<br>빈출질문 수록</li>
+            <li>학생부 예상질문<br>추출 워크시트</li>
+            <li>지원동기·학업계획<br>작성법 및 실습</li>
+            <li>계열별 전공질문·<br>꼬리질문 사례</li>
+          </ul>
+        </div>
+        <div class="bookrow alt">
+          <span class="plusmark">+</span>
+          <div class="bookvis">부가학습자료<br>이미지 자리</div>
+          <div>
+            <span class="bookbadge">부가학습자료</span>
+            <ul class="booklist">
+              <li>대학별 기출질문 자료</li>
+              <li>실제 면접 후기</li>
+              <li>모의면접 평가표</li>
+              <li>라이브 특강 다시보기</li>
+            </ul>
+          </div>
+        </div>
+        <p class="booknote">※ 수강생 전용 자료실에서 제공됩니다</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section class="guide">
+  <div class="wrap">
+    <p class="ghead">생수면 대입면접 합격패스 <b>이용가이드</b></p>
+    <div class="gwrap">
+
+      <div class="grow">
+        <span class="gn">STEP <i>01</i></span>
+        <div class="gt">무료 오픈특강<br>참여</div>
+        <div class="gact"><a class="gbtn solo" href="#">오픈특강 바로보기<span class="arw">&rarr;</span></a></div>
+      </div>
+
+      <div class="grow">
+        <span class="gn">STEP <i>02</i></span>
+        <div class="gt">생수면 수강생<br>전용방 입장</div>
+        <div class="gact">
+          <a class="gbtn soft" href="#">전용방 입장하기<span class="arw">&rarr;</span></a>
+          <a class="gbtn soft" href="#">생수면 카톡 상담문의<span class="arw">&rarr;</span></a>
+        </div>
+      </div>
+
+      <div class="grow">
+        <span class="gn">STEP <i>03</i></span>
+        <div class="gt">6강 상세<br>커리큘럼 확인</div>
+        <div class="gact"><a class="gbtn solo" href="#">상세 커리큘럼 확인하기<span class="arw">&rarr;</span></a></div>
+      </div>
+
+      <div class="grow">
+        <span class="gn">STEP <i>04</i></span>
+        <div class="gt">수강신청</div>
+        <div class="gact">
+          <a class="gbtn soft" href="#">수강신청 하기<span class="arw">&rarr;</span></a>
+          <a class="gbtn soft" href="#">워크북 다운로드 방법<span class="arw">&rarr;</span></a>
+        </div>
+      </div>
+
+      <div class="grow">
+        <span class="gn">STEP <i>05</i></span>
+        <div class="gt">대학별 기출 자료 및<br>모의면접 영상 보기</div>
+        <div class="gact"><a class="gbtn solo" href="#">수강생 자료실 바로가기<span class="arw">&rarr;</span></a></div>
+      </div>
+
+    </div>
+    <p class="gfoot">[누적 4,000명] 세움스피치 대입·고입 면접 과정 누적 수강 인원 (2019.1.1~2025.12.31)</p>
+  </div>
+</section>
+
+<section class="event">
+  <div class="wrap">
+    <p class="ehead">생수면 대입면접 합격패스<b>수강생 지원 이벤트</b></p>
+
+    <div class="ebox">
+      <div class="ebody">
+        <span class="wm">01</span>
+        <h3>1단계 불합격 시<br>전액 환불</h3>
+        <p class="edesc">면접까지 가지 못하면 강의도 필요 없습니다.<br>학생부종합전형 1단계 불합격 시 수강료를 전액 환불해 드립니다!</p>
+        <p class="econd">2027학년도 수시 학생부종합전형 1단계 발표 이전에<br>「생수면 대입면접 합격패스」를 신청한 수강생 중<br>지원 대학 전체에서 1단계 불합격한 경우에 한하여 전액 환불해 드립니다.<br>(*유선상 환불은 불가하며, 환불요청서를 필수로 작성해야 함 / 하단 유의사항 참고)</p>
+      </div>
+      <a class="ecta" href="#">
+        <span class="chev">&raquo;</span>
+        <b>환불신청서<br>작성하기</b>
+        <span class="dot">&rarr;</span>
+      </a>
+    </div>
+
+    <div class="ebox">
+      <div class="ebody">
+        <span class="wm">02</span>
+        <h3>세움스피치 수강생<br>50% 할인</h3>
+        <p class="edesc">세움스피치 면접 과정을 수강한 학생은<br>합격패스를 50% 할인가로 신청하실 수 있습니다!</p>
+        <p class="econd">세움스피치 마곡점·루원시티점 면접 과정 수강 이력이 확인되는 경우에 한합니다.<br>쿠폰 발급 후 30일 이내 사용 가능하며, 다른 할인과 중복 적용되지 않습니다.</p>
+      </div>
+      <a class="ecta" href="#">
+        <span class="chev">&raquo;</span>
+        <b>쿠폰 즉시<br>발급받기</b>
+        <span class="dot">&rarr;</span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<section class="extra">
+  <div class="wrap">
+    <span class="eyebrow">별도 신청 과정</span>
+    <h2>1:1 지도가 필요하다면</h2>
+    <p class="lead">합격패스는 스스로 완성하는 과정입니다. 개인 첨삭과 1:1 실전면접이 필요한 학생은 아래 과정을 별도로 신청할 수 있습니다.</p>
+    <div class="egrid">
+      <div class="ecard"><b>학생부 개인 분석</b><span>내 학생부를 직접 분석해 예상질문 리포트로 드립니다.</span></div>
+      <div class="ecard"><b>1:1 실전 모의면접</b><span>실제 면접 환경에서 진행하고 평가표와 피드백을 드립니다.</span></div>
+      <div class="ecard"><b>대학별 파이널 특강</b><span>지원 대학 면접 직전, 대학별 유형에 맞춰 점검합니다.</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="final">
+  <div class="wrap">
+    <h2>혼자 외우는 대입면접에서<br>함께 완성하는 대입면접으로</h2>
+    <p class="lead">세움스피치 4,000명 면접 코칭 노하우를 생수면 6강 온라인 과정에 담았습니다.</p>
+    <a class="btn" href="#">합격패스 수강 신청하기</a>
+  </div>
+</section>
+
+<div class="notice">
+  <div class="wrap">
+    <h4>수강 전 확인해 주세요</h4>
+    <ul>
+      <li>수강 기간은 결제일로부터 90일이며, 기간 내 무제한 반복 수강이 가능합니다.</li>
+      <li>스터디 매칭은 신청 인원, 지원 계열, 면접 일정에 따라 구성이 달라지거나 배정이 지연될 수 있습니다.</li>
+      <li>합격패스에는 개인 첨삭과 1:1 모의면접이 포함되지 않습니다. 해당 과정은 별도 신청 상품입니다.</li>
+      <li>표기된 수치는 세움스피치 자체 집계 기준이며, 산출 기준은 고객센터를 통해 확인하실 수 있습니다.</li>
+      <li>환불은 관련 법령 및 학원의 설립·운영 및 과외교습에 관한 법률에 따른 기준을 따릅니다.</li>
+    </ul>
+  </div>
+</div>
+
+<footer>생수면 · 세움러닝(주)</footer>
+
+<script>
+document.querySelectorAll('.tab').forEach(function(b){
+  b.addEventListener('click',function(){
+    var t=b.dataset.t;
+    document.querySelectorAll('.tab').forEach(function(x){x.classList.toggle('on',x.dataset.t===t)});
+    document.querySelectorAll('.tabpane').forEach(function(x){x.classList.toggle('on',x.dataset.p===t)});
+  });
+});
+</script>
+</body>
+</html>

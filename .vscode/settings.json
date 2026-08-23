@@ -1,0 +1,12 @@
+{
+  "deno.enable": true,
+  "deno.enablePaths": ["./supabase/functions"],
+  "deno.lint": true,
+  "deno.unstable": false,
+
+  "//": "src 쪽은 Vite/React라 Deno가 관여하면 안 된다. enablePaths로 supabase/functions만 잡는다.",
+
+  "[typescript]": {
+    "editor.defaultFormatter": "denoland.vscode-deno"
+  }
+}
