@@ -7,8 +7,8 @@ import { Link } from "react-router-dom";
 ------------------------------------------------------- */
 const VIDEOS = [
   {
-    id: "l1MofUx-Fqk",
-    title: "대입면접, 무엇부터 준비해야 할까",
+    id: "pd0BxIvz5rY",
+    title: "4,000명 합격시킨 우주상향 대입 전략",
     desc: "면접 준비를 어디서부터 시작해야 하는지 전체 그림을 잡아드립니다.",
     length: "",
   },
@@ -16,7 +16,7 @@ const VIDEOS = [
   // { id: "", title: "", desc: "", length: "" },
 ];
 
-const CHANNEL_URL = "https://youtu.be/pd0BxIvz5rY";
+const CHANNEL_URL = "https://www.youtube.com/@saengsumyeon";
 
 // ※ 숫자는 실증 가능한 값으로 유지할 것
 const CREDIT = [
