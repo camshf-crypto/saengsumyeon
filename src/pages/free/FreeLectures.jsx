@@ -7,7 +7,7 @@ import { Link } from "react-router-dom";
 ------------------------------------------------------- */
 const VIDEOS = [
   {
-    id: "pd0BxIvz5rY",
+    id: "YAE-XFt3nUI",
     title: "4,000명 합격시킨 우주상향 대입 전략",
     desc: "면접 준비를 어디서부터 시작해야 하는지 전체 그림을 잡아드립니다.",
     length: "",
@@ -307,9 +307,8 @@ export default function FreeLectures() {
                         className={`w-full px-5 py-4 text-left ${on ? "bg-orange-50" : ""}`}
                       >
                         <p
-                          className={`text-sm font-bold ${
-                            on ? "text-sm-orange" : "text-sm-navy"
-                          }`}
+                          className={`text-sm font-bold ${on ? "text-sm-orange" : "text-sm-navy"
+                            }`}
                         >
                           {v.title}
                         </p>
