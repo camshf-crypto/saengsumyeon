@@ -67,8 +67,8 @@ const NOTICE = [
   {
     title: "교재",
     items: [
-      "교재는 「대입면접 워크북」 1종이며, PDF 파일로 제공됩니다.",
-      "교재는 수강료에 포함되어 있습니다.",
+      "교재는 「대입면접 교재」와 「답변 정리 워크북」 2종이며, 모두 PDF 파일로 제공됩니다.",
+      "두 종 모두 수강료에 포함되어 있으며, 별도 구매 절차는 없습니다.",
       "강의 공개 후 나의 강의실 → 교재 · 학습자료에서 내려받을 수 있습니다. 배송 절차는 없습니다.",
       "교재 파일의 이용 기간은 강의와 동일하게 공개일로부터 90일입니다.",
       "디지털 콘텐츠이므로 파일을 내려받은 이후에는 환불이 불가합니다.",
@@ -453,7 +453,7 @@ export default function Landing() {
                 <div className="bookrow alt">
                   <span className="plusmark">+</span>
                   <div className="bookvis">
-                    워크북<br />표지 이미지 자리
+                    <img src="/images/workbook-cover.png" alt="대입면접 답변 정리 워크북" />
                   </div>
                   <div>
                     <span className="bookbadge">워크북</span>
