@@ -1,9 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { supabase } from "../../lib/supabase";
-import { PREORDER as P } from "../preorder/preorderConfig";
-
-const won = (n) => n.toLocaleString("ko-KR") + "원";
 
 /* ── 영상 추가는 여기만 고치면 된다 ──────────────────────
    id: 유튜브 주소의 v= 뒤 11자리
@@ -11,7 +7,7 @@ const won = (n) => n.toLocaleString("ko-KR") + "원";
 ------------------------------------------------------- */
 const VIDEOS = [
   {
-    id: "C03b7LjcEHc",
+    id: "l1MofUx-Fqk",
     title: "대입면접, 무엇부터 준비해야 할까",
     desc: "면접 준비를 어디서부터 시작해야 하는지 전체 그림을 잡아드립니다.",
     length: "",
@@ -33,6 +29,31 @@ const CAREER = [
   "세움스피치 대표 · 현장 면접교육을 직접 진행합니다",
   "학생부종합전형 면접을 매년 현장에서 지도해 왔습니다",
   "고입 자기소개서 · 면접부터 대입 학생부종합전형까지 지도",
+];
+
+/* ── 합격 후기 ─────────────────────────────────────────
+   videoId : 유튜브 11자리. 비우면 썸네일 자리만 표시된다.
+   썸네일은 유튜브에서 자동으로 가져온다.
+--------------------------------------------------- */
+const REVIEWS = [
+  {
+    videoId: "aN2Zv4W_ka4",
+    tag: "간호학과 2관왕",
+    sub: "경쟁률 30:1 · 세명대 · 한서대 동시 합격",
+    quote: "첨삭받은 예상질문 두 개가 다음날 면접에 그대로 나왔어요",
+  },
+  {
+    videoId: "4aFj8vu7JT4",
+    tag: "3일 준비 합격",
+    sub: "숭실대 국어국문학과 · 면접 반영 50%",
+    quote: "1차 발표가 화요일, 면접이 금요일이었어요. 3일 만에 준비하고 붙었습니다",
+  },
+  {
+    videoId: "2euAQc0uzWM",
+    tag: "소극적인 성격에서 시작",
+    sub: "건국대 자유전공학부 · 학생부종합전형",
+    quote: "눈을 마주치는 것도 힘들었는데, 발성부터 배우고 생기부 질문을 다 뽑아냈어요",
+  },
 ];
 
 const FIT_YES = [
@@ -59,13 +80,7 @@ const RESULTS = [
 export default function FreeLectures() {
   const ready = VIDEOS.filter((v) => v.id);
   const [current, setCurrent] = useState(ready[0] ?? null);
-  const [count, setCount] = useState(null);
-
-  useEffect(() => {
-    supabase.rpc("paid_preorder_count").then(({ data }) => setCount(data ?? 0));
-  }, []);
-
-  const reached = count !== null && count >= P.target;
+  const [playingId, setPlayingId] = useState(null); // 후기 영상 인라인 재생
 
   return (
     <div className="mx-auto max-w-4xl px-5 py-12">
@@ -129,18 +144,111 @@ export default function FreeLectures() {
         </p>
       </section>
 
-      {/* 영상으로 넘어가는 다리 */}
-      <div className="mt-14 text-center">
-        <p className="text-xl font-extrabold tracking-tight text-sm-navy sm:text-2xl">
-          말로만 설명하지 않습니다.
-          <br />
-          실제 강의를 먼저 확인해보세요.
-        </p>
-        <p className="mt-3 text-sm leading-relaxed text-gray-500">
-          누적 4,000명 이상의 면접 · 스피치 코칭 경험을 바탕으로
-          <br />
-          김지윤 대표가 직접 설계한 강의입니다.
-        </p>
+      {/* 합격 후기 */}
+      {REVIEWS.some((r) => r.quote) && (
+        <section className="mt-14">
+          <p className="text-sm font-bold text-sm-orange">합격생 후기</p>
+          <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-sm-navy">
+            먼저 준비한 학생들의 이야기
+          </h2>
+
+          <div className="mt-6 grid gap-4 sm:grid-cols-3">
+            {REVIEWS.filter((r) => r.quote).map((r) => {
+              const playing = playingId === r.videoId && r.videoId;
+
+              return (
+                <div
+                  key={r.quote}
+                  className="overflow-hidden rounded-2xl border border-gray-200 bg-white"
+                >
+                  {/* 썸네일 → 클릭하면 그 자리에서 재생 */}
+                  {playing ? (
+                    <div className="aspect-video bg-black">
+                      <iframe
+                        src={`https://www.youtube.com/embed/${r.videoId}?autoplay=1&rel=0`}
+                        title={r.tag || "합격 후기"}
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                        className="h-full w-full"
+                      />
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => r.videoId && setPlayingId(r.videoId)}
+                      disabled={!r.videoId}
+                      className="relative flex aspect-video w-full items-center justify-center overflow-hidden bg-gray-100"
+                    >
+                      {r.videoId ? (
+                        <img
+                          src={`https://img.youtube.com/vi/${r.videoId}/hqdefault.jpg`}
+                          alt=""
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-xs text-gray-400">썸네일 준비 중</span>
+                      )}
+                      {r.videoId && (
+                        <span className="absolute flex h-12 w-12 items-center justify-center rounded-full bg-black/60 text-white transition hover:bg-sm-orange">
+                          <span className="ml-0.5 text-lg">▶</span>
+                        </span>
+                      )}
+                    </button>
+                  )}
+
+                  <div className="p-5">
+                    {r.tag && (
+                      <span className="rounded bg-orange-50 px-2 py-1 text-[11px] font-bold text-sm-orange">
+                        {r.tag}
+                      </span>
+                    )}
+                    <p className="mt-3 text-[14px] font-bold leading-relaxed text-sm-navy">
+                      “{r.quote}”
+                    </p>
+                    {r.sub && <p className="mt-2 text-[11.5px] text-gray-400">{r.sub}</p>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* 무료 오픈특강 */}
+      <div className="mt-16 border-t border-gray-200 pt-14">
+        <div className="text-center">
+          <span className="inline-block rounded-full bg-sm-orange px-4 py-1.5 text-xs font-extrabold text-white">
+            무료 공개
+          </span>
+          <p className="mt-4 text-2xl font-extrabold leading-snug tracking-tight text-sm-navy sm:text-3xl">
+            면접 준비를 어디서부터 해야 하는지
+            <br />
+            이 영상 하나로 정리됩니다
+          </p>
+          <p className="mt-4 text-[16px] leading-relaxed text-gray-500">
+            말로만 설명하지 않습니다. 실제 강의를 먼저 확인해보세요.
+            <br />
+            보시고 맞다고 생각되면 그때 신청하셔도 늦지 않습니다.
+          </p>
+        </div>
+
+        {/* 이 영상에서 다루는 것 */}
+        <div className="mx-auto mt-8 grid max-w-2xl gap-3 sm:grid-cols-3">
+          {[
+            ["01", "면접관이 학생부의 어디를 보는지"],
+            ["02", "답변의 뼈대를 어떻게 잡는지"],
+            ["03", "꼬리질문에 왜 무너지는지"],
+          ].map(([n, t]) => (
+            <div
+              key={n}
+              className="flex items-center gap-3 rounded-xl bg-gray-50 px-5 py-5 sm:block"
+            >
+              <span className="text-[13px] font-black tracking-wider text-sm-orange">{n}</span>
+              <p className="text-[16px] font-bold leading-snug tracking-tight text-sm-navy sm:mt-2 sm:text-[15px]">
+                {t}
+              </p>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* 영상 */}
@@ -333,61 +441,20 @@ export default function FreeLectures() {
         </div>
       </div>
 
-      {/* 신청 */}
+      {/* 커리큘럼으로 */}
       <div className="mt-12 rounded-2xl bg-sm-peach p-8 text-center">
         <p className="text-xl font-extrabold tracking-tight text-sm-navy">
           이제 내 학생부로 해볼 차례입니다
         </p>
 
-        <div className="mx-auto mt-6 max-w-xs rounded-xl bg-white/70 px-6 py-5">
-          <p className="text-sm font-bold text-gray-600">지금 내는 계약금</p>
-          <p className="mt-1 text-4xl font-black tracking-tight text-sm-orange">
-            {won(P.deposit)}
-          </p>
-          <p className="mt-3 border-t border-orange-200 pt-3 text-[13px] text-gray-500">
-            총 수강료 {won(P.total)}
-            <br />
-            잔금 {won(P.balance)}은 제작 확정 후
-          </p>
-        </div>
-
-        {count !== null && (
-          <p className="mt-5 text-sm font-bold leading-relaxed text-sm-navy">
-            {reached ? (
-              <>
-                {P.target}명이 모여 제작이 확정되었습니다
-                <br />
-                <span className="text-gray-500">현재 {count}명 신청</span>
-              </>
-            ) : (
-              <>
-                현재 {count} / {P.target}명 신청
-                <br />
-                <span className="text-gray-500">{P.deadline} 마감</span>
-              </>
-            )}
-          </p>
-        )}
-
         <Link
-          to="/preorder"
-          className="mt-6 inline-block rounded-lg bg-sm-orange px-10 py-4 text-[15px] font-extrabold text-white"
+          to="/"
+          className="mt-7 inline-block rounded-lg bg-sm-orange px-10 py-4 text-[15px] font-extrabold text-white"
         >
-          사전신청 하기
-        </Link>
-
-        <p className="mt-4 text-xs leading-relaxed text-gray-500">
-          {reached
-            ? "제작이 확정되어 강의 공개가 예정되어 있습니다."
-            : `${P.target}명 미달 시 ${P.refundDate}까지 계약금 전액을 환불해 드립니다.`}
-          <br />
-          강의 공개 예정 {P.openDate} · 수강 기간은 공개일부터 90일
-        </p>
-
-        <Link to="/" className="mt-5 block text-sm text-gray-400 underline">
           커리큘럼 자세히 보기
         </Link>
       </div>
+
     </div>
   );
 }
