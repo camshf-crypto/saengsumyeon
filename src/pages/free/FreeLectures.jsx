@@ -16,7 +16,7 @@ const VIDEOS = [
   // { id: "", title: "", desc: "", length: "" },
 ];
 
-const CHANNEL_URL = "https://www.youtube.com/@saengsumyeon";
+const CHANNEL_URL = "https://youtu.be/pd0BxIvz5rY";
 
 // ※ 숫자는 실증 가능한 값으로 유지할 것
 const CREDIT = [
