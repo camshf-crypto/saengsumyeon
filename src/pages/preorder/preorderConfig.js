@@ -17,8 +17,8 @@ export const PREORDER = {
 
   // 입금 계좌
   bank: "국민은행",
-  account: "459601-01-373131",
-  holder: "곽용신",
+  account: "649301-04-159726",
+  holder: "김지윤(세움러닝)",
 };
 
 export const GRADES = ["고3", "반수", "N수"];
