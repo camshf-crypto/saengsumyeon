@@ -223,6 +223,16 @@
 .lp .pre-bar i.full{background:linear-gradient(90deg,#F97316,#FDBA74)}
 .lp .pre-note li b{color:var(--navy)}
 
+/* 최근 신청 현황 */
+.lp .pre-recent{list-style:none;margin-top:20px;padding:16px 18px 14px;background:var(--paper);border:1px solid var(--line);border-radius:12px}
+.lp .pre-recent:before{content:"최근 신청 현황";display:block;margin-bottom:8px;font-size:11.5px;font-weight:800;letter-spacing:.03em;color:#9CA3AF}
+.lp .pre-recent li{display:flex;align-items:center;gap:9px;padding:9px 0;border-top:1px solid #EDF1F6;font-size:13.5px;line-height:1.4;letter-spacing:-.02em}
+.lp .pre-recent li:first-of-type{border-top:none}
+.lp .pre-recent li:before{content:"";width:6px;height:6px;border-radius:50%;background:var(--orange);flex-shrink:0}
+.lp .pre-recent b{font-weight:800;color:var(--navy);flex-shrink:0}
+.lp .pre-recent em{font-style:normal;font-size:11.5px;font-weight:800;color:var(--orange-2);background:var(--orange-bg);padding:3px 9px;border-radius:100px;flex-shrink:0;letter-spacing:-.01em}
+.lp .pre-recent span{margin-left:auto;font-size:12px;color:#A3AEBD;font-variant-numeric:tabular-nums;flex-shrink:0}
+
 /* ── 모바일 ─────────────────────────────────────────── */
 @media (max-width: 900px) {
   .lp section { padding: 56px 0; }
@@ -253,6 +263,12 @@
   .lp .pre-head b { font-size: 14px; }
   .lp .pre-now b { font-size: 26px; }
   .lp .pre-btn { padding: 16px; font-size: 16px; }
+
+  /* 최근 신청 현황 */
+  .lp .pre-recent { padding: 14px 15px 12px; }
+  .lp .pre-recent li { font-size: 12.5px; gap: 7px; padding: 8px 0; }
+  .lp .pre-recent em { font-size: 10.5px; padding: 3px 7px; }
+  .lp .pre-recent span { font-size: 11px; }
 
   /* 해결 4단계 — 세로로 쌓는다 */
   .lp .steps { grid-template-columns: 1fr; gap: 10px; }
@@ -328,4 +344,5 @@
   .lp .stat .num { font-size: 19px; }
   .lp .stat .lbl { font-size: 11px; }
   .lp .pre-now b { font-size: 23px; }
+  .lp .pre-recent em { display: none; }
 }

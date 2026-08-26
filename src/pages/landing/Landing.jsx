@@ -42,6 +42,18 @@ const FOOTNOTE =
 
 const won = (n) => n.toLocaleString("ko-KR") + "원";
 
+/* 08.26 오전 11:30 형태로 */
+const fmtWhen = (iso) => {
+  const d = new Date(iso);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const h = d.getHours();
+  const ap = h < 12 ? "오전" : "오후";
+  const hh = h % 12 === 0 ? 12 : h % 12;
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${mm}.${dd} ${ap} ${hh}:${mi}`;
+};
+
 const NOTICE = [
   {
     title: "사전신청 안내",
@@ -53,6 +65,7 @@ const NOTICE = [
       "입금자명이 신청자와 다르면 확인이 어렵습니다. 신청 시 입력하신 입금자명 그대로 입금해 주세요.",
       "잔금은 제작이 확정된 후 별도로 안내드립니다.",
       "커리큘럼과 제공 자료는 확정된 계획이며, 제작 과정에서 세부 구성이 일부 조정될 수 있습니다.",
+      "화면에 표시되는 신청 현황은 입금이 확인된 건만 집계하며, 신청자 성함은 첫 글자만 표시됩니다.",
     ],
   },
   {
@@ -122,7 +135,7 @@ const NOTICE = [
 
 /* ── 사전신청 박스 — 상단·하단 두 곳에서 같은 걸 쓴다 ───── */
 
-function PreorderBox({ count, onApply }) {
+function PreorderBox({ count, recent, onApply }) {
   const rate = count === null ? 0 : Math.min((count / P.target) * 100, 100);
   const reached = count !== null && count >= P.target;   // 목표 인원 달성
 
@@ -168,6 +181,19 @@ function PreorderBox({ count, onApply }) {
             </div>
           )}
 
+          {/* 최근 신청 현황 — 입금이 확인된 건만, 이름은 서버에서 마스킹 */}
+          {recent && recent.length > 0 && (
+            <ul className="pre-recent">
+              {recent.map((r, i) => (
+                <li key={i}>
+                  <span>{fmtWhen(r.applied_at)}</span>
+                  <b>{r.masked_name}</b>
+                  <em>사전신청 완료</em>
+                </li>
+              ))}
+            </ul>
+          )}
+
           <button className="btn pre-btn" onClick={onApply}>
             {reached ? "지금 신청하기" : "사전신청 하기"}
           </button>
@@ -201,12 +227,24 @@ export default function Landing() {
   const [tab, setTab] = useState(1);
   const [openNotice, setOpenNotice] = useState(0);
   const [count, setCount] = useState(null);
+  const [recent, setRecent] = useState([]);
 
   // 입금 확인된 신청자 수 (개인정보 없이 숫자만 내려온다)
   useEffect(() => {
     supabase.rpc("paid_preorder_count").then(({ data, error }) => {
       if (error) console.error("preorder count", error);
       setCount(data ?? 0);
+    });
+  }, []);
+
+  // 최근 신청 현황 (이름은 서버에서 첫 글자만 남겨 내려온다)
+  useEffect(() => {
+    supabase.rpc("recent_preorders").then(({ data, error }) => {
+      if (error) {
+        console.error("recent preorders", error);
+        return;
+      }
+      setRecent(data ?? []);
     });
   }, []);
 
@@ -249,7 +287,7 @@ export default function Landing() {
       </header>
 
       {/* 상단 사전신청 박스 */}
-      <PreorderBox count={count} onApply={apply} />
+      <PreorderBox count={count} recent={recent} onApply={apply} />
 
       {/* 문제 */}
       <section className="problem">
@@ -488,7 +526,7 @@ export default function Landing() {
       </section>
 
       {/* 하단 사전신청 박스 — 상단과 같은 내용을 한 번 더 */}
-      <PreorderBox count={count} onApply={apply} />
+      <PreorderBox count={count} recent={recent} onApply={apply} />
 
       {/* 유의사항 */}
       <div className="notice">
