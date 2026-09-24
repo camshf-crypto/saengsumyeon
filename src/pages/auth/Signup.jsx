@@ -1,18 +1,24 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 
-const GRADES = ["고1", "고2", "고3", "N수"];
+const GRADES = ["고1", "고2", "고3"];
 
 export default function Signup() {
+  const nav = useNavigate();
+  const { state } = useLocation(); // 결과 화면에서 넘어온 진단 정보
+
   const [f, setF] = useState({
-    email: "", password: "", password2: "",
-    name: "", phone: "", school: "", grade: "고3",
+    email: "",
+    password: "",
+    password2: "",
+    name: "",
+    grade: state?.grade ?? "고3",
   });
   const [agree, setAgree] = useState({ terms: false, privacy: false, marketing: false });
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-  const [sent, setSent] = useState(false);   // 인증 메일 발송 완료
+  const [sent, setSent] = useState(false); // 인증 메일을 보낸 경우
   const [resent, setResent] = useState(false);
 
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
@@ -28,9 +34,18 @@ export default function Signup() {
     if (f.password.length < 8) return "비밀번호는 8자 이상 입력해 주세요.";
     if (f.password !== f.password2) return "비밀번호가 서로 다릅니다.";
     if (!f.name.trim()) return "이름을 입력해 주세요.";
-    if (!/^01[016-9]\d{7,8}$/.test(f.phone.replace(/-/g, ""))) return "휴대폰 번호를 확인해 주세요.";
     if (!agree.terms || !agree.privacy) return "필수 약관에 동의해 주세요.";
     return "";
+  }
+
+  // 진단을 하다 온 경우엔 결과로, 아니면 첫 화면으로
+  async function goBack() {
+    // 가입 전에 남긴 익명 진단을 내 기록으로 이어붙인다
+    const { error } = await supabase.rpc("claim_my_queries");
+    if (error) console.warn("claim failed", error);
+
+    if (state?.topic) nav("/result", { state, replace: true });
+    else nav("/", { replace: true });
   }
 
   async function submit() {
@@ -43,12 +58,9 @@ export default function Signup() {
       email: f.email.trim(),
       password: f.password,
       options: {
-        // 메일의 인증 링크를 누르면 돌아올 주소
         emailRedirectTo: `${window.location.origin}/login`,
         data: {
           name: f.name.trim(),
-          phone: f.phone.replace(/-/g, ""),
-          school: f.school.trim(),
           grade: f.grade,
           marketing_agreed: agree.marketing,
         },
@@ -71,6 +83,13 @@ export default function Signup() {
       return;
     }
 
+    // 이메일 인증이 꺼져 있으면 바로 세션이 생긴다 → 결과로 돌아간다
+    if (data?.session) {
+      await goBack();
+      return;
+    }
+
+    // 인증이 필요한 경우에만 안내 화면
     setSent(true);
   }
 
@@ -92,7 +111,7 @@ export default function Signup() {
   const input =
     "w-full rounded-lg border border-gray-300 px-4 py-3 text-[15px] outline-none focus:border-sm-orange";
 
-  /* ── 인증 메일 발송 완료 ─────────────────────────────── */
+  /* ── 인증 메일 발송 안내 ─────────────────────────────── */
   if (sent) {
     return (
       <div className="mx-auto max-w-md px-5 py-24 text-center">
@@ -122,7 +141,11 @@ export default function Signup() {
 
         {err && <p className="mt-3 text-sm font-semibold text-red-500">{err}</p>}
 
-        <Link to="/login" className="mt-6 block text-sm text-gray-400 underline">
+        <Link
+          to="/login"
+          state={state}
+          className="mt-6 block text-sm text-gray-400 underline"
+        >
           인증을 마쳤다면 로그인
         </Link>
       </div>
@@ -134,16 +157,24 @@ export default function Signup() {
     <div className="mx-auto max-w-md px-5 py-14">
       <h1 className="text-2xl font-extrabold tracking-tight text-sm-navy">회원가입</h1>
       <p className="mt-2 text-sm text-gray-500">
-        수강권이 이 계정에 연결되니 실제로 쓰는 이메일을 입력해 주세요.
+        가입하면 진단 결과 전체를 바로 확인하실 수 있습니다.
       </p>
 
-      <div className="mt-8 space-y-3">
+      {/* 결과 화면에서 넘어온 주제를 다시 보여준다 */}
+      {state?.topic && (
+        <div className="mt-6 rounded-xl bg-gray-50 p-4">
+          <p className="text-[11.5px] font-bold text-gray-400">진단한 탐구주제</p>
+          <p className="mt-1.5 text-[14px] font-bold leading-relaxed text-sm-navy">
+            {state.topic}
+          </p>
+        </div>
+      )}
+
+      <div className="mt-6 space-y-3">
         <input className={input} placeholder="이메일" value={f.email} onChange={set("email")} />
         <input className={input} type="password" placeholder="비밀번호 (8자 이상)" value={f.password} onChange={set("password")} />
         <input className={input} type="password" placeholder="비밀번호 확인" value={f.password2} onChange={set("password2")} />
         <input className={input} placeholder="이름" value={f.name} onChange={set("name")} />
-        <input className={input} placeholder="휴대폰 번호 ('-' 없이)" value={f.phone} onChange={set("phone")} />
-        <input className={input} placeholder="재학 고등학교 (선택)" value={f.school} onChange={set("school")} />
         <div className="flex gap-2">
           {GRADES.map((g) => (
             <button
@@ -197,7 +228,9 @@ export default function Signup() {
 
       <p className="mt-5 text-center text-sm text-gray-500">
         이미 계정이 있으신가요?{" "}
-        <Link to="/login" className="font-bold text-sm-navy underline">로그인</Link>
+        <Link to="/login" state={state} className="font-bold text-sm-navy underline">
+          로그인
+        </Link>
       </p>
     </div>
   );

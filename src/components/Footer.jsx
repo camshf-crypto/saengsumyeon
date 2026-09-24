@@ -1,11 +1,10 @@
 import { Link } from "react-router-dom";
 
-// ※ 통신판매업신고번호는 실제 신고 후 값으로 교체할 것 (미신고 시 해당 줄 삭제)
 const BIZ = {
   company: "세움러닝(주)",
   ceo: "김지윤",
   bizNo: "817-31-01468",
-  mailOrderNo: "0000-인천서구-0000",
+  mailOrderNo: "2026-인천서해-0439",
   address: "인천광역시 서구 가정로 451, 1129-1130호",
   email: "company@seumlearning.com",
   privacyOfficer: "곽용신",
