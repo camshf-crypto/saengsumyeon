@@ -8,6 +8,8 @@ import Landing from "./pages/landing/Landing";
 import Result from "./pages/landing/Result";
 import Login from "./pages/auth/Login";
 import Signup from "./pages/auth/Signup";
+import AuthCallback from "./pages/auth/AuthCallback";
+import MyPage from "./pages/my/MyPage";
 import AdminTopics from "./pages/admin/AdminTopics";
 import { Terms, Privacy, Refund } from "./pages/legal/Legal";
 
@@ -34,9 +36,13 @@ export default function App() {
               {/* 결과는 로그인 없이도 보여야 한다. 잠금은 화면 안에서 처리 */}
               <Route path="/result" element={<Result />} />
 
-              {/* 인증 */}
+              {/* 내 기록 — 권한은 화면 안에서 확인 */}
+              <Route path="/my" element={<MyPage />} />
+
+              {/* 인증 — 구글 로그인 후 /auth/callback으로 돌아온다 */}
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Signup />} />
+              <Route path="/auth/callback" element={<AuthCallback />} />
 
               {/* 어드민 — 주소로만 접근. 권한은 화면 안에서 확인 */}
               <Route path="/admin" element={<AdminTopics />} />
