@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/AuthContext";
 
@@ -14,6 +14,15 @@ const RANGES = [
   { label: "30일", from: () => dayStr(-29), to: () => dayStr(0) },
   { label: "전체", from: () => "", to: () => "" },
 ];
+
+const PARTS = ["소재", "대상", "조건", "방식"]; // 항목별 점수 순서
+const MAX = { 소재: 40, 대상: 20, 조건: 20, 방식: 20 };
+
+/* 항목별 점수 합계 — 저장된 지수와 다르면 채점 오류를 의심할 수 있다 */
+function sumOf(b) {
+  if (!b) return null;
+  return PARTS.reduce((acc, k) => acc + (Number(b[k]) || 0), 0);
+}
 
 /* 상위 항목을 막대로 */
 function RankList({ title, rows, total }) {
@@ -47,6 +56,77 @@ function RankList({ title, rows, total }) {
   );
 }
 
+/* 줄을 펼쳤을 때 보이는 AI 결과 */
+function AiDetail({ r }) {
+  const res = r.result ?? {};
+  const b = res.breakdown;
+  const sum = sumOf(b);
+  const mismatch = sum != null && r.score != null && sum !== r.score;
+
+  return (
+    <div className="grid gap-5 bg-gray-50 px-6 py-5 lg:grid-cols-[260px_1fr]">
+      {/* 항목별 점수 */}
+      <div>
+        <p className="text-[12px] font-bold text-gray-400">항목별 점수</p>
+        {b ? (
+          <ul className="mt-2 space-y-1.5 text-[13px]">
+            {PARTS.map((k) => (
+              <li key={k} className="flex items-center gap-2">
+                <span className="w-9 text-gray-500">{k}</span>
+                <span className="h-[6px] flex-1 overflow-hidden rounded-full bg-gray-200">
+                  <span
+                    className="block h-full rounded-full bg-sm-orange"
+                    style={{ width: `${Math.min(100, ((b[k] ?? 0) / MAX[k]) * 100)}%` }}
+                  />
+                </span>
+                <span className="w-12 text-right">
+                  <b className="text-sm-navy">{b[k] ?? "-"}</b>
+                  <small className="text-gray-400">/{MAX[k]}</small>
+                </span>
+              </li>
+            ))}
+            <li className={`pt-1 text-[12px] font-bold ${mismatch ? "text-red-500" : "text-gray-400"}`}>
+              합계 {sum}
+              {mismatch && ` — 저장된 지수 ${r.score}와 다름`}
+            </li>
+          </ul>
+        ) : (
+          <p className="mt-2 text-[13px] text-gray-400">점수 내역 없음</p>
+        )}
+      </div>
+
+      {/* 이유와 제안 */}
+      <div className="space-y-4 text-[13.5px] leading-relaxed">
+        <div>
+          <p className="text-[12px] font-bold text-gray-400">왜 흔한 주제인지</p>
+          <p className="mt-1 text-gray-700">{res.reason || "-"}</p>
+        </div>
+        <div>
+          <p className="text-[12px] font-bold text-gray-400">AI 제안 주제</p>
+          <p className="mt-1 font-bold text-sm-navy">{res.suggestion?.topic || "-"}</p>
+          {res.suggestion?.topic && (
+            <p className="mt-0.5 text-[12px] text-gray-400">{res.suggestion.topic.length}자</p>
+          )}
+        </div>
+        <div>
+          <p className="text-[12px] font-bold text-gray-400">좁힌 방법</p>
+          <p className="mt-1 text-gray-700">{res.suggestion?.how || "-"}</p>
+        </div>
+        {res.similar?.length > 0 && (
+          <div>
+            <p className="text-[12px] font-bold text-gray-400">참고한 유사 탐구 (DB)</p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[12.5px] text-gray-500">
+              {res.similar.map((s, i) => (
+                <li key={i}>{s}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminTopics() {
   const { user, loading: authLoading } = useAuth();
 
@@ -58,6 +138,7 @@ export default function AdminTopics() {
   const [err, setErr] = useState("");
   const [q, setQ] = useState("");
   const [only, setOnly] = useState("all"); // all | member | anon
+  const [open, setOpen] = useState(null); // 펼친 줄의 id
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -96,26 +177,37 @@ export default function AdminTopics() {
     const k = q.trim().toLowerCase();
     if (!k) return r;
     return r.filter((x) =>
-      [x.email, x.name, x.department, x.subject, x.topic]
+      [x.email, x.name, x.department, x.subject, x.topic, x.result?.suggestion?.topic]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(k))
     );
   }, [rows, q, only]);
 
   function downloadCsv() {
-    const head = ["일시", "회원여부", "이메일", "이름", "학과", "학년", "학기", "과목", "탐구주제", "지수"];
-    const body = shown.map((r) => [
-      new Date(r.created_at).toLocaleString("ko-KR"),
-      r.is_member ? "회원" : "비회원",
-      r.email ?? "",
-      r.name ?? "",
-      r.department ?? "",
-      r.grade ?? "",
-      r.term ?? "",
-      r.subject ?? "",
-      r.topic ?? "",
-      r.score ?? "",
-    ]);
+    const head = [
+      "일시", "회원여부", "이메일", "이름", "학과", "학년", "학기", "과목", "탐구주제", "지수",
+      "소재", "대상", "조건", "방식", "흔한 이유", "AI 제안 주제", "좁힌 방법",
+    ];
+    const body = shown.map((r) => {
+      const res = r.result ?? {};
+      const b = res.breakdown ?? {};
+      return [
+        new Date(r.created_at).toLocaleString("ko-KR"),
+        r.is_member ? "회원" : "비회원",
+        r.email ?? "",
+        r.name ?? "",
+        r.department ?? "",
+        r.grade ?? "",
+        r.term ?? "",
+        r.subject ?? "",
+        r.topic ?? "",
+        r.score ?? "",
+        ...PARTS.map((k) => b[k] ?? ""),
+        res.reason ?? "",
+        res.suggestion?.topic ?? "",
+        res.suggestion?.how ?? "",
+      ];
+    });
     const csv = [head, ...body]
       .map((line) => line.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))
       .join("\n");
@@ -141,7 +233,7 @@ export default function AdminTopics() {
     <div className="mx-auto max-w-6xl px-5 py-10">
       <h1 className="text-2xl font-extrabold tracking-tight text-sm-navy">진단 기록</h1>
       <p className="mt-2 text-sm text-gray-500">
-        학생이 입력한 탐구주제와 진단 결과를 날짜별로 확인합니다.
+        학생이 입력한 탐구주제와 AI 진단 결과를 날짜별로 확인합니다. 줄을 누르면 AI 결과 전체가 펼쳐집니다.
       </p>
 
       {/* 기간 */}
@@ -238,8 +330,8 @@ export default function AdminTopics() {
         </div>
 
         <input
-          className={`${field} ml-auto w-48`}
-          placeholder="이름 · 학과 · 주제 검색"
+          className={`${field} ml-auto w-56`}
+          placeholder="이름 · 학과 · 주제 · 제안 검색"
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
@@ -253,7 +345,7 @@ export default function AdminTopics() {
       </div>
 
       <div className="mt-3 overflow-x-auto rounded-xl border border-gray-200">
-        <table className="w-full min-w-[980px] text-left text-[13.5px]">
+        <table className="w-full min-w-[1180px] text-left text-[13.5px]">
           <thead className="border-b border-gray-200 bg-gray-50 text-[12.5px] font-bold text-gray-500">
             <tr>
               <th className="px-4 py-3">일시</th>
@@ -261,53 +353,77 @@ export default function AdminTopics() {
               <th className="px-4 py-3">학과</th>
               <th className="px-4 py-3">학년</th>
               <th className="px-4 py-3">과목</th>
-              <th className="px-4 py-3">탐구주제</th>
+              <th className="px-4 py-3">학생 입력 주제</th>
               <th className="px-4 py-3 text-right">지수</th>
+              <th className="px-4 py-3">AI 제안 주제</th>
             </tr>
           </thead>
           <tbody>
-            {shown.map((r, i) => (
-              <tr key={i} className="border-b border-gray-100 last:border-0">
-                <td className="whitespace-nowrap px-4 py-3 text-gray-500">
-                  {new Date(r.created_at).toLocaleString("ko-KR", {
-                    month: "2-digit",
-                    day: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </td>
-                <td className="whitespace-nowrap px-4 py-3">
-                  {r.is_member ? (
-                    <>
-                      <span className="font-bold text-sm-navy">{r.name ?? "회원"}</span>
-                      <span className="ml-1.5 text-[12px] text-gray-400">{r.email}</span>
-                    </>
-                  ) : (
-                    <span className="rounded bg-gray-100 px-2 py-0.5 text-[11.5px] font-bold text-gray-500">
-                      비회원
-                    </span>
+            {shown.map((r, i) => {
+              const key = r.id ?? i;
+              const isOpen = open === key;
+              const sug = r.result?.suggestion?.topic;
+              return (
+                <Fragment key={key}>
+                  <tr
+                    onClick={() => setOpen(isOpen ? null : key)}
+                    className={`cursor-pointer border-b border-gray-100 transition hover:bg-orange-50/40 ${
+                      isOpen ? "bg-orange-50/40" : ""
+                    }`}
+                  >
+                    <td className="whitespace-nowrap px-4 py-3 text-gray-500">
+                      {new Date(r.created_at).toLocaleString("ko-KR", {
+                        month: "2-digit",
+                        day: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      {r.is_member ? (
+                        <>
+                          <span className="font-bold text-sm-navy">{r.name ?? "회원"}</span>
+                          <span className="ml-1.5 text-[12px] text-gray-400">{r.email}</span>
+                        </>
+                      ) : (
+                        <span className="rounded bg-gray-100 px-2 py-0.5 text-[11.5px] font-bold text-gray-500">
+                          비회원
+                        </span>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3">{r.department}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-gray-500">
+                      {r.grade}
+                      {r.term ? ` ${r.term}` : ""}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-gray-500">{r.subject}</td>
+                    <td className="px-4 py-3">{r.topic}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right">
+                      {r.score == null ? (
+                        <span className="text-gray-300">-</span>
+                      ) : (
+                        <b className={r.score >= 65 ? "text-sm-orange" : "text-sm-navy"}>{r.score}</b>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm-navy">
+                      {sug ? sug : <span className="text-gray-300">-</span>}
+                    </td>
+                  </tr>
+
+                  {isOpen && (
+                    <tr className="border-b border-gray-100">
+                      <td colSpan={8} className="p-0">
+                        <AiDetail r={r} />
+                      </td>
+                    </tr>
                   )}
-                </td>
-                <td className="whitespace-nowrap px-4 py-3">{r.department}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-gray-500">
-                  {r.grade}
-                  {r.term ? ` ${r.term}` : ""}
-                </td>
-                <td className="whitespace-nowrap px-4 py-3 text-gray-500">{r.subject}</td>
-                <td className="px-4 py-3">{r.topic}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-right">
-                  {r.score == null ? (
-                    <span className="text-gray-300">-</span>
-                  ) : (
-                    <b className={r.score >= 65 ? "text-sm-orange" : "text-sm-navy"}>{r.score}</b>
-                  )}
-                </td>
-              </tr>
-            ))}
+                </Fragment>
+              );
+            })}
 
             {!shown.length && !busy && (
               <tr>
-                <td colSpan={7} className="px-4 py-16 text-center text-gray-400">
+                <td colSpan={8} className="px-4 py-16 text-center text-gray-400">
                   기록이 없습니다.
                 </td>
               </tr>
