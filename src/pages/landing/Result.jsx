@@ -33,8 +33,9 @@ function stageOf(p) {
   return "탐구주제를 읽고 있어요";
 }
 
-/* 비로그인일 때 가리는 스타일 */
+/* 비로그인일 때 가리는 스타일과 대상 항목 (소재·대상은 공개) */
 const LOCKED = { filter: "blur(6px)", userSelect: "none", pointerEvents: "none" };
+const LOCKED_KEYS = ["조건", "방식"];
 
 /* 판정 문구는 점수에서 직접 만든다 (AI 출력의 오타를 타지 않도록) */
 function verdictOf(score) {
@@ -289,23 +290,20 @@ export default function Result() {
                 <p className="rs-verdict">{verdictOf(data.score)}</p>
                 <p className="rs-sub">AI가 실제 생기부 탐구 경향을 바탕으로 판단했어요</p>
 
-                {/* 세부 점수 — 비로그인이면 흐리게 가리고 안내만 보여준다 */}
+                {/* 세부 점수 — 비로그인이면 조건·방식만 흐리게 가린다 (소재·대상은 공개) */}
                 {data.breakdown && (
-                  <div className="relative">
-                    <div
-                      className="rs-bars"
-                      aria-hidden={!unlocked}
-                      style={unlocked ? undefined : LOCKED}
-                    >
+                  <>
+                    <div className="rs-bars">
                       {Object.entries(data.breakdown).map(([k, v]) => {
                         const max = MAX[k] ?? 20;
+                        const hidden = !unlocked && LOCKED_KEYS.includes(k);
                         return (
                           <div className="rs-bar" key={k}>
                             <span>{k}</span>
-                            <i>
+                            <i style={hidden ? LOCKED : undefined} aria-hidden={hidden}>
                               <b style={{ width: `${Math.min(100, (v / max) * 100)}%` }} />
                             </i>
-                            <em>
+                            <em style={hidden ? LOCKED : undefined} aria-hidden={hidden}>
                               {v}
                               <small>/{max}</small>
                             </em>
@@ -315,11 +313,11 @@ export default function Result() {
                     </div>
 
                     {!unlocked && (
-                      <p className="absolute inset-0 flex items-center justify-center text-[13px] font-bold text-sm-navy">
-                        항목별 점수는 가입 후 확인할 수 있어요
+                      <p className="mt-2 text-center text-[12.5px] font-bold text-gray-400">
+                        조건·방식 점수는 가입 후 확인할 수 있어요
                       </p>
                     )}
-                  </div>
+                  </>
                 )}
               </div>
 
