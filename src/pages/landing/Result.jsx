@@ -15,6 +15,27 @@ const MAX = {
   방식: 20,
 }; // 항목별 만점
 
+/*
+ * 진행률 곡선 — 처음 6초는 천천히 출발해 점점 빨라지고,
+ * 그 뒤로는 멈춘 것처럼 보이지 않게 계속 조금씩 오른다 (99를 넘지 않음)
+ * 응답이 오면 100%로 빠르게 채운다
+ */
+function curve(sec) {
+  const p = sec < 6 ? 50 * Math.pow(sec / 6, 1.5) : 50 + 49 * (1 - Math.exp(-(sec - 6) / 8));
+  return Math.min(99, Math.round(p));
+}
+
+/* 진행률에 따라 바뀌는 안내 문구 */
+function stageOf(p) {
+  if (p >= 100) return "거의 다 됐어요";
+  if (p >= 75) return "더 나은 주제를 찾고 있어요";
+  if (p >= 40) return "비슷한 탐구와 비교하고 있어요";
+  return "탐구주제를 읽고 있어요";
+}
+
+/* 비로그인일 때 가리는 스타일 */
+const LOCKED = { filter: "blur(6px)", userSelect: "none", pointerEvents: "none" };
+
 /* 판정 문구는 점수에서 직접 만든다 (AI 출력의 오타를 타지 않도록) */
 function verdictOf(score) {
   if (score >= 85) return "아주 흔해요";
@@ -88,10 +109,8 @@ function Detail({ data }) {
             {s.how && (
               <p className="rs-sug-how">
                 {s.how
-                  .replace(/흔함\s*지수\s*\d+\s*(?:점)?\s*(?:→|->)\s*\d+\s*(?:점)?/g, "")
-                  .replace(/\d+\s*(?:점)?\s*(?:→|->)\s*\d+\s*(?:점)?/g, "")
-                  .replace(/흔함\s*지수\s*[:：]?\s*\d+\s*(?:점)?/g, "")
-                  .trim()}
+                  .replace(/흔함\s*지수\s*\d+\s*(?:점)?\s*(?:→|->)\s*\d+\s*(?:점)?/g, "상위 1% 탐구주제")
+                  .replace(/\d+\s*(?:점)?\s*(?:→|->)\s*\d+\s*(?:점)?/g, "상위 1% 탐구주제")}
               </p>
             )}
 
@@ -123,30 +142,22 @@ export default function Result() {
   const [data, setData] = useState(sameTopic ? saved?.result : null);
   const [err, setErr] = useState("");
   const [progress, setProgress] = useState(0);
+  const [done, setDone] = useState(false); // 응답이 왔는지 (100%를 잠깐 보여주고 결과로)
 
   // 같은 입력으로는 요청을 한 번만 보낸다
   const req = useRef({ key: null, promise: null });
 
-  /*
-   * 끝나는 시점을 알 수 없으므로
-   * 천천히 차오르다 응답이 오면 100%로 채운다
-   */
   useEffect(() => {
-    if (data || err) {
+    if (data || err || done) {
       setProgress(100);
       return;
     }
 
     setProgress(0);
     const started = Date.now();
-
-    const t = setInterval(() => {
-      const sec = (Date.now() - started) / 1000;
-      setProgress(Math.min(95, Math.round(100 * (1 - Math.exp(-sec / 5)))));
-    }, 120);
-
+    const t = setInterval(() => setProgress(curve((Date.now() - started) / 1000)), 200);
     return () => clearInterval(t);
-  }, [data, err]);
+  }, [data, err, done]);
 
   /*
    * Supabase 진단 호출
@@ -165,13 +176,16 @@ export default function Result() {
     req.current.promise.then(({ data: res, error }) => {
       if (!alive) return;
 
+      setDone(true); // 막대를 100%로 채운다
+
       if (error || res?.error) {
         console.error("diagnose failed", error, res);
-        setErr("진단에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+        setTimeout(() => alive && setErr("진단에 실패했습니다. 잠시 후 다시 시도해 주세요."), 450);
         return;
       }
 
-      setData(res);
+      // 100%가 찬 걸 잠깐 보여준 뒤 결과로 넘어간다
+      setTimeout(() => alive && setData(res), 450);
 
       // 정상 결과만 저장 (한도 초과 / 무효 입력은 저장하지 않는다)
       if (!res?.quota_exceeded && !res?.invalid) {
@@ -257,9 +271,9 @@ export default function Result() {
           {/* 로딩 */}
           {!data ? (
             <div className="rs-loading">
-              <p>탐구주제를 진단하고 있어요</p>
+              <p>{stageOf(progress)}</p>
               <div className="rs-prog">
-                <b style={{ width: `${progress}%` }} />
+                <b style={{ width: `${progress}%`, transition: "width 0.4s ease" }} />
               </div>
               <span className="rs-pct">{progress}%</span>
             </div>
@@ -275,24 +289,36 @@ export default function Result() {
                 <p className="rs-verdict">{verdictOf(data.score)}</p>
                 <p className="rs-sub">AI가 실제 생기부 탐구 경향을 바탕으로 판단했어요</p>
 
-                {/* 세부 점수 */}
+                {/* 세부 점수 — 비로그인이면 흐리게 가리고 안내만 보여준다 */}
                 {data.breakdown && (
-                  <div className="rs-bars">
-                    {Object.entries(data.breakdown).map(([k, v]) => {
-                      const max = MAX[k] ?? 20;
-                      return (
-                        <div className="rs-bar" key={k}>
-                          <span>{k}</span>
-                          <i>
-                            <b style={{ width: `${Math.min(100, (v / max) * 100)}%` }} />
-                          </i>
-                          <em>
-                            {v}
-                            <small>/{max}</small>
-                          </em>
-                        </div>
-                      );
-                    })}
+                  <div className="relative">
+                    <div
+                      className="rs-bars"
+                      aria-hidden={!unlocked}
+                      style={unlocked ? undefined : LOCKED}
+                    >
+                      {Object.entries(data.breakdown).map(([k, v]) => {
+                        const max = MAX[k] ?? 20;
+                        return (
+                          <div className="rs-bar" key={k}>
+                            <span>{k}</span>
+                            <i>
+                              <b style={{ width: `${Math.min(100, (v / max) * 100)}%` }} />
+                            </i>
+                            <em>
+                              {v}
+                              <small>/{max}</small>
+                            </em>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {!unlocked && (
+                      <p className="absolute inset-0 flex items-center justify-center text-[13px] font-bold text-sm-navy">
+                        항목별 점수는 가입 후 확인할 수 있어요
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
@@ -336,10 +362,6 @@ export default function Result() {
                 </div>
               )}
 
-              {/* 다시 진단 — 결과가 나온 뒤에만 보여준다 */}
-              <button className="rs-again" onClick={reset}>
-                다른 주제 확인하기
-              </button>
             </>
           )}
         </div>
