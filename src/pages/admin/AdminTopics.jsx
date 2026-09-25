@@ -56,6 +56,108 @@ function RankList({ title, rows, total }) {
   );
 }
 
+/* 날짜·시간 짧게 */
+const shortTime = (t) =>
+  new Date(t).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+
+/* 사용자별 이용 — 한 사람이 몇 번, 며칠에 걸쳐 진단했는지 */
+function UsagePanel({ usage, onPick }) {
+  if (!usage) return null;
+
+  const people = usage.length;
+  const total = usage.reduce((a, u) => a + u.total, 0);
+  const members = usage.filter((u) => u.is_member).length;
+  const returning = usage.filter((u) => u.days >= 2).length;
+  const heavy = usage.filter((u) => u.total >= 3).length;
+  const pct = (n) => (people ? Math.round((n / people) * 100) : 0);
+
+  // 진단 횟수 분포
+  const dist = [
+    { key: "1회", n: usage.filter((u) => u.total === 1).length },
+    { key: "2회", n: usage.filter((u) => u.total === 2).length },
+    { key: "3회", n: usage.filter((u) => u.total === 3).length },
+    { key: "4회 이상", n: usage.filter((u) => u.total >= 4).length },
+  ];
+
+  return (
+    <div className="mt-10">
+      <h2 className="text-lg font-extrabold text-sm-navy">사용자별 이용</h2>
+      <p className="mt-1 text-[12.5px] text-gray-400">
+        회원은 계정, 비회원은 브라우저 기준으로 묶었어요. 새로 진단한 횟수만 셉니다.
+      </p>
+
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[
+          ["이용자", `${people}명`, `회원 ${members} · 비회원 ${people - members}`],
+          ["1인당 평균 진단", people ? `${(total / people).toFixed(1)}회` : "-", `총 ${total}건`],
+          ["재방문자 (2일 이상)", `${returning}명`, `${pct(returning)}%`],
+          ["3회 이상 진단", `${heavy}명`, `${pct(heavy)}%`],
+        ].map(([l, v, sub]) => (
+          <div key={l} className="rounded-xl border border-gray-200 p-5">
+            <p className="text-[12.5px] text-gray-500">{l}</p>
+            <p className="mt-1.5 text-lg font-extrabold text-sm-navy">{v}</p>
+            <p className="mt-0.5 text-[12px] text-gray-400">{sub}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_2fr]">
+        <RankList title="진단 횟수 분포" rows={dist} total={people} />
+
+        {/* 많이 쓴 사람 */}
+        <div className="overflow-x-auto rounded-xl border border-gray-200">
+          <table className="w-full min-w-[560px] text-left text-[13px]">
+            <thead className="border-b border-gray-200 bg-gray-50 text-[12px] font-bold text-gray-500">
+              <tr>
+                <th className="px-4 py-2.5">이용자</th>
+                <th className="px-4 py-2.5 text-right">진단</th>
+                <th className="px-4 py-2.5 text-right">이용 일수</th>
+                <th className="px-4 py-2.5">처음</th>
+                <th className="px-4 py-2.5">마지막</th>
+              </tr>
+            </thead>
+            <tbody>
+              {usage.slice(0, 20).map((u) => (
+                <tr
+                  key={u.user_key}
+                  onClick={() => u.is_member && onPick(u.email)}
+                  className={`border-b border-gray-100 last:border-0 ${
+                    u.is_member ? "cursor-pointer hover:bg-orange-50/40" : ""
+                  }`}
+                >
+                  <td className="whitespace-nowrap px-4 py-2.5">
+                    {u.is_member ? (
+                      <>
+                        <span className="font-bold text-sm-navy">{u.name ?? "회원"}</span>
+                        <span className="ml-1.5 text-[12px] text-gray-400">{u.email}</span>
+                      </>
+                    ) : (
+                      <span className="text-gray-500">
+                        비회원 <span className="text-[11.5px] text-gray-400">{u.user_key.slice(5, 13)}</span>
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-bold text-sm-navy">{u.total}</td>
+                  <td className={`px-4 py-2.5 text-right ${u.days >= 2 ? "font-bold text-sm-orange" : "text-gray-500"}`}>
+                    {u.days}일
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-2.5 text-gray-500">{shortTime(u.first_at)}</td>
+                  <td className="whitespace-nowrap px-4 py-2.5 text-gray-500">{shortTime(u.last_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {usage.length > 20 && (
+            <p className="border-t border-gray-100 px-4 py-2 text-[12px] text-gray-400">
+              상위 20명만 표시 · 회원을 누르면 아래 목록에서 그 사람 기록만 보여요
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* 줄을 펼쳤을 때 보이는 AI 결과 */
 function AiDetail({ r }) {
   const res = r.result ?? {};
@@ -134,6 +236,7 @@ export default function AdminTopics() {
   const [to, setTo] = useState(dayStr(0));
   const [rows, setRows] = useState([]);
   const [stats, setStats] = useState(null);
+  const [usage, setUsage] = useState(null); // 사용자별 이용
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [q, setQ] = useState("");
@@ -145,11 +248,15 @@ export default function AdminTopics() {
     setErr("");
     const args = { p_from: from || null, p_to: to || null };
 
-    const [list, stat] = await Promise.all([
+    const [list, stat, use] = await Promise.all([
       supabase.rpc("admin_topic_queries", args),
       supabase.rpc("admin_topic_stats", args),
+      supabase.rpc("admin_user_usage", args),
     ]);
     setBusy(false);
+
+    if (use.error) console.warn("usage query failed", use.error);
+    setUsage(use.error ? null : use.data ?? []);
 
     if (list.error || stat.error) {
       const e = list.error ?? stat.error;
@@ -305,6 +412,9 @@ export default function AdminTopics() {
           </div>
         </>
       )}
+
+      {/* 사용자별 이용 — 회원을 누르면 아래 목록을 그 사람으로 거른다 */}
+      <UsagePanel usage={usage} onPick={(email) => email && setQ(email)} />
 
       {/* 목록 */}
       <div className="mt-10 flex flex-wrap items-center gap-2">

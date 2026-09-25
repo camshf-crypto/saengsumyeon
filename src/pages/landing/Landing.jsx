@@ -5,6 +5,7 @@ import { SUBJECT_HINTS } from "./subjects"; // 과목 추천 목록 (직접 입�
 
 const GRADES = ["고1", "고2", "고3"];
 const TERMS = ["1학기", "2학기"];
+const TOPIC_MAX = 100; // 탐구주제 최대 글자 수
 
 /* 학년·학기 선택칸 화살표 — 브라우저 기본 화살표 대신 ▼ 모양으로 통일 */
 const ARROW = {
@@ -90,12 +91,15 @@ export default function Landing() {
   const [topic, setTopic] = useState("");
   const [focus, setFocus] = useState(null); // "dept" | "subject" | null
 
+  const tooLong = topic.trim().length > TOPIC_MAX;
+
   const ready =
     department.trim() !== "" &&
     grade !== "" &&
     term !== "" &&
     subject.trim() !== "" &&
-    topic.trim().length >= 5;
+    topic.trim().length >= 5 &&
+    topic.trim().length <= TOPIC_MAX;
 
   function submit(e) {
     e.preventDefault();
@@ -201,14 +205,29 @@ export default function Landing() {
               )}
             </div>
 
-            <textarea
-              id="topic"
-              className="tinput"
-              rows={3}
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              placeholder="탐구주제를 적어주세요&#10;예) 카페인이 청소년의 수면에 미치는 영향"
-            />
+            {/* 탐구주제 — 입력은 자유롭게, 100자를 넘으면 확인하기 버튼만 막는다 */}
+            <div className="relative">
+              <textarea
+                id="topic"
+                className="tinput"
+                rows={3}
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                placeholder="탐구주제를 적어주세요&#10;예) 카페인이 청소년의 수면에 미치는 영향"
+              />
+              <span
+                className={`pointer-events-none absolute bottom-3 right-4 text-[12px] ${
+                  tooLong ? "font-bold text-red-500" : "text-gray-400"
+                }`}
+              >
+                {topic.trim().length}/{TOPIC_MAX}
+              </span>
+            </div>
+            {tooLong && (
+              <p className="text-[13px] font-bold text-white">
+                탐구주제는 {TOPIC_MAX}자 이내로 줄여주세요.
+              </p>
+            )}
 
             <button className="tbtn" type="submit" disabled={!ready}>
               확인하기
