@@ -85,7 +85,15 @@ function Detail({ data }) {
 
           <div className="rs-sug">
             <p className="rs-sug-topic">{s.topic}</p>
-            {s.how && <p className="rs-sug-how">{s.how}</p>}
+            {s.how && (
+              <p className="rs-sug-how">
+                {s.how
+                  .replace(/흔함\s*지수\s*\d+\s*(?:점)?\s*(?:→|->)\s*\d+\s*(?:점)?/g, "")
+                  .replace(/\d+\s*(?:점)?\s*(?:→|->)\s*\d+\s*(?:점)?/g, "")
+                  .replace(/흔함\s*지수\s*[:：]?\s*\d+\s*(?:점)?/g, "")
+                  .trim()}
+              </p>
+            )}
 
             {/* 항상 동일하게 표시 */}
             <div className="rs-sug-score">

@@ -1,26 +1,22 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "./landing.css";
+import { SUBJECT_HINTS } from "./subjects"; // 과목 추천 목록 (직접 입력도 가능)
 
 const GRADES = ["고1", "고2", "고3"];
 const TERMS = ["1학기", "2학기"];
 
-/* DB에 들어 있는 과목 분류 그대로 — 학생 입력과 매칭하려면 값이 같아야 한다 */
-const SUBJECTS = [
-  "국어",
-  "수학",
-  "영어",
-  "사회",
-  "과학",
-  "한국사",
-  "교양",
-  "예술",
-  "체육",
-  "기술·가정/정보",
-  "제2외국어/한문",
-  "전문 교과 I",
-  "전문 교과 II",
-];
+/* 학년·학기 선택칸 화살표 — 브라우저 기본 화살표 대신 ▼ 모양으로 통일 */
+const ARROW = {
+  appearance: "none",
+  WebkitAppearance: "none",
+  backgroundImage:
+    "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 7'%3E%3Cpath d='M0 0h10L5 7z' fill='%231f2937'/%3E%3C/svg%3E\")",
+  backgroundRepeat: "no-repeat",
+  backgroundPosition: "right 18px center",
+  backgroundSize: "11px 8px",
+  paddingRight: "40px",
+};
 
 /* DB에 들어 있는 학과 131개 */
 const DEPARTMENTS = [
@@ -49,6 +45,41 @@ const DEPARTMENTS = [
   "화학교육과", "환경공학과", "환경원예공학과",
 ];
 
+/* 추천 검색 — 띄어쓰기·로마숫자(Ⅰ/1) 차이는 무시하고, 앞글자가 맞는 것을 먼저 보여준다 */
+const norm = (s) => s.replace(/\s/g, "").replace(/Ⅰ/g, "1").replace(/Ⅱ/g, "2").toLowerCase();
+
+function suggest(q, options) {
+  const n = norm(q);
+  if (!n) return [];
+  const hits = options.filter((o) => norm(o).includes(n));
+  if (hits.length === 1 && hits[0] === q) return []; // 이미 고른 값이면 닫는다
+  return hits
+    .sort((a, b) => Number(norm(b).startsWith(n)) - Number(norm(a).startsWith(n)))
+    .slice(0, 6);
+}
+
+/* 입력칸 바로 아래에 뜨는 추천 목록 */
+function SuggestList({ items, onPick }) {
+  if (!items.length) return null;
+  return (
+    <ul className="absolute left-0 right-0 top-full z-20 mt-1.5 overflow-hidden rounded-xl bg-white py-1 text-left shadow-lg ring-1 ring-black/10">
+      {items.map((it) => (
+        <li key={it}>
+          <button
+            type="button"
+            // 누르는 순간 입력칸 포커스가 빠져 목록이 닫히지 않게
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => onPick(it)}
+            className="block w-full px-4 py-2.5 text-left text-[14.5px] text-gray-800 hover:bg-orange-50"
+          >
+            {it}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export default function Landing() {
   const nav = useNavigate();
 
@@ -57,12 +88,13 @@ export default function Landing() {
   const [term, setTerm] = useState("");
   const [subject, setSubject] = useState("");
   const [topic, setTopic] = useState("");
+  const [focus, setFocus] = useState(null); // "dept" | "subject" | null
 
   const ready =
     department.trim() !== "" &&
     grade !== "" &&
     term !== "" &&
-    subject !== "" &&
+    subject.trim() !== "" &&
     topic.trim().length >= 5;
 
   function submit(e) {
@@ -74,7 +106,7 @@ export default function Landing() {
         department: department.trim(),
         grade,
         term,
-        subject,
+        subject: subject.trim(),
         topic: topic.trim(),
       },
     });
@@ -91,25 +123,34 @@ export default function Landing() {
           <h1>탐구주제 진단</h1>
 
           <form className="tform" onSubmit={submit}>
-            {/* 학과는 131개라 타이핑하면 걸러지도록 */}
-            <input
-              className="tfield tfull"
-              type="text"
-              list="dept-list"
-              aria-label="희망 학과"
-              value={department}
-              onChange={(e) => setDepartment(e.target.value)}
-              placeholder="희망 학과 (예: 간호학과)"
-            />
-            <datalist id="dept-list">
-              {DEPARTMENTS.map((d) => (
-                <option key={d} value={d} />
-              ))}
-            </datalist>
+            {/* 학과 — 타이핑하면 아래에 추천이 뜬다 */}
+            <div className="relative">
+              <input
+                className="tfield tfull"
+                type="text"
+                autoComplete="off"
+                aria-label="희망 학과"
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+                onFocus={() => setFocus("dept")}
+                onBlur={() => setFocus(null)}
+                placeholder="희망 학과 (예: 간호학과)"
+              />
+              {focus === "dept" && (
+                <SuggestList
+                  items={suggest(department, DEPARTMENTS)}
+                  onPick={(v) => {
+                    setDepartment(v);
+                    setFocus(null);
+                  }}
+                />
+              )}
+            </div>
 
-            <div className="trow">
+            <div className="trow relative">
               <select
                 className="tfield"
+                style={ARROW}
                 aria-label="학년"
                 value={grade}
                 onChange={(e) => setGrade(e.target.value)}
@@ -124,6 +165,7 @@ export default function Landing() {
 
               <select
                 className="tfield"
+                style={ARROW}
                 aria-label="학기"
                 value={term}
                 onChange={(e) => setTerm(e.target.value)}
@@ -136,19 +178,27 @@ export default function Landing() {
                 ))}
               </select>
 
-              <select
+              {/* 과목 — 직접 입력. 타이핑하면 줄 아래에 추천이 뜬다 */}
+              <input
                 className="tfield"
+                type="text"
+                autoComplete="off"
                 aria-label="과목"
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
-              >
-                <option value="">과목</option>
-                {SUBJECTS.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+                onFocus={() => setFocus("subject")}
+                onBlur={() => setFocus(null)}
+                placeholder="과목 직접 입력 (예: 화학Ⅰ)"
+              />
+              {focus === "subject" && (
+                <SuggestList
+                  items={suggest(subject, SUBJECT_HINTS)}
+                  onPick={(v) => {
+                    setSubject(v);
+                    setFocus(null);
+                  }}
+                />
+              )}
             </div>
 
             <textarea
