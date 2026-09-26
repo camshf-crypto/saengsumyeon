@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
+import { track } from "../../lib/track";
 
 const GRADES = ["고1", "고2", "고3"];
 
@@ -76,6 +77,7 @@ export default function Signup() {
       return;
     }
 
+    track("signup_done");
     goBack();
   }
 

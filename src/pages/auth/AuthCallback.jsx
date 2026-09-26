@@ -4,6 +4,7 @@ import { supabase } from "../../lib/supabase";
 import { getClientId } from "../../lib/clientId";
 import { RETURN_KEY } from "./Login";
 import { getRefCode, clearRefCode } from "../../lib/referral";
+import { track } from "../../lib/track";
 
 // 구글 로그인을 마치고 돌아오는 화면
 // 1) 세션 확인 → 2) 로그인 전 익명 진단을 내 기록으로 연결 → 3) 원래 가던 곳으로
@@ -61,6 +62,7 @@ export default function AuthCallback() {
 
       // 학년·약관 동의를 아직 안 받은 사람은 가입 마무리 화면으로
       const meta = session.user.user_metadata ?? {};
+      track("auth_return", !meta.agreed_at && !meta.grade ? "new" : "existing");
       if (!meta.agreed_at && !meta.grade) {
         nav("/signup", { state: back, replace: true });
         return;

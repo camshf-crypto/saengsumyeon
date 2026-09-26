@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { getRefCode } from "../../lib/referral";
+import { track } from "../../lib/track";
 
 // 구글·카카오에 다녀오는 동안 화면 이동 state가 사라지므로 잠시 보관해 둔다
 // (AuthCallback 화면에서 꺼내 쓴다)
@@ -32,6 +33,7 @@ export default function Login() {
   async function loginWith(provider) {
     setBusy(provider);
     setErr("");
+    track("oauth_start", provider); // kakao | google
 
     try {
       sessionStorage.setItem(RETURN_KEY, JSON.stringify(state ?? null));

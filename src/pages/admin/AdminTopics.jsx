@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/AuthContext";
 
@@ -16,12 +16,62 @@ const RANGES = [
 ];
 
 const PARTS = ["소재", "대상", "조건", "방식"]; // 항목별 점수 순서
+const FOCUS_LABEL = { career: "진로 연결", subject: "과목 깊이 파기" }; // 학생이 고른 방향
 const MAX = { 소재: 40, 대상: 20, 조건: 20, 방식: 20 };
 
 /* 항목별 점수 합계 — 저장된 지수와 다르면 채점 오류를 의심할 수 있다 */
 function sumOf(b) {
   if (!b) return null;
   return PARTS.reduce((acc, k) => acc + (Number(b[k]) || 0), 0);
+}
+
+/*
+ * Supabase는 한 번에 최대 1,000줄까지만 돌려준다.
+ * 목록은 1,000줄씩 나눠서 끝까지 이어 받는다 (최대 20,000줄)
+ */
+async function fetchAllRows(args) {
+  const CHUNK = 1000;
+  let all = [];
+  for (let from = 0; from < 20000; from += CHUNK) {
+    const { data, error } = await supabase
+      .rpc("admin_topic_queries", args)
+      .range(from, from + CHUNK - 1);
+    if (error) return { data: null, error };
+    all = all.concat(data ?? []);
+    if (!data || data.length < CHUNK) break;
+  }
+  return { data: all, error: null };
+}
+
+const PAGE_SIZE = 100; // 목록 한 페이지에 보여줄 줄 수
+
+/* 페이지 번호 — 10개씩 묶어서 1 2 3 … 10, 다음 묶음은 › */
+function Pager({ page, pages, onChange }) {
+  if (pages <= 1) return null;
+  const start = Math.floor((page - 1) / 10) * 10 + 1;
+  const end = Math.min(start + 9, pages);
+  const nums = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+
+  const btn = "min-w-[34px] rounded-md px-2 py-1.5 text-[13px] font-bold transition";
+  const off = "text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent";
+
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-center gap-1">
+      <button className={`${btn} ${off}`} disabled={page === 1} onClick={() => onChange(1)}>«</button>
+      <button className={`${btn} ${off}`} disabled={start === 1} onClick={() => onChange(start - 1)}>‹</button>
+      {nums.map((n) => (
+        <button
+          key={n}
+          onClick={() => onChange(n)}
+          className={`${btn} ${n === page ? "bg-sm-navy text-white" : off}`}
+        >
+          {n}
+        </button>
+      ))}
+      <button className={`${btn} ${off}`} disabled={end === pages} onClick={() => onChange(end + 1)}>›</button>
+      <button className={`${btn} ${off}`} disabled={page === pages} onClick={() => onChange(pages)}>»</button>
+    </div>
+  );
 }
 
 /* 상위 항목을 막대로 */
@@ -158,6 +208,97 @@ function UsagePanel({ usage, onPick }) {
   );
 }
 
+/*
+ * 가입 전환 — 비회원이 결과를 본 뒤 어디서 멈추는지
+ * 결과 봄 → 가입 버튼 → 카카오·구글 → 새 회원 로그인 → 가입 마무리
+ */
+function SignupPanel({ f }) {
+  if (!f) return null;
+  const n = (v) => Number(v ?? 0);
+  const pct = (a, b) => (n(b) ? Math.round((n(a) / n(b)) * 100) : null);
+
+  const gate = f.gate_by ?? {};
+  const oauth = f.oauth_by ?? {};
+
+  const steps = [
+    { label: "결과를 본 비회원", v: f.result_view, sub: "흐림 처리된 결과 화면이 뜬 브라우저" },
+    {
+      label: "가입 버튼 클릭",
+      v: f.gate_click,
+      prev: f.result_view,
+      sub: `회원가입 ${n(gate.signup)} · 로그인 ${n(gate.login)} · 한도 화면 ${n(gate.quota)}`,
+    },
+    {
+      label: "카카오·구글 선택",
+      v: f.oauth_start,
+      prev: f.gate_click,
+      sub: `카카오 ${n(oauth.kakao)} · 구글 ${n(oauth.google)}`,
+    },
+    {
+      label: "새 회원 로그인 완료",
+      v: f.auth_new,
+      prev: f.oauth_start,
+      sub: `기존 회원 로그인 ${n(f.auth_existing)}명은 제외`,
+    },
+    { label: "가입 마무리 완료", v: f.signup_done, prev: f.auth_new, sub: "학년·약관 동의까지 끝낸 회원" },
+  ];
+
+  // 가장 많이 빠지는 단계 표시
+  let worst = -1;
+  let worstRate = 101;
+  steps.forEach((s, i) => {
+    const r = i ? pct(s.v, s.prev) : null;
+    if (r != null && r < worstRate) {
+      worstRate = r;
+      worst = i;
+    }
+  });
+
+  const overall = pct(f.signup_done, f.result_view);
+
+  return (
+    <div className="mt-10">
+      <h2 className="text-lg font-extrabold text-sm-navy">가입 전환</h2>
+      <p className="mt-1 text-[12.5px] text-gray-400">
+        비회원이 결과를 본 뒤 어느 단계에서 멈추는지 봅니다.
+        {f.since && ` 기록 시작: ${new Date(f.since).toLocaleString("ko-KR")}`}
+      </p>
+
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+        {steps.map((s, i) => {
+          const r = i ? pct(s.v, s.prev) : null;
+          const bad = i === worst;
+          return (
+            <div
+              key={s.label}
+              className={`rounded-xl border p-4 ${bad ? "border-red-300 bg-red-50/50" : "border-gray-200"}`}
+            >
+              <p className="text-[12px] text-gray-500">
+                {i + 1}. {s.label}
+              </p>
+              <p className="mt-1.5 text-lg font-extrabold text-sm-navy">
+                {n(s.v)}
+                {r != null && (
+                  <span className={`ml-1.5 text-[12.5px] font-bold ${bad ? "text-red-500" : "text-sm-orange"}`}>
+                    {r}%
+                  </span>
+                )}
+              </p>
+              <p className="mt-0.5 text-[11.5px] leading-snug text-gray-400">{s.sub}</p>
+              {bad && <p className="mt-1 text-[11.5px] font-bold text-red-500">가장 많이 빠지는 단계</p>}
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="mt-2.5 text-[12.5px] text-gray-500">
+        결과를 본 비회원 중 <b className="text-sm-navy">{overall == null ? "-" : `${overall}%`}</b>가 가입까지 마쳤어요.
+        <span className="text-gray-400"> (% 는 바로 앞 단계 대비)</span>
+      </p>
+    </div>
+  );
+}
+
 /* 친구 추천 — 전환 단계 5개 + 추천/비교 그룹 비교 + 많이 데려온 회원 */
 function ReferralPanel({ stats }) {
   if (!stats) return null;
@@ -172,7 +313,7 @@ function ReferralPanel({ stats }) {
     ["추가권 사용", f.bonus_used, "받은 +3회를 실제로 쓴 횟수"],
   ];
 
-  const label = { share: "추천 화면 (50%)", control: "예전 화면 (50%)" };
+  const label = { share: "추천 화면 (50%)", control: "예전 화면 (50%)", before: "A/B 전 (전원 추천 화면)" };
 
   return (
     <div className="mt-10">
@@ -342,24 +483,32 @@ export default function AdminTopics() {
   const [stats, setStats] = useState(null);
   const [usage, setUsage] = useState(null); // 사용자별 이용
   const [refStats, setRefStats] = useState(null); // 친구 추천
+  const [funnel, setFunnel] = useState(null); // 가입 전환
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [q, setQ] = useState("");
   const [only, setOnly] = useState("all"); // all | member | anon
+  const [focusOnly, setFocusOnly] = useState("all"); // all | career | subject
   const [open, setOpen] = useState(null); // 펼친 줄의 id
+  const [page, setPage] = useState(1); // 목록 페이지
+  const listTop = useRef(null); // 페이지를 넘기면 목록 맨 위로
 
   const load = useCallback(async () => {
     setBusy(true);
     setErr("");
     const args = { p_from: from || null, p_to: to || null };
 
-    const [list, stat, use, refs] = await Promise.all([
-      supabase.rpc("admin_topic_queries", args),
+    const [list, stat, use, refs, fun] = await Promise.all([
+      fetchAllRows(args),
       supabase.rpc("admin_topic_stats", args),
       supabase.rpc("admin_user_usage", args),
       supabase.rpc("admin_referral_stats", args),
+      supabase.rpc("admin_signup_funnel", args),
     ]);
     setBusy(false);
+
+    if (fun.error) console.warn("signup funnel failed", fun.error);
+    setFunnel(fun.error ? null : fun.data ?? null);
 
     if (use.error) console.warn("usage query failed", use.error);
     setUsage(use.error ? null : use.data ?? []);
@@ -389,6 +538,7 @@ export default function AdminTopics() {
     let r = rows;
     if (only === "member") r = r.filter((x) => x.is_member);
     if (only === "anon") r = r.filter((x) => !x.is_member);
+    if (focusOnly !== "all") r = r.filter((x) => (x.focus ?? "career") === focusOnly);
 
     const k = q.trim().toLowerCase();
     if (!k) return r;
@@ -397,11 +547,36 @@ export default function AdminTopics() {
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(k))
     );
-  }, [rows, q, only]);
+  }, [rows, q, only, focusOnly]);
+
+  // 검색·필터·기간이 바뀌면 1페이지로
+  useEffect(() => {
+    setPage(1);
+    setOpen(null);
+  }, [q, only, focusOnly, rows]);
+
+  // 방향 비율 — 기간 안 전체 기록 기준
+  const focusRows = useMemo(() => {
+    const c = { career: 0, subject: 0 };
+    rows.forEach((x) => (c[x.focus === "subject" ? "subject" : "career"] += 1));
+    return [
+      { key: FOCUS_LABEL.career, n: c.career },
+      { key: FOCUS_LABEL.subject, n: c.subject },
+    ];
+  }, [rows]);
+
+  const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
+  const pageRows = shown.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  function goPage(n) {
+    setPage(n);
+    setOpen(null);
+    listTop.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   function downloadCsv() {
     const head = [
-      "일시", "회원여부", "이메일", "이름", "학과", "학년", "학기", "과목", "탐구주제", "지수",
+      "일시", "회원여부", "이메일", "이름", "학과", "학년", "학기", "과목", "방향", "탐구주제", "지수",
       "소재", "대상", "조건", "방식", "흔한 이유", "AI 제안 주제", "좁힌 방법",
     ];
     const body = shown.map((r) => {
@@ -416,6 +591,7 @@ export default function AdminTopics() {
         r.grade ?? "",
         r.term ?? "",
         r.subject ?? "",
+        FOCUS_LABEL[r.focus] ?? FOCUS_LABEL.career,
         r.topic ?? "",
         r.score ?? "",
         ...PARTS.map((k) => b[k] ?? ""),
@@ -518,6 +694,7 @@ export default function AdminTopics() {
             <RankList title="학기" rows={stats.by_term} total={total} />
             <RankList title="흔함 지수 구간" rows={stats.score_band} total={total} />
             <RankList title="날짜별" rows={stats.by_day} total={total} />
+            <RankList title="고른 방향 (방향 선택 기능 배포 후 기간으로 보세요)" rows={focusRows} total={rows.length} />
           </div>
         </>
       )}
@@ -525,12 +702,18 @@ export default function AdminTopics() {
       {/* 사용자별 이용 — 회원을 누르면 아래 목록을 그 사람으로 거른다 */}
       <UsagePanel usage={usage} onPick={(email) => email && setQ(email)} />
 
+      {/* 가입 전환 — 비회원이 어디서 멈추는지 */}
+      <SignupPanel f={funnel} />
+
       {/* 친구 추천 — 전환 단계와 A/B 그룹 비교 */}
       <ReferralPanel stats={refStats} />
 
       {/* 목록 */}
-      <div className="mt-10 flex flex-wrap items-center gap-2">
+      <div ref={listTop} className="mt-10 flex flex-wrap items-center gap-2 scroll-mt-4">
         <h2 className="text-lg font-extrabold text-sm-navy">전체 목록</h2>
+        <span className="text-[12.5px] text-gray-400">
+          {shown.length.toLocaleString()}건 · {page}/{pages}쪽
+        </span>
         <div className="flex gap-1.5">
           {[
             ["all", "전체"],
@@ -543,6 +726,26 @@ export default function AdminTopics() {
               className={`rounded-lg border px-3 py-1.5 text-[12.5px] font-bold transition ${
                 only === v
                   ? "border-sm-orange bg-orange-50 text-sm-orange"
+                  : "border-gray-300 text-gray-600"
+              }`}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex gap-1.5">
+          {[
+            ["all", "모든 방향"],
+            ["career", "진로 연결"],
+            ["subject", "과목 깊이 파기"],
+          ].map(([v, l]) => (
+            <button
+              key={v}
+              onClick={() => setFocusOnly(v)}
+              className={`rounded-lg border px-3 py-1.5 text-[12.5px] font-bold transition ${
+                focusOnly === v
+                  ? "border-sm-navy bg-sm-navy text-white"
                   : "border-gray-300 text-gray-600"
               }`}
             >
@@ -567,7 +770,7 @@ export default function AdminTopics() {
       </div>
 
       <div className="mt-3 overflow-x-auto rounded-xl border border-gray-200">
-        <table className="w-full min-w-[1180px] text-left text-[13.5px]">
+        <table className="w-full min-w-[1280px] text-left text-[13.5px]">
           <thead className="border-b border-gray-200 bg-gray-50 text-[12.5px] font-bold text-gray-500">
             <tr>
               <th className="px-4 py-3">일시</th>
@@ -575,14 +778,15 @@ export default function AdminTopics() {
               <th className="px-4 py-3">학과</th>
               <th className="px-4 py-3">학년</th>
               <th className="px-4 py-3">과목</th>
+              <th className="px-4 py-3">방향</th>
               <th className="px-4 py-3">학생 입력 주제</th>
               <th className="px-4 py-3 text-right">지수</th>
               <th className="px-4 py-3">AI 제안 주제</th>
             </tr>
           </thead>
           <tbody>
-            {shown.map((r, i) => {
-              const key = r.id ?? i;
+            {pageRows.map((r, i) => {
+              const key = r.id ?? `${page}-${i}`;
               const isOpen = open === key;
               const sug = r.result?.suggestion?.topic;
               return (
@@ -619,6 +823,15 @@ export default function AdminTopics() {
                       {r.term ? ` ${r.term}` : ""}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-gray-500">{r.subject}</td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <span
+                        className={`rounded px-2 py-0.5 text-[11.5px] font-bold ${
+                          r.focus === "subject" ? "bg-blue-50 text-blue-600" : "bg-orange-50 text-sm-orange"
+                        }`}
+                      >
+                        {FOCUS_LABEL[r.focus] ?? FOCUS_LABEL.career}
+                      </span>
+                    </td>
                     <td className="px-4 py-3">{r.topic}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-right">
                       {r.score == null ? (
@@ -634,7 +847,7 @@ export default function AdminTopics() {
 
                   {isOpen && (
                     <tr className="border-b border-gray-100">
-                      <td colSpan={8} className="p-0">
+                      <td colSpan={9} className="p-0">
                         <AiDetail r={r} />
                       </td>
                     </tr>
@@ -645,7 +858,7 @@ export default function AdminTopics() {
 
             {!shown.length && !busy && (
               <tr>
-                <td colSpan={8} className="px-4 py-16 text-center text-gray-400">
+                <td colSpan={9} className="px-4 py-16 text-center text-gray-400">
                   기록이 없습니다.
                 </td>
               </tr>
@@ -653,6 +866,8 @@ export default function AdminTopics() {
           </tbody>
         </table>
       </div>
+
+      <Pager page={page} pages={pages} onChange={goPage} />
     </div>
   );
 }

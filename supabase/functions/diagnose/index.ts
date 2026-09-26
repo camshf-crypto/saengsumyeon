@@ -14,11 +14,12 @@ const DAILY_LIMIT = 3; // 로그인: 하루 3회
 const ANON_LIMIT = 1; // 비로그인: 브라우저당 하루 1회
 
 // 제안 주제에 연도·날짜가 들어갔는지 (예: 2024, 1901~1933, 24년, 10~12월)
-const DATE_RE = /\d{4}|\d{1,2}\s*년(?!생)|\d{1,2}\s*월|\d+\s*[~.]\s*\d+/;
+// 모델명·규격 숫자(NACA 0012, 18650 셀, PM2.5, PEG 3350)는 날짜로 보지 않는다
+const DATE_RE = /(?<![\d.])(19|20)\d{2}(?![\d.])|(?<!\d)\d{1,2}\s*년(?!생|간|차)|(?<!\d)\d{1,2}\s*월(?!급)/;
 
 const SYSTEM = `세특 탐구주제가 얼마나 흔한지 채점하고, 좁힌 대안 1개를 제시한다. JSON만 출력.
 
-무효(의미 없는 문자열·탐구가 아닌 요청·부적절한 내용)면 {"invalid":true,"invalid_reason":"한 문장"}. 오타나 거친 표현은 채점한다.
+무효(의미 없는 문자열·"모르겠어요"·"추천해줘" 같은 탐구가 아닌 말·부적절한 내용)면 {"invalid":true,"invalid_reason":"한 문장"}. 오타나 거친 표현은 채점한다.
 
 채점(높을수록 흔함, 제시된 값만). 입력에 드러나지 않은 항목은 최고점을 준다:
 소재 40/30/20/10/5/0: 누구나 떠올리는 소재(카페인·기후변화)→독창적
@@ -30,23 +31,43 @@ const SYSTEM = `세특 탐구주제가 얼마나 흔한지 채점하고, 좁힌 
 대안:
 - 학생의 관심 소재는 살리고 [방향]에 맞춰 좁힌다. 단, 질문이 비현실적이거나 사실·논리가 맞지 않으면(예: "초전도체로 건물 띄우기") 관심은 살린 채 실제로 탐구할 수 있는 질문으로 바꾼다
 - 방법은 주제에 맞춘다: 수량 관계는 모형·계산, 자연 현상은 실험·측정, 글·사회 현상은 문헌·사례 비교. 설문은 사람의 인식·행동을 다룰 때만 쓰고, "우리 학교"나 설문을 억지로 붙이지 않는다
-- 과목은 주제와 자연스럽게 이어질 때만 그 과목의 개념·활동을 활용한다. 어울리지 않으면 과목에 억지로 엮지 않는다
-- 난이도는 학생이 쓴 주제 수준을 기준으로 조금만(80% 정도) 낮춘다. 쉬운 주제는 쉽게, 어려운 주제는 어렵게 두고, 학생이 쓴 개념·도구(예: 매트랩, 미카엘리스-멘텐)는 맞게 쓰였으면 살린다
+- [방향]이 과목 깊이 파기면 과목 개념을 중심에 두고, 진로 연결이면 과목은 주제와 자연스럽게 이어질 때만 활용한다. 어울리지 않으면 과목에 억지로 엮지 않는다
+- 대안은 학생이 쓴 주제보다 어렵게 만들지 않는다. 난이도는 학생 주제 수준을 기준으로 조금만(80% 정도) 낮춘다. 쉬운 주제는 쉽게, 어려운 주제는 어렵게 두고, 학생이 쓴 개념·도구(예: 매트랩, 미카엘리스-멘텐)는 맞게 쓰였으면 살린다
 - 학생이 직접 구할 수 없는 자료(해외 기관 내부 자료·임상 수치)와 "규명" 같은 과한 목표만 뺀다
 - 비교하면 무엇과 무엇인지 밝히고, 참고 사례를 쓰면 그것을 어떻게 활용하는지까지 한 흐름으로 쓴다
-- 40~60자 한 문장, 명사 나열 금지, "~하는 탐구"로 끝맺는다
+- 40~60자 한 문장, 명사 나열 금지, "~하는 탐구"로 끝맺는다. 고등학생이 한 번에 읽히게 쓰고, 영어 약어·전문용어는 학생이 먼저 쓴 것만 쓴다
 - [방향]은 내용으로만 반영한다. "~관점에서", "~수준으로", 학생 학년 같은 지시 표현을 주제에 쓰지 않는다
 - 연도·날짜·기간 숫자, 합격 단정, 가짜 통계 금지
-reason과 how는 "~예요" 존댓말. reason은 매긴 점수와 맞게 쓰고, how에는 좁힌 방법과 계열·전공·직업의 연결점을 쓴다. 질문을 크게 바꿨다면 왜 바꿨는지도 how에 짧게 쓴다.
+reason과 how는 "~예요" 존댓말. reason은 매긴 점수와 맞게 쓰고, how에는 좁힌 방법과 [방향]의 연결점(진로 연결이면 계열·전공·직업, 과목 깊이 파기면 수업 개념)을 쓴다. 질문을 크게 바꿨다면 왜 바꿨는지도 how에 짧게 쓴다.
 
 {"invalid":false,"breakdown":{"소재":0,"대상":0,"조건":0,"방식":0},"reason":"흔한 이유 2~3문장(소재·방식)","suggestion":{"topic":"","how":"한 문장"}}`;
 
-/* 학년별 대안 방향 — 입력에는 해당 학년 한 줄만 넣는다 */
-const DIRECTION: Record<string, string> = {
-  고1: "희망학과가 속한 큰 계열(인문·사회·자연·공학·의약·교육·예체능) 전반에 두루 쓰일 내용으로 넓게 잡는다. 흔함 40~55 정도로 가볍게 좁힌다.",
-  고2: "희망학과 전공에서 실제로 배우는 개념과 직접 이어지게 한다. 흔함 30~45 정도로 좁힌다.",
-  고3: "희망학과 졸업 후 직업의 실제 업무·현장 문제와 이어지게 한다. 흔함 30~45 정도로 좁힌다.",
+/* 탐구주제가 아닌 입력 — AI를 부르지 않고 바로 안내한다 (저장된 예전 결과보다 먼저 확인) */
+const NON_TOPIC =
+  /^\s*(모르겠\S*|몰라\S*|모름|없음|없어요?|없습니다|아무거나|아무\s*주제|주제\s*추천\S*|추천(해\s*줘|해\s*주세요)?|알려\s*줘\S*|테스트|test|[ㅋㅎㅇㄴㅁㄹ]+|[?.!~]+)\s*[.!?~]*\s*$/i;
+
+/* 대안 방향 — 입력에는 학생이 고른 방향 + 학년 난이도 한 줄만 넣는다 */
+// 진로 연결: 학년에 따라 계열 → 전공 → 직업
+const CAREER: Record<string, string> = {
+  고1: "희망학과가 속한 큰 계열(인문·사회·자연·공학·의약·교육·예체능) 전반에 두루 쓰일 내용으로 넓게 잡는다.",
+  고2: "희망학과 전공에서 실제로 배우는 개념과 직접 이어지게 한다.",
+  고3: "희망학과 졸업 후 직업의 실제 업무·현장 문제와 이어지게 한다.",
 };
+// 과목 깊이 파기: 희망학과와 엮지 않고 과목 수업 개념 중심
+const SUBJECT_FOCUS =
+  "희망학과와 연결하지 않는다. 이 과목 수업에서 배우는 개념·원리·활동을 중심에 두고 그 내용을 한 단계 깊게 파고든다.";
+// 학년별 난이도 (두 방향 공통)
+const LEVEL: Record<string, string> = {
+  고1: "방법은 자료 조사·사례 정리·두 사례 비교처럼 가볍게 하고, 변수를 재거나 효과를 검증하는 실험·측정 설계는 쓰지 않는다. 흔함 40~55 정도로 가볍게 좁힌다.",
+  고2: "방법은 비교·설문·간단한 측정까지. 흔함 30~45 정도로 좁힌다.",
+  고3: "측정·분석까지 해도 된다. 흔함 30~45 정도로 좁힌다.",
+};
+
+function directionOf(focus: string, grade: string) {
+  const g = LEVEL[grade] ? grade : "고2";
+  const dir = focus === "subject" ? `과목 깊이 파기 — ${SUBJECT_FOCUS}` : `진로 연결 — ${CAREER[g]}`;
+  return `${dir} ${LEVEL[g]}`;
+}
 
 /* 어느 탐구에나 들어가는 말은 유사사례 검색에서 뺀다 */
 const STOP = new Set([
@@ -121,8 +142,12 @@ function scoreOf(r: any) {
   return { breakdown: b, score: Object.values(b).reduce((a, c) => a + c, 0) };
 }
 
+/* 테스트용 — 여기 넣은 회원은 항상 추천 화면 (camshf@gmail.com) */
+const FORCE_SHARE = new Set(["fd378c79-55a5-4d61-a5d3-035afa118519"]);
+
 /* 추천 화면 A/B 그룹 — 회원 id 마지막 글자로 나눠서 같은 회원은 항상 같은 그룹 */
 function variantOf(userId: string): "share" | "control" {
+  if (FORCE_SHARE.has(userId)) return "share";
   const last = parseInt(userId.replace(/-/g, "").slice(-1), 16);
   return Number.isFinite(last) && last % 2 === 0 ? "share" : "control";
 }
@@ -134,7 +159,7 @@ function problems(r: any): string[] {
   const out: string[] = [];
   if (DATE_RE.test(t + (r.suggestion.how ?? ""))) out.push("연도·날짜·기간 숫자를 모두 빼세요.");
   if (t.length < 40 || t.length > 70) out.push(`대안 주제가 ${t.length}자입니다. 40~60자 한 문장으로 쓰세요.`);
-  if (/관점에서|관점으로|계열별|고[123]|수준으로|수준에서/.test(t)) out.push('"~관점에서", "고2 수준" 같은 지시 표현을 빼고 실제 내용으로 쓰세요.');
+  if (/관점에서|관점으로|계열별|고[123]|수준으로|수준에서|깊이\s*파기|진로\s*연결/.test(t)) out.push('"~관점에서", "고2 수준" 같은 지시 표현을 빼고 실제 내용으로 쓰세요.');
   if (/하겠|규명/.test(t)) out.push('"~하겠다", "규명" 같은 표현 없이 "~하는 탐구"로 쓰세요.');
   if (!/탐구$/.test(t.trim().replace(/[.。]$/, ""))) out.push('대안 주제는 "~탐구"로 끝맺으세요.');
   return out;
@@ -144,11 +169,19 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
   try {
-    const { department, grade, term, subject, topic, user_id, client_id } = await req.json();
+    const { department, grade, term, subject, topic, user_id, client_id, focus: rawFocus } = await req.json();
+    const focus = rawFocus === "subject" ? "subject" : "career"; // 기본은 진로 연결
     if (!topic || !department || !subject) return json({ error: "입력값이 부족합니다." }, 400);
     // 화면에서 100자로 막지만, 우회한 요청도 걸러 비용을 막는다
     if (String(topic).length > 120 || String(department).length > 40 || String(subject).length > 40) {
       return json({ error: "입력이 너무 깁니다." }, 400);
+    }
+
+    if (NON_TOPIC.test(String(topic))) {
+      return json({
+        invalid: true,
+        invalid_reason: "아직 탐구주제가 정해지지 않은 것 같아요. 관심 있는 소재나 궁금한 점을 한 문장으로 적어주세요.",
+      });
     }
 
     const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
@@ -163,6 +196,7 @@ Deno.serve(async (req) => {
         p_topic: topic,
         p_daily_limit: DAILY_LIMIT,
         p_anon_limit: ANON_LIMIT,
+        p_focus: focus,
       })
       .single();
     if (quotaErr) console.error("quota check failed", quotaErr);
@@ -232,7 +266,7 @@ Deno.serve(async (req) => {
       `학년: ${grade ?? ""} ${term ?? ""}`.trim(),
       `과목: ${subject}`,
       `탐구주제: ${topic}`,
-      `[방향] ${DIRECTION[grade] ?? DIRECTION["고2"]}`,
+      `[방향] ${directionOf(focus, grade)}`,
       "",
       `[실제 세특 기록] 같은 학과에서 비슷한 탐구 ${similarCount >= 50 ? "50건 이상" : `${similarCount}건`}`,
       ...similar.map((s) => `- ${s}`),
@@ -274,6 +308,7 @@ Deno.serve(async (req) => {
       topic,
       score: result.score ?? null,
       match_count: similarCount,
+      focus,
       result: full,
     });
     if (logErr) console.error("log insert failed", logErr);

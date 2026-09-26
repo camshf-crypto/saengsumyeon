@@ -4,6 +4,7 @@ import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/AuthContext";
 import { getClientId } from "../../lib/clientId";
 import { refLink } from "../../lib/referral";
+import { track } from "../../lib/track";
 import "./landing.css";
 
 // 로그인하러 다녀와도 결과가 남아 있도록 localStorage에 보관한다
@@ -246,7 +247,10 @@ export default function Result() {
   const input = state?.topic ? state : saved?.input ?? null;
   const inputKey = input ? JSON.stringify(input) : null;
 
-  const sameTopic = saved?.input?.topic === input?.topic;
+  // 같은 주제라도 방향(진로 연결 / 과목 깊이 파기)이 다르면 새로 진단한다
+  const sameTopic =
+    saved?.input?.topic === input?.topic &&
+    (saved?.input?.focus ?? "career") === (input?.focus ?? "career");
 
   const [data, setData] = useState(sameTopic ? saved?.result : null);
   const [err, setErr] = useState("");
@@ -312,10 +316,21 @@ export default function Result() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inputKey, data]);
 
+  // 가입 단계 기록: 비회원이 결과(흐림 처리된 화면)를 본 순간 — 주제당 한 번
+  const viewed = useRef(null);
+  const showsGate = Boolean(data) && !user && !data.quota_exceeded && !data.invalid;
+  useEffect(() => {
+    if (showsGate && viewed.current !== inputKey) {
+      viewed.current = inputKey;
+      track("result_view");
+    }
+  }, [showsGate, inputKey]);
+
   // 입력값 자체가 없으면 메인으로
   if (!input) return <Navigate to="/" replace />;
 
   const { department, grade, term, subject, topic } = input;
+  const focusLabel = input.focus === "subject" ? "과목 깊이 파기" : "진로 연결";
 
   // 로그인했으면 이유와 제안을 보여준다
   const unlocked = Boolean(user);
@@ -346,7 +361,13 @@ export default function Result() {
         action={
           member
             ? { label: "처음으로", onClick: reset }
-            : { label: "회원가입하기", onClick: () => nav("/signup", { state: input }) }
+            : {
+                label: "회원가입하기",
+                onClick: () => {
+                  track("gate_click", "quota");
+                  nav("/signup", { state: input });
+                },
+              }
         }
       />
     );
@@ -376,7 +397,7 @@ export default function Result() {
         <div className="wrap">
           {/* 입력 정보 */}
           <p className="rs-meta">
-            {department} · {grade} · {term} · {subject}
+            {department} · {grade} · {term} · {subject} · {focusLabel}
           </p>
           <p className="rs-topic">{topic}</p>
 
@@ -456,14 +477,20 @@ export default function Result() {
 
                     <button
                       className="tbtn rs-gate-btn"
-                      onClick={() => nav("/signup", { state: input })}
+                      onClick={() => {
+                        track("gate_click", "signup");
+                        nav("/signup", { state: input });
+                      }}
                     >
                       회원가입하고 제안받기
                     </button>
 
                     <button
                       className="rs-gate-sub"
-                      onClick={() => nav("/login", { state: input })}
+                      onClick={() => {
+                        track("gate_click", "login");
+                        nav("/login", { state: input });
+                      }}
                     >
                       이미 계정이 있어요 · 로그인
                     </button>

@@ -7,6 +7,12 @@ const GRADES = ["고1", "고2", "고3"];
 const TERMS = ["1학기", "2학기"];
 const TOPIC_MAX = 100; // 탐구주제 최대 글자 수
 
+/* 제안 주제를 어떤 방향으로 바꿀지 — 학생이 반드시 하나를 고른다 */
+const FOCUS = [
+  { v: "career", label: "진로 연결", desc: "희망 학과와 이어지게" },
+  { v: "subject", label: "과목 깊이 파기", desc: "이 과목 내용 중심으로" },
+];
+
 /* 학년·학기 선택칸 화살표 — 브라우저 기본 화살표 대신 ▼ 모양으로 통일 */
 const ARROW = {
   appearance: "none",
@@ -89,6 +95,7 @@ export default function Landing() {
   const [term, setTerm] = useState("");
   const [subject, setSubject] = useState("");
   const [topic, setTopic] = useState("");
+  const [direction, setDirection] = useState(""); // 제안 방향: career(진로 연결) | subject(과목 깊이 파기) — 처음엔 선택 없음
   const [focus, setFocus] = useState(null); // "dept" | "subject" | null
 
   const tooLong = topic.trim().length > TOPIC_MAX;
@@ -99,7 +106,8 @@ export default function Landing() {
     term !== "" &&
     subject.trim() !== "" &&
     topic.trim().length >= 5 &&
-    topic.trim().length <= TOPIC_MAX;
+    topic.trim().length <= TOPIC_MAX &&
+    direction !== "";
 
   function submit(e) {
     e.preventDefault();
@@ -112,6 +120,7 @@ export default function Landing() {
         term,
         subject: subject.trim(),
         topic: topic.trim(),
+        focus: direction,
       },
     });
   }
@@ -228,6 +237,35 @@ export default function Landing() {
                 탐구주제는 {TOPIC_MAX}자 이내로 줄여주세요.
               </p>
             )}
+
+            {/* 방향 선택 — 주제를 쓴 다음, 어느 쪽으로 바꿀지 고른다 */}
+            <div className="mt-2 mb-1">
+              <p className="mb-2 text-center text-[13.5px] font-bold text-white">
+                어떤 방향으로 바꿔드릴까요?
+                {!direction && <span className="ml-1.5 font-normal text-white/85">하나를 골라주세요</span>}
+              </p>
+              <div className="grid grid-cols-2 gap-2.5">
+                {FOCUS.map((f) => {
+                  const on = direction === f.v;
+                  return (
+                    <button
+                      key={f.v}
+                      type="button"
+                      onClick={() => setDirection(f.v)}
+                      aria-pressed={on}
+                      className={`rounded-xl px-4 py-3 text-center transition ${
+                        on
+                          ? "bg-white text-sm-navy shadow-md ring-2 ring-sm-navy"
+                          : "bg-white/20 text-white ring-1 ring-white/40 hover:bg-white/30"
+                      }`}
+                    >
+                      <p className="text-[14.5px] font-extrabold">{f.label}</p>
+                      <p className={`mt-0.5 text-[12px] ${on ? "text-gray-500" : "text-white/90"}`}>{f.desc}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
             <button className="tbtn" type="submit" disabled={!ready}>
               확인하기
