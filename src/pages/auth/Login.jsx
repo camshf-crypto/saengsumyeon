@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
+import { getRefCode } from "../../lib/referral";
 
 // 구글·카카오에 다녀오는 동안 화면 이동 state가 사라지므로 잠시 보관해 둔다
 // (AuthCallback 화면에서 꺼내 쓴다)
@@ -15,6 +16,17 @@ export default function Login() {
   const inApp = IN_APP.test(navigator.userAgent);
 
   const [err, setErr] = useState("");
+
+  // 앱 안 브라우저에서 "외부 브라우저로 열기"를 누르면 지금 주소가 그대로 넘어간다.
+  // 그때 추천 코드도 같이 넘어가도록 주소 뒤에 붙여둔다 (화면 이동 없이 주소만 바꿈)
+  useEffect(() => {
+    const ref = getRefCode();
+    if (!inApp || !ref) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("ref") === ref) return;
+    url.searchParams.set("ref", ref);
+    window.history.replaceState(window.history.state, "", url.toString());
+  }, [inApp]);
   const [busy, setBusy] = useState(""); // 진행 중인 로그인 ("kakao" | "google")
 
   async function loginWith(provider) {

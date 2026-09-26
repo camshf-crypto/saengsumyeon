@@ -158,6 +158,110 @@ function UsagePanel({ usage, onPick }) {
   );
 }
 
+/* 친구 추천 — 전환 단계 5개 + 추천/비교 그룹 비교 + 많이 데려온 회원 */
+function ReferralPanel({ stats }) {
+  if (!stats) return null;
+  const f = stats.funnel ?? {};
+  const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : "-");
+
+  const steps = [
+    ["3회 소진", f.quota_hit, "추천 그룹 + 비교 그룹 회원 수"],
+    ["공유 클릭", f.share_click, `3회 소진 대비 ${pct(f.share_click, f.quota_hit)}`],
+    ["친구 유입", f.ref_visit, "추천 링크로 들어온 브라우저"],
+    ["친구 가입+진단", f.rewarded, `가입 ${f.joined ?? 0}명 중 ${pct(f.rewarded, f.joined)}`],
+    ["추가권 사용", f.bonus_used, "받은 +3회를 실제로 쓴 횟수"],
+  ];
+
+  const label = { share: "추천 화면 (50%)", control: "예전 화면 (50%)" };
+
+  return (
+    <div className="mt-10">
+      <h2 className="text-lg font-extrabold text-sm-navy">친구 추천</h2>
+      <p className="mt-1 text-[12.5px] text-gray-400">
+        3회를 다 쓴 회원 중 절반에게만 추천 화면을 보여주고, 나머지 절반과 비교합니다.
+      </p>
+
+      {/* 전환 단계 */}
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+        {steps.map(([l, v, sub], i) => (
+          <div key={l} className="rounded-xl border border-gray-200 p-4">
+            <p className="text-[12px] text-gray-500">
+              {i + 1}. {l}
+            </p>
+            <p className="mt-1.5 text-lg font-extrabold text-sm-navy">{v ?? 0}</p>
+            <p className="mt-0.5 text-[11.5px] text-gray-400">{sub}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* 그룹 비교 */}
+      <div className="mt-3 overflow-x-auto rounded-xl border border-gray-200">
+        <table className="w-full min-w-[640px] text-left text-[13px]">
+          <thead className="border-b border-gray-200 bg-gray-50 text-[12px] font-bold text-gray-500">
+            <tr>
+              <th className="px-4 py-2.5">그룹</th>
+              <th className="px-4 py-2.5 text-right">3회 소진 회원</th>
+              <th className="px-4 py-2.5 text-right">공유 누름</th>
+              <th className="px-4 py-2.5 text-right">24시간 뒤 다시 진단</th>
+              <th className="px-4 py-2.5 text-right">소진 후 평균 진단</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(stats.groups ?? []).map((g) => (
+              <tr key={g.variant} className="border-b border-gray-100 last:border-0">
+                <td className="px-4 py-2.5 font-bold text-sm-navy">{label[g.variant] ?? g.variant}</td>
+                <td className="px-4 py-2.5 text-right">{g.users}</td>
+                <td className="px-4 py-2.5 text-right">
+                  {g.variant === "control" ? <span className="text-gray-300">-</span> : `${g.shared} (${pct(g.shared, g.users)})`}
+                </td>
+                <td className="px-4 py-2.5 text-right font-bold text-sm-orange">
+                  {g.returned} ({pct(g.returned, g.users)})
+                </td>
+                <td className="px-4 py-2.5 text-right">{g.avg_after ?? 0}회</td>
+              </tr>
+            ))}
+            {!stats.groups?.length && (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
+                  아직 3회를 다 쓴 회원이 없습니다.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* 많이 데려온 회원 */}
+      {stats.top?.length > 0 && (
+        <div className="mt-3 overflow-x-auto rounded-xl border border-gray-200">
+          <table className="w-full min-w-[560px] text-left text-[13px]">
+            <thead className="border-b border-gray-200 bg-gray-50 text-[12px] font-bold text-gray-500">
+              <tr>
+                <th className="px-4 py-2.5">추천한 회원</th>
+                <th className="px-4 py-2.5">코드</th>
+                <th className="px-4 py-2.5 text-right">가입한 친구</th>
+                <th className="px-4 py-2.5 text-right">보상 받은 친구</th>
+                <th className="px-4 py-2.5 text-right">남은 추가권</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stats.top.map((t) => (
+                <tr key={t.code} className="border-b border-gray-100 last:border-0">
+                  <td className="px-4 py-2.5 text-gray-600">{t.email}</td>
+                  <td className="px-4 py-2.5 font-mono text-[12px] text-gray-500">{t.code}</td>
+                  <td className="px-4 py-2.5 text-right">{t.invited}</td>
+                  <td className="px-4 py-2.5 text-right font-bold text-sm-navy">{t.rewarded}</td>
+                  <td className="px-4 py-2.5 text-right">{t.credits}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* 줄을 펼쳤을 때 보이는 AI 결과 */
 function AiDetail({ r }) {
   const res = r.result ?? {};
@@ -237,6 +341,7 @@ export default function AdminTopics() {
   const [rows, setRows] = useState([]);
   const [stats, setStats] = useState(null);
   const [usage, setUsage] = useState(null); // 사용자별 이용
+  const [refStats, setRefStats] = useState(null); // 친구 추천
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [q, setQ] = useState("");
@@ -248,15 +353,19 @@ export default function AdminTopics() {
     setErr("");
     const args = { p_from: from || null, p_to: to || null };
 
-    const [list, stat, use] = await Promise.all([
+    const [list, stat, use, refs] = await Promise.all([
       supabase.rpc("admin_topic_queries", args),
       supabase.rpc("admin_topic_stats", args),
       supabase.rpc("admin_user_usage", args),
+      supabase.rpc("admin_referral_stats", args),
     ]);
     setBusy(false);
 
     if (use.error) console.warn("usage query failed", use.error);
     setUsage(use.error ? null : use.data ?? []);
+
+    if (refs.error) console.warn("referral stats failed", refs.error);
+    setRefStats(refs.error ? null : refs.data ?? null);
 
     if (list.error || stat.error) {
       const e = list.error ?? stat.error;
@@ -415,6 +524,9 @@ export default function AdminTopics() {
 
       {/* 사용자별 이용 — 회원을 누르면 아래 목록을 그 사람으로 거른다 */}
       <UsagePanel usage={usage} onPick={(email) => email && setQ(email)} />
+
+      {/* 친구 추천 — 전환 단계와 A/B 그룹 비교 */}
+      <ReferralPanel stats={refStats} />
 
       {/* 목록 */}
       <div className="mt-10 flex flex-wrap items-center gap-2">

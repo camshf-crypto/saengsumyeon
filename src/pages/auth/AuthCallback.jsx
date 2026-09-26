@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { getClientId } from "../../lib/clientId";
 import { RETURN_KEY } from "./Login";
+import { getRefCode, clearRefCode } from "../../lib/referral";
 
 // 구글 로그인을 마치고 돌아오는 화면
 // 1) 세션 확인 → 2) 로그인 전 익명 진단을 내 기록으로 연결 → 3) 원래 가던 곳으로
@@ -36,6 +37,18 @@ export default function AuthCallback() {
         p_client_id: getClientId(),
       });
       if (error) console.warn("claim failed", error);
+
+      // 추천 링크로 들어온 새 회원이면 추천한 사람과 연결한다
+      // (가입 전에 이미 진단했다면 이 자리에서 추천인에게 +3회가 지급된다)
+      const ref = getRefCode();
+      if (ref) {
+        const { data: rr, error: re } = await supabase.rpc("claim_referral", { p_code: ref });
+        if (re) console.warn("referral claim failed", re);
+        else {
+          console.info("referral:", rr); // ok | self | not_new | no_code
+          clearRefCode(); // 한 번 확인했으면 결과와 상관없이 지운다
+        }
+      }
 
       // 로그인 화면에서 보관해 둔 진단 정보를 꺼낸다
       let back = null;

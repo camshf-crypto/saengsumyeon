@@ -3,6 +3,7 @@ import { useLocation, useNavigate, Navigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/AuthContext";
 import { getClientId } from "../../lib/clientId";
+import { refLink } from "../../lib/referral";
 import "./landing.css";
 
 // 로그인하러 다녀와도 결과가 남아 있도록 localStorage에 보관한다
@@ -85,6 +86,113 @@ function Notice({ topic, title, body, note, action }) {
             <p>{body}</p>
             {note && <p className="rs-invalid-ex">{note}</p>}
             <button onClick={action.onClick}>{action.label}</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/*
+ * 회원이 하루 3회를 다 썼을 때 — 친구 추천으로 +3회 받기
+ * (추가권이 있으면 서버가 그냥 진단해주므로, 이 화면은 추가권이 없을 때만 뜬다)
+ */
+function ShareGate({ topic, onHome }) {
+  const [info, setInfo] = useState(null); // { my_code, my_credits, invited_count, rewarded_count }
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    supabase.rpc("get_my_referral").then(({ data, error }) => {
+      if (error) {
+        console.warn("referral info failed", error);
+        setInfo({ error: true });
+        return;
+      }
+      setInfo(Array.isArray(data) ? data[0] : data);
+    });
+  }, []);
+
+  const link = info?.my_code ? refLink(info.my_code) : "";
+
+  function log(type) {
+    supabase
+      .rpc("log_ref_event", { p_type: type, p_code: info?.my_code ?? null, p_client_id: getClientId() })
+      .then(({ error }) => error && console.warn("ref event failed", error));
+  }
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(link);
+      setMsg("링크가 복사됐어요. 카톡이나 DM에 붙여넣어 친구에게 보내주세요.");
+    } catch {
+      // 앱 안 브라우저 등에서 복사가 막히면 직접 복사하게 띄운다
+      window.prompt("아래 링크를 길게 눌러 복사해 주세요", link);
+    }
+  }
+
+  // 버튼 하나 — 휴대폰은 공유 창, 공유 창이 없으면 링크 복사
+  async function share() {
+    log("share_click");
+    // 공유 창은 휴대폰에서만 쓴다 (PC는 윈도우 공유 창이 떠서 오히려 번거롭다)
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isMobile && navigator.share) {
+      try {
+        await navigator.share({
+          title: "생수면 · 탐구주제 진단",
+          text: "내 탐구주제, 흔한 주제일까? 무료로 진단해봐!",
+          url: link,
+        });
+        return;
+      } catch (e) {
+        if (e?.name === "AbortError") return; // 공유 창을 닫은 경우
+      }
+    }
+    log("link_copy"); // PC나 공유 창이 없는 앱 안 브라우저 → 링크 복사
+    await copy();
+  }
+
+  return (
+    <div className="lp">
+      <section className="rs">
+        <div className="wrap">
+          {topic && <p className="rs-topic">{topic}</p>}
+
+          <div className="rounded-2xl border border-gray-200 bg-white px-6 py-8 text-center">
+            <p className="text-[18px] font-extrabold text-sm-navy">오늘 무료 진단 3번을 모두 사용했어요</p>
+            <p className="mt-2 text-[14px] leading-relaxed text-gray-600">
+              한 번 더 확인해보고 싶은 탐구주제가 있나요?
+              <br />
+              친구 1명이 가입하고 진단하면 <b className="text-sm-orange">+3회</b>를 드려요.
+            </p>
+
+            <button
+              onClick={share}
+              disabled={!link}
+              className="tbtn mt-6 w-full disabled:opacity-50"
+            >
+              친구에게 공유하고 +3회 받기
+            </button>
+
+            {msg && <p className="mt-3 text-[13px] font-bold text-sm-orange">{msg}</p>}
+            {info?.error && (
+              <p className="mt-3 text-[13px] text-red-500">추천 링크를 불러오지 못했어요. 새로고침해 주세요.</p>
+            )}
+
+            {info && !info.error && (
+              <p className="mt-5 text-[12.5px] text-gray-400">
+                지금까지 초대 {info.invited_count ?? 0}명 · 보상 받은 친구 {info.rewarded_count ?? 0}명
+              </p>
+            )}
+
+            <p className="mt-4 text-[12px] leading-relaxed text-gray-400">
+              친구가 링크로 들어와 새로 가입하고 진단 1번을 마치면 추가권이 들어와요.
+              <br />
+              추가권은 기한 없이 쌓이고, 하루 무료 3번을 다 쓴 뒤에 사용돼요.
+            </p>
+
+            <button onClick={onHome} className="mt-5 text-[13px] text-gray-400 underline">
+              처음으로
+            </button>
           </div>
         </div>
       </section>
@@ -221,6 +329,9 @@ export default function Result() {
   // 하루 진단 횟수를 다 쓴 경우
   if (data?.quota_exceeded) {
     const member = data.is_member;
+
+    // 회원 — 추천 그룹이면 친구 추천 화면, 비교 그룹이면 예전 화면 (A/B 테스트)
+    if (member && data.variant !== "control") return <ShareGate topic={topic} onHome={reset} />;
 
     return (
       <Notice

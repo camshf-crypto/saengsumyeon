@@ -121,6 +121,12 @@ function scoreOf(r: any) {
   return { breakdown: b, score: Object.values(b).reduce((a, c) => a + c, 0) };
 }
 
+/* 추천 화면 A/B 그룹 — 회원 id 마지막 글자로 나눠서 같은 회원은 항상 같은 그룹 */
+function variantOf(userId: string): "share" | "control" {
+  const last = parseInt(userId.replace(/-/g, "").slice(-1), 16);
+  return Number.isFinite(last) && last % 2 === 0 ? "share" : "control";
+}
+
 /* 대안이 규칙(날짜 금지·40~60자)을 어겼으면 고칠 내용을 돌려준다 */
 function problems(r: any): string[] {
   const t = String(r?.suggestion?.topic ?? "");
@@ -140,6 +146,10 @@ Deno.serve(async (req) => {
   try {
     const { department, grade, term, subject, topic, user_id, client_id } = await req.json();
     if (!topic || !department || !subject) return json({ error: "입력값이 부족합니다." }, 400);
+    // 화면에서 100자로 막지만, 우회한 요청도 걸러 비용을 막는다
+    if (String(topic).length > 120 || String(department).length > 40 || String(subject).length > 40) {
+      return json({ error: "입력이 너무 깁니다." }, 400);
+    }
 
     const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
@@ -158,13 +168,39 @@ Deno.serve(async (req) => {
     if (quotaErr) console.error("quota check failed", quotaErr);
 
     if (quota?.cached) return json({ ...quota.cached, from_cache: true });
+
+    // 하루 한도를 넘었을 때 — 회원이면 친구 추천으로 받은 추가권이 있는지 본다
+    let useBonus = false;
     if (quota && quota.allowed === false) {
-      return json({
-        quota_exceeded: true,
-        used_today: quota.used_today,
-        daily_limit: user_id ? DAILY_LIMIT : ANON_LIMIT,
-        is_member: Boolean(user_id),
-      });
+      if (user_id) {
+        const { data: bc } = await supabase
+          .from("bonus_credits")
+          .select("credits")
+          .eq("user_id", user_id)
+          .maybeSingle();
+        useBonus = (bc?.credits ?? 0) > 0;
+      }
+
+      if (!useBonus) {
+        // 추천 화면 A/B 테스트 — 회원 절반만 추천 화면 (관리자는 항상 추천 화면)
+        let variant: string | null = null;
+        if (user_id) {
+          const { data: adm } = await supabase.from("admins").select("user_id").eq("user_id", user_id).maybeSingle();
+          variant = adm ? "share" : variantOf(user_id);
+
+          // 지표: 회원이 3회를 다 쓴 순간
+          await supabase
+            .from("referral_events")
+            .insert({ type: "quota_hit", user_id, client_id: client_id ?? null, variant });
+        }
+        return json({
+          quota_exceeded: true,
+          used_today: quota.used_today,
+          daily_limit: user_id ? DAILY_LIMIT : ANON_LIMIT,
+          is_member: Boolean(user_id),
+          variant, // "share"(추천 화면) | "control"(예전 화면) | null(비회원)
+        });
+      }
     }
 
     // 1) 같은 학과의 실제 유사 탐구를 참고자료로
@@ -241,6 +277,17 @@ Deno.serve(async (req) => {
       result: full,
     });
     if (logErr) console.error("log insert failed", logErr);
+
+    if (!logErr && user_id) {
+      // 하루 3회를 넘겨 추가권으로 진단한 경우 1회 차감
+      if (useBonus) {
+        const { error: e1 } = await supabase.rpc("consume_bonus_credit", { p_user: user_id });
+        if (e1) console.error("bonus consume failed", e1);
+      }
+      // 추천 링크로 가입한 친구의 첫 진단이면 추천인에게 +3회 (해당 없으면 아무 일도 안 함)
+      const { error: e2 } = await supabase.rpc("grant_referral_reward", { p_user: user_id });
+      if (e2) console.error("referral reward failed", e2);
+    }
 
     return json(full);
   } catch (e) {

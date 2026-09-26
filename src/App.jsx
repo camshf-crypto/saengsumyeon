@@ -1,6 +1,9 @@
 import { useEffect } from "react";
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { AuthProvider } from "./lib/AuthContext";
+import { supabase } from "./lib/supabase";
+import { getClientId } from "./lib/clientId";
+import { saveRefCode } from "./lib/referral";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
 
@@ -22,11 +25,39 @@ function ScrollToTop() {
   return null;
 }
 
+/*
+ * 추천 링크(?ref=코드)로 들어오면 코드를 보관하고 방문을 기록한 뒤
+ * 주소창에서 ?ref=를 지운다 (새로고침·재공유 때 중복 기록 방지)
+ */
+function RefCapture() {
+  const { search, pathname } = useLocation();
+  const nav = useNavigate();
+
+  useEffect(() => {
+    const params = new URLSearchParams(search);
+    const code = params.get("ref");
+    if (!code) return;
+
+    if (saveRefCode(code)) {
+      supabase
+        .rpc("log_ref_event", { p_type: "ref_visit", p_code: code, p_client_id: getClientId() })
+        .then(({ error }) => error && console.warn("ref visit log failed", error));
+    }
+
+    params.delete("ref");
+    const rest = params.toString();
+    nav(`${pathname}${rest ? `?${rest}` : ""}`, { replace: true });
+  }, [search, pathname, nav]);
+
+  return null;
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <ScrollToTop />
+        <RefCapture />
         <div className="flex min-h-screen flex-col bg-white">
           <Header />
           <main className="flex-1">
