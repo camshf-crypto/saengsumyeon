@@ -201,6 +201,86 @@ function ShareGate({ topic, onHome }) {
   );
 }
 
+/*
+ * 수요 테스트 — 제안 주제를 본 회원에게 '탐구까지 빠르게 완성' 서비스를 원하는지 묻는다
+ * 실제 기능은 없고, 노출 → 클릭 → 알림 신청만 기록한다
+ */
+const DEMAND_KEY = "sm_demand_notified";
+
+function DemandTest({ inputKey, email }) {
+  const [step, setStep] = useState(() => {
+    try {
+      return localStorage.getItem(DEMAND_KEY) ? "done" : "idle";
+    } catch {
+      return "idle";
+    }
+  }); // idle → open → done
+  const seen = useRef(null);
+
+  // 노출 — 주제당 한 번
+  useEffect(() => {
+    if (seen.current === inputKey) return;
+    seen.current = inputKey;
+    track("demand_view");
+  }, [inputKey]);
+
+  function open() {
+    track("demand_click");
+    setStep("open");
+  }
+
+  function notify() {
+    track("demand_notify");
+    try {
+      localStorage.setItem(DEMAND_KEY, "1");
+    } catch {
+      // 무시
+    }
+    setStep("done");
+  }
+
+  return (
+    <div className="mt-5 rounded-xl border border-gray-200 bg-white p-5 text-center">
+      {step === "idle" && (
+        <>
+          <p className="text-[15.5px] font-extrabold text-sm-navy">주제는 정했는데, 탐구까지 언제 다 하지?</p>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-gray-600">
+            자료조사부터 탐구 설계까지
+            <br />
+            AI가 빠르게 도와주는 서비스를 준비하고 있어요.
+          </p>
+          <button onClick={open} className="tbtn mt-4 w-full">
+            탐구까지 빠르게 완성해보기 →
+          </button>
+        </>
+      )}
+
+      {step === "open" && (
+        <>
+          <p className="text-[15.5px] font-extrabold text-sm-navy">곧 오픈할 예정이에요!</p>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-gray-600">
+            먼저 이용해보고 싶다면 신청해주세요.
+            <br />
+            오픈하면 {email ? <b className="text-sm-navy">{email}</b> : "가입한 이메일"}로 이메일을 보내드려요.
+          </p>
+          <button onClick={notify} className="tbtn mt-4 w-full">
+            이메일로 출시 알림 받기
+          </button>
+        </>
+      )}
+
+      {step === "done" && (
+        <>
+          <p className="text-[15.5px] font-extrabold text-sm-navy">신청 완료!</p>
+          <p className="mt-1.5 text-[13px] text-gray-600">
+            오픈하면 {email ? <b className="text-sm-navy">{email}</b> : "가입한 이메일"}로 가장 먼저 이메일을 보내드릴게요.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* 이유와 제안 — 잠금 상태에서도 같은 내용을 쓴다 */
 function Detail({ data }) {
   const s = data.suggestion;
@@ -497,6 +577,9 @@ export default function Result() {
                       <p className="mt-2 text-[11.5px] text-gray-400">하루 진단 횟수 1회가 사용돼요</p>
                     </div>
                   )}
+
+                  {/* 수요 테스트 — 회원에게만 */}
+                  {data.suggestion && <DemandTest inputKey={inputKey} email={user?.email} />}
                 </div>
               ) : (
                 // 비로그인 상태 — 이유/제안 블러 처리

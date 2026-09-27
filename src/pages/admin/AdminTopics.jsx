@@ -299,6 +299,57 @@ function SignupPanel({ f }) {
   );
 }
 
+/* 수요 테스트 — 제안을 본 회원 중 '탐구까지 빠르게 완성'을 원하는 비율 */
+function DemandPanel({ d }) {
+  const [showList, setShowList] = useState(false);
+  if (!d) return null;
+  const n = (v) => Number(v ?? 0);
+  const pct = (a, b) => (n(b) ? `${Math.round((n(a) / n(b)) * 100)}%` : "-");
+  const list = d.notify_list ?? [];
+
+  return (
+    <div className="mt-10">
+      <h2 className="text-lg font-extrabold text-sm-navy">수요 테스트 · 탐구까지 빠르게 완성</h2>
+      <p className="mt-1 text-[12.5px] text-gray-400">
+        제안 주제 아래 버튼을 본 회원 중 얼마나 누르고 알림을 신청하는지 봅니다. 실제 기능은 아직 없어요.
+        {d.since && ` 기록 시작: ${new Date(d.since).toLocaleString("ko-KR")}`}
+      </p>
+
+      <div className="mt-4 grid grid-cols-3 gap-3">
+        {[
+          ["1. 버튼을 본 회원", d.view, ""],
+          ["2. 버튼 클릭", d.click, `본 회원의 ${pct(d.click, d.view)}`],
+          ["3. 출시 알림 신청", d.notify, `클릭의 ${pct(d.notify, d.click)} · 본 회원의 ${pct(d.notify, d.view)}`],
+        ].map(([l, v, sub]) => (
+          <div key={l} className="rounded-xl border border-gray-200 p-4">
+            <p className="text-[12px] text-gray-500">{l}</p>
+            <p className="mt-1.5 text-lg font-extrabold text-sm-navy">{n(v)}</p>
+            <p className="mt-0.5 text-[11.5px] text-gray-400">{sub}</p>
+          </div>
+        ))}
+      </div>
+
+      {list.length > 0 && (
+        <div className="mt-3 rounded-xl border border-gray-200 p-4">
+          <button onClick={() => setShowList((v) => !v)} className="text-[13px] font-bold text-sm-navy">
+            알림 신청자 {list.length}명 {showList ? "접기" : "보기"}
+          </button>
+          {showList && (
+            <ul className="mt-2 max-h-60 space-y-1 overflow-y-auto text-[12.5px] text-gray-600">
+              {list.map((x) => (
+                <li key={x.email} className="flex justify-between">
+                  <span>{x.email}</span>
+                  <span className="text-gray-400">{shortTime(x.at)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* 친구 추천 — 전환 단계 5개 + 추천/비교 그룹 비교 + 많이 데려온 회원 */
 function ReferralPanel({ stats }) {
   if (!stats) return null;
@@ -489,6 +540,7 @@ export default function AdminTopics() {
   const [usage, setUsage] = useState(null); // 사용자별 이용
   const [refStats, setRefStats] = useState(null); // 친구 추천
   const [funnel, setFunnel] = useState(null); // 가입 전환
+  const [demand, setDemand] = useState(null); // 수요 테스트
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [q, setQ] = useState("");
@@ -504,14 +556,18 @@ export default function AdminTopics() {
     setErr("");
     const args = { p_from: from || null, p_to: to || null };
 
-    const [list, stat, use, refs, fun] = await Promise.all([
+    const [list, stat, use, refs, fun, dem] = await Promise.all([
       fetchAllRows(args),
       supabase.rpc("admin_topic_stats", args),
       fetchAllRows(args, "admin_user_usage"),
       supabase.rpc("admin_referral_stats", args),
       supabase.rpc("admin_signup_funnel", args),
+      supabase.rpc("admin_demand_stats", args),
     ]);
     setBusy(false);
+
+    if (dem.error) console.warn("demand stats failed", dem.error);
+    setDemand(dem.error ? null : dem.data ?? null);
 
     if (fun.error) console.warn("signup funnel failed", fun.error);
     setFunnel(fun.error ? null : fun.data ?? null);
@@ -754,6 +810,9 @@ export default function AdminTopics() {
 
       {/* 가입 전환 — 비회원이 어디서 멈추는지 */}
       <SignupPanel f={funnel} />
+
+      {/* 수요 테스트 — 다음에 무엇을 만들지 */}
+      <DemandPanel d={demand} />
 
       {/* 친구 추천 — 전환 단계와 A/B 그룹 비교 */}
       <ReferralPanel stats={refStats} />
