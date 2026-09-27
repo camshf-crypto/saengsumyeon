@@ -448,6 +448,11 @@ function AiDetail({ r }) {
           <p className="text-[12px] font-bold text-gray-400">왜 흔한 주제인지</p>
           <p className="mt-1 text-gray-700">{res.reason || "-"}</p>
         </div>
+        {res.fit === "weak" && (
+          <p className="rounded-lg bg-red-50 px-3 py-2 text-[12.5px] font-bold text-red-500">
+            AI 판단: 학생이 고른 방향이 이 주제와 잘 맞지 않음 → 반대 방향 &apos;다시 받기&apos; 안내가 뜸
+          </p>
+        )}
         <div>
           <p className="text-[12px] font-bold text-gray-400">AI 제안 주제</p>
           <p className="mt-1 font-bold text-sm-navy">{res.suggestion?.topic || "-"}</p>
@@ -489,6 +494,7 @@ export default function AdminTopics() {
   const [q, setQ] = useState("");
   const [only, setOnly] = useState("all"); // all | member | anon
   const [focusOnly, setFocusOnly] = useState("all"); // all | career | subject
+  const [weakOnly, setWeakOnly] = useState(false); // 방향이 안 맞는 기록만
   const [open, setOpen] = useState(null); // 펼친 줄의 id
   const [page, setPage] = useState(1); // 목록 페이지
   const listTop = useRef(null); // 페이지를 넘기면 목록 맨 위로
@@ -539,6 +545,7 @@ export default function AdminTopics() {
     if (only === "member") r = r.filter((x) => x.is_member);
     if (only === "anon") r = r.filter((x) => !x.is_member);
     if (focusOnly !== "all") r = r.filter((x) => (x.focus ?? "career") === focusOnly);
+    if (weakOnly) r = r.filter((x) => x.result?.fit === "weak");
 
     const k = q.trim().toLowerCase();
     if (!k) return r;
@@ -547,13 +554,13 @@ export default function AdminTopics() {
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(k))
     );
-  }, [rows, q, only, focusOnly]);
+  }, [rows, q, only, focusOnly, weakOnly]);
 
   // 검색·필터·기간이 바뀌면 1페이지로
   useEffect(() => {
     setPage(1);
     setOpen(null);
-  }, [q, only, focusOnly, rows]);
+  }, [q, only, focusOnly, weakOnly, rows]);
 
   // 방향 비율 — 기간 안 전체 기록 기준
   const focusRows = useMemo(() => {
@@ -563,6 +570,19 @@ export default function AdminTopics() {
       { key: FOCUS_LABEL.career, n: c.career },
       { key: FOCUS_LABEL.subject, n: c.subject },
     ];
+  }, [rows]);
+
+  // 방향별 '안 맞음' 비율 — 판단 기능 배포 후 기록(fit 값이 있는 것)만
+  const fitStats = useMemo(() => {
+    const t = { career: { n: 0, weak: 0 }, subject: { n: 0, weak: 0 } };
+    rows.forEach((x) => {
+      const f = x.result?.fit;
+      if (f !== "good" && f !== "weak") return;
+      const k = x.focus === "subject" ? "subject" : "career";
+      t[k].n += 1;
+      if (f === "weak") t[k].weak += 1;
+    });
+    return t;
   }, [rows]);
 
   const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
@@ -576,7 +596,7 @@ export default function AdminTopics() {
 
   function downloadCsv() {
     const head = [
-      "일시", "회원여부", "이메일", "이름", "학과", "학년", "학기", "과목", "방향", "탐구주제", "지수",
+      "일시", "회원여부", "이메일", "이름", "학과", "학년", "학기", "과목", "방향", "방향 맞음", "탐구주제", "지수",
       "소재", "대상", "조건", "방식", "흔한 이유", "AI 제안 주제", "좁힌 방법",
     ];
     const body = shown.map((r) => {
@@ -592,6 +612,7 @@ export default function AdminTopics() {
         r.term ?? "",
         r.subject ?? "",
         FOCUS_LABEL[r.focus] ?? FOCUS_LABEL.career,
+        res.fit === "weak" ? "안 맞음" : res.fit === "good" ? "맞음" : "",
         r.topic ?? "",
         r.score ?? "",
         ...PARTS.map((k) => b[k] ?? ""),
@@ -695,6 +716,35 @@ export default function AdminTopics() {
             <RankList title="흔함 지수 구간" rows={stats.score_band} total={total} />
             <RankList title="날짜별" rows={stats.by_day} total={total} />
             <RankList title="고른 방향 (방향 선택 기능 배포 후 기간으로 보세요)" rows={focusRows} total={rows.length} />
+
+            {/* 방향이 안 맞아서 '다시 받기' 안내가 뜬 비율 — 10~20%가 적당 */}
+            <div className="rounded-xl border border-gray-200 p-5">
+              <p className="text-[13px] font-bold text-sm-navy">방향이 안 맞음 (다시 받기 안내가 뜬 비율)</p>
+              <ul className="mt-3.5 space-y-2 text-[13px]">
+                {[
+                  ["career", "진로 연결 → 과목 깊이 파기 권함"],
+                  ["subject", "과목 깊이 파기 → 진로 연결 권함"],
+                ].map(([k, l]) => {
+                  const { n, weak } = fitStats[k];
+                  const r = n ? Math.round((weak / n) * 100) : null;
+                  const warn = r != null && (r >= 30 || r < 5);
+                  return (
+                    <li key={k} className="flex items-center justify-between">
+                      <span className="text-gray-600">{l}</span>
+                      <span>
+                        <b className={warn ? "text-red-500" : "text-sm-navy"}>{r == null ? "-" : `${r}%`}</b>
+                        <em className="ml-1.5 not-italic text-[11px] text-gray-400">
+                          {weak}/{n}
+                        </em>
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="mt-3 text-[11.5px] text-gray-400">
+                10~20%가 적당해요. 30% 이상이면 기준이 너무 느슨하고, 5% 미만이면 너무 엄격해요.
+              </p>
+            </div>
           </div>
         </>
       )}
@@ -753,6 +803,15 @@ export default function AdminTopics() {
             </button>
           ))}
         </div>
+
+        <button
+          onClick={() => setWeakOnly((v) => !v)}
+          className={`rounded-lg border px-3 py-1.5 text-[12.5px] font-bold transition ${
+            weakOnly ? "border-red-400 bg-red-50 text-red-500" : "border-gray-300 text-gray-600"
+          }`}
+        >
+          방향 안 맞음만
+        </button>
 
         <input
           className={`${field} ml-auto w-56`}
@@ -831,6 +890,11 @@ export default function AdminTopics() {
                       >
                         {FOCUS_LABEL[r.focus] ?? FOCUS_LABEL.career}
                       </span>
+                      {r.result?.fit === "weak" && (
+                        <span className="ml-1 rounded bg-red-50 px-1.5 py-0.5 text-[11px] font-bold text-red-500">
+                          안 맞음
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3">{r.topic}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-right">
