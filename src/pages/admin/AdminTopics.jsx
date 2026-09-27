@@ -27,14 +27,14 @@ function sumOf(b) {
 
 /*
  * Supabase는 한 번에 최대 1,000줄까지만 돌려준다.
- * 목록은 1,000줄씩 나눠서 끝까지 이어 받는다 (최대 20,000줄)
+ * 목록·사용자별 이용은 1,000줄씩 나눠서 끝까지 이어 받는다 (최대 10,000줄)
  */
-async function fetchAllRows(args) {
+async function fetchAllRows(args, fn = "admin_topic_queries") {
   const CHUNK = 1000;
   let all = [];
-  for (let from = 0; from < 20000; from += CHUNK) {
+  for (let from = 0; from < 10000; from += CHUNK) {
     const { data, error } = await supabase
-      .rpc("admin_topic_queries", args)
+      .rpc(fn, args)
       .range(from, from + CHUNK - 1);
     if (error) return { data: null, error };
     all = all.concat(data ?? []);
@@ -501,7 +501,7 @@ export default function AdminTopics() {
     const [list, stat, use, refs, fun] = await Promise.all([
       fetchAllRows(args),
       supabase.rpc("admin_topic_stats", args),
-      supabase.rpc("admin_user_usage", args),
+      fetchAllRows(args, "admin_user_usage"),
       supabase.rpc("admin_referral_stats", args),
       supabase.rpc("admin_signup_funnel", args),
     ]);
