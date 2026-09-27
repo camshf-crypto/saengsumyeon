@@ -260,6 +260,16 @@ export default function Result() {
   // 같은 입력으로는 요청을 한 번만 보낸다
   const req = useRef({ key: null, promise: null });
 
+  // 같은 화면에서 입력이 바뀌면(방향 바꿔 다시 받기) 이전 결과를 비우고 새로 진단한다
+  const lastKey = useRef(inputKey);
+  useEffect(() => {
+    if (lastKey.current === inputKey) return;
+    lastKey.current = inputKey;
+    setData(null);
+    setErr("");
+    setDone(false);
+  }, [inputKey]);
+
   useEffect(() => {
     if (data || err || done) {
       setProgress(100);
@@ -334,6 +344,14 @@ export default function Result() {
 
   // 로그인했으면 이유와 제안을 보여준다
   const unlocked = Boolean(user);
+
+  // 고른 방향이 안 맞으면 반대 방향으로 다시 진단 (하루 횟수에 포함)
+  const isSubject = input.focus === "subject";
+  const otherLabel = isSubject ? "진로 연결" : "과목 깊이 파기";
+  function switchFocus() {
+    window.scrollTo(0, 0);
+    nav("/result", { state: { ...input, focus: isSubject ? "career" : "subject" } });
+  }
 
   // 새로운 주제 진단
   function reset() {
@@ -458,6 +476,27 @@ export default function Result() {
                 // 로그인 상태 — 전체 내용 공개
                 <div className="rs-open">
                   <Detail data={data} />
+
+                  {/* 고른 방향이 안 맞으면 반대 방향을 권한다 */}
+                  {data.fit === "weak" && (
+                    <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 p-4 text-center">
+                      <p className="text-[14px] font-bold text-sm-navy">
+                        {isSubject
+                          ? "이 주제는 희망 학과와 더 잘 어울려요"
+                          : "이 주제는 희망 학과와 연결점이 약해요"}
+                      </p>
+                      <p className="mt-1 text-[13px] leading-relaxed text-gray-600">
+                        {otherLabel}로 바꾸면 더 자연스러운 제안을 받을 수 있어요.
+                      </p>
+                      <button
+                        onClick={switchFocus}
+                        className="mt-3 rounded-lg bg-sm-navy px-5 py-2.5 text-[13.5px] font-bold text-white"
+                      >
+                        {otherLabel}로 다시 받기
+                      </button>
+                      <p className="mt-2 text-[11.5px] text-gray-400">하루 진단 횟수 1회가 사용돼요</p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 // 비로그인 상태 — 이유/제안 블러 처리
