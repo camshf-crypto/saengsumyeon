@@ -247,7 +247,7 @@ function DemandTest({ inputKey, email }) {
           <p className="mt-1.5 text-[13px] leading-relaxed text-gray-600">
             자료조사부터 탐구 설계까지
             <br />
-            AI가 빠르게 도와주는 서비스를 준비하고 있어요.
+            AI가 빠르게 도와주는 서비스를 시작해보세요.
           </p>
           <button onClick={open} className="tbtn mt-4 w-full">
             탐구까지 빠르게 완성해보기 →
