@@ -70,7 +70,7 @@ export default function MyPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-5 py-12">
-      <p className="text-sm font-bold text-sm-orange">마이페이지</p>
+      <p className="text-sm font-bold text-sm-orange">내 기록</p>
       <h1 className="mt-2 text-2xl font-extrabold tracking-tight text-sm-navy">
         {profile?.name ?? "회원"}님이 진단한 탐구주제
       </h1>

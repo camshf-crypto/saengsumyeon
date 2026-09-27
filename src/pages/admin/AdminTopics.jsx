@@ -299,6 +299,17 @@ function SignupPanel({ f }) {
   );
 }
 
+/* 수요 테스트 선택지 이름 (결과 화면 NEEDS와 같은 코드) */
+const NEED_ORDER = ["memorable", "senior", "interview", "rubric", "sources", "outline"];
+const NEED_LABEL = {
+  memorable: "기억나는 보고서",
+  senior: "선배 탐구 보기",
+  interview: "면접 질문 대비",
+  rubric: "수행평가 채점 기준",
+  sources: "실제 자료 정리",
+  outline: "목차·순서 잡기",
+};
+
 /* 수요 테스트 — 제안을 본 회원 중 '탐구까지 빠르게 완성'을 원하는 비율 */
 function DemandPanel({ d }) {
   const [showList, setShowList] = useState(false);
@@ -309,17 +320,18 @@ function DemandPanel({ d }) {
 
   return (
     <div className="mt-10">
-      <h2 className="text-lg font-extrabold text-sm-navy">수요 테스트 · 탐구까지 빠르게 완성</h2>
+      <h2 className="text-lg font-extrabold text-sm-navy">수요 테스트 · 기억나는 탐구 보고서</h2>
       <p className="mt-1 text-[12.5px] text-gray-400">
         제안 주제 아래 버튼을 본 회원 중 얼마나 누르고 알림을 신청하는지 봅니다. 실제 기능은 아직 없어요.
         {d.since && ` 기록 시작: ${new Date(d.since).toLocaleString("ko-KR")}`}
       </p>
 
-      <div className="mt-4 grid grid-cols-3 gap-3">
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
           ["1. 버튼을 본 회원", d.view, ""],
           ["2. 버튼 클릭", d.click, `본 회원의 ${pct(d.click, d.view)}`],
-          ["3. 출시 알림 신청", d.notify, `클릭의 ${pct(d.notify, d.click)} · 본 회원의 ${pct(d.notify, d.view)}`],
+          ["3. 필요한 것 고름", d.pick, `클릭의 ${pct(d.pick, d.click)}`],
+          ["4. 출시 알림 신청", d.notify, `클릭의 ${pct(d.notify, d.click)} · 본 회원의 ${pct(d.notify, d.view)}`],
         ].map(([l, v, sub]) => (
           <div key={l} className="rounded-xl border border-gray-200 p-4">
             <p className="text-[12px] text-gray-500">{l}</p>
@@ -327,6 +339,15 @@ function DemandPanel({ d }) {
             <p className="mt-0.5 text-[11.5px] text-gray-400">{sub}</p>
           </div>
         ))}
+      </div>
+
+      {/* 학생이 가장 필요하다고 고른 것 */}
+      <div className="mt-3">
+        <RankList
+          title="가장 필요하다고 고른 것 (카드 문구 변경 후부터 쌓여요)"
+          rows={NEED_ORDER.map((k) => ({ key: NEED_LABEL[k], n: n(d.picks?.[k]) })).sort((a, b) => b.n - a.n)}
+          total={n(d.pick)}
+        />
       </div>
 
       {list.length > 0 && (

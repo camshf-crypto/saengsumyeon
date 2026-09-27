@@ -202,10 +202,20 @@ function ShareGate({ topic, onHome }) {
 }
 
 /*
- * 수요 테스트 — 제안 주제를 본 회원에게 '탐구까지 빠르게 완성' 서비스를 원하는지 묻는다
- * 실제 기능은 없고, 노출 → 클릭 → 알림 신청만 기록한다
+ * 수요 테스트 — 제안 주제를 본 회원에게 '기억나는 탐구 보고서'를 원하는지 묻는다
+ * 실제 기능은 없고, 노출 → 클릭 → 필요한 것 고르기 → 알림 신청만 기록한다
  */
 const DEMAND_KEY = "sm_demand_notified";
+
+// 학생이 고르는 '가장 필요한 것' — 코드는 기록용(12자 이내)
+const NEEDS = [
+  { code: "memorable", label: "몇 달 뒤에도 기억나는 보고서" },
+  { code: "senior", label: "같은 학과 선배들이 한 탐구 보기" },
+  { code: "interview", label: "이 탐구로 받을 면접 질문 대비" },
+  { code: "rubric", label: "수행평가 채점 기준에 맞추기" },
+  { code: "sources", label: "실제 있는 자료 찾아 정리하기" },
+  { code: "outline", label: "목차·순서 잡기" },
+];
 
 function DemandTest({ inputKey, email }) {
   const [step, setStep] = useState(() => {
@@ -214,7 +224,8 @@ function DemandTest({ inputKey, email }) {
     } catch {
       return "idle";
     }
-  }); // idle → open → done
+  }); // idle → pick → notify → done
+  const [need, setNeed] = useState(null);
   const seen = useRef(null);
 
   // 노출 — 주제당 한 번
@@ -226,7 +237,13 @@ function DemandTest({ inputKey, email }) {
 
   function open() {
     track("demand_click");
-    setStep("open");
+    setStep("pick");
+  }
+
+  function pick(n) {
+    track("demand_pick", n.code);
+    setNeed(n);
+    setStep("notify");
   }
 
   function notify() {
@@ -239,34 +256,49 @@ function DemandTest({ inputKey, email }) {
     setStep("done");
   }
 
+  const mail = email ? <b className="text-sm-navy">{email}</b> : "가입한 이메일";
+
   return (
     <div className="mt-5 rounded-xl border border-gray-200 bg-white p-5 text-center">
       {step === "idle" && (
         <>
-          <p className="text-[15.5px] font-extrabold text-sm-navy">주제는 정했는데, 탐구까지 언제 다 하지?</p>
+          <p className="text-[15.5px] font-extrabold text-sm-navy">선생님은 학기 말에 몰아서 세특을 써요</p>
           <p className="mt-1.5 text-[13px] leading-relaxed text-gray-600">
-            자료조사부터 탐구 설계까지
+            몇 달 뒤에 봐도 <b className="text-sm-navy">기억나는 보고서</b>가 좋은 세특이 돼요.
             <br />
-            AI가 빠르게 도와주는 서비스를 시작해보세요.
+            이 주제로 기억나는 탐구 보고서를 만들어 드릴게요.
           </p>
           <button onClick={open} className="tbtn mt-4 w-full">
-            탐구까지 빠르게 완성해보기 →
+            기억나는 탐구 보고서 만들기 →
           </button>
         </>
       )}
 
-      {/* 새 서비스 안내 때문에 진단이 유료가 되는 걸로 오해하지 않게 */}
-      <p className="mt-3 text-[12px] text-gray-400">
-        탐구주제 진단은 지금처럼 <b className="text-gray-500">하루 3번 무료</b>예요.
-      </p>
-
-      {step === "open" && (
+      {step === "pick" && (
         <>
           <p className="text-[15.5px] font-extrabold text-sm-navy">곧 오픈할 예정이에요!</p>
+          <p className="mt-1.5 text-[13px] text-gray-600">어떤 게 가장 필요해요? 하나만 골라주세요.</p>
+          <div className="mt-4 flex flex-col gap-2">
+            {NEEDS.map((n) => (
+              <button
+                key={n.code}
+                onClick={() => pick(n)}
+                className="w-full rounded-lg border border-gray-300 px-4 py-3 text-left text-[14px] font-bold text-sm-navy transition hover:border-sm-navy hover:bg-gray-50"
+              >
+                {n.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {step === "notify" && (
+        <>
+          <p className="text-[15.5px] font-extrabold text-sm-navy">좋아요, 먼저 알려드릴게요</p>
           <p className="mt-1.5 text-[13px] leading-relaxed text-gray-600">
-            먼저 이용해보고 싶다면 신청해주세요.
+            <b className="text-sm-navy">{need?.label}</b>부터 준비하고 있어요.
             <br />
-            오픈하면 {email ? <b className="text-sm-navy">{email}</b> : "가입한 이메일"}로 이메일을 보내드려요.
+            오픈하면 {mail}로 이메일을 보내드려요.
           </p>
           <button onClick={notify} className="tbtn mt-4 w-full">
             이메일로 출시 알림 받기
@@ -277,11 +309,14 @@ function DemandTest({ inputKey, email }) {
       {step === "done" && (
         <>
           <p className="text-[15.5px] font-extrabold text-sm-navy">신청 완료!</p>
-          <p className="mt-1.5 text-[13px] text-gray-600">
-            오픈하면 {email ? <b className="text-sm-navy">{email}</b> : "가입한 이메일"}로 가장 먼저 이메일을 보내드릴게요.
-          </p>
+          <p className="mt-1.5 text-[13px] text-gray-600">오픈하면 {mail}로 가장 먼저 이메일을 보내드릴게요.</p>
         </>
       )}
+
+      {/* 새 서비스 안내 때문에 진단이 유료가 되는 걸로 오해하지 않게 */}
+      <p className="mt-3 text-[12px] text-gray-400">
+        탐구주제 진단은 지금처럼 <b className="text-gray-500">하루 3번 무료</b>예요.
+      </p>
     </div>
   );
 }
@@ -512,23 +547,6 @@ export default function Result() {
           </p>
           <p className="rs-topic">{topic}</p>
 
-          {/* 남은 무료 횟수 — 회원에게만, 방금 진단한 경우에만 */}
-          {unlocked && data && left && (
-            <p className="mb-3 text-[13px] font-bold text-sm-navy">
-              {left.remaining > 0 ? (
-                <>
-                  오늘 무료 진단 <span className="text-sm-orange">{left.remaining}번</span> 남았어요
-                </>
-              ) : left.bonus != null ? (
-                <>
-                  추가권으로 진단했어요 · 추가권 <span className="text-sm-orange">{left.bonus}번</span> 남았어요
-                </>
-              ) : (
-                "오늘 무료 진단을 모두 사용했어요"
-              )}
-            </p>
-          )}
-
           {/* 로딩 */}
           {!data ? (
             <div className="rs-loading">
@@ -586,6 +604,23 @@ export default function Result() {
                 // 로그인 상태 — 전체 내용 공개
                 <div className="rs-open">
                   <Detail data={data} />
+
+                  {/* 남은 무료 횟수 — 제안 바로 아래, 방금 진단한 경우에만 */}
+                  {left && (
+                    <p className="mt-4 text-center text-[13.5px] font-bold text-sm-navy">
+                      {left.remaining > 0 ? (
+                        <>
+                          오늘 무료 진단 <span className="text-sm-orange">{left.remaining}번</span> 남았어요
+                        </>
+                      ) : left.bonus != null ? (
+                        <>
+                          추가권으로 진단했어요 · 추가권 <span className="text-sm-orange">{left.bonus}번</span> 남았어요
+                        </>
+                      ) : (
+                        "오늘 무료 진단을 모두 사용했어요"
+                      )}
+                    </p>
+                  )}
 
                   {/* 고른 방향이 안 맞으면 반대 방향을 권한다 */}
                   {data.fit === "weak" && (
