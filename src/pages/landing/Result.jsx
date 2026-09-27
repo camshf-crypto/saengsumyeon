@@ -255,6 +255,11 @@ function DemandTest({ inputKey, email }) {
         </>
       )}
 
+      {/* 새 서비스 안내 때문에 진단이 유료가 되는 걸로 오해하지 않게 */}
+      <p className="mt-3 text-[12px] text-gray-400">
+        탐구주제 진단은 지금처럼 <b className="text-gray-500">하루 3번 무료</b>예요.
+      </p>
+
       {step === "open" && (
         <>
           <p className="text-[15.5px] font-extrabold text-sm-navy">곧 오픈할 예정이에요!</p>
@@ -336,6 +341,7 @@ export default function Result() {
   const [err, setErr] = useState("");
   const [progress, setProgress] = useState(0);
   const [done, setDone] = useState(false); // 응답이 왔는지 (100%를 잠깐 보여주고 결과로)
+  const [left, setLeft] = useState(null); // 방금 진단 기준 남은 무료 횟수 { remaining, bonus }
 
   // 같은 입력으로는 요청을 한 번만 보낸다
   const req = useRef({ key: null, promise: null });
@@ -348,6 +354,7 @@ export default function Result() {
     setData(null);
     setErr("");
     setDone(false);
+    setLeft(null);
   }, [inputKey]);
 
   useEffect(() => {
@@ -387,13 +394,19 @@ export default function Result() {
         return;
       }
 
+      // 남은 횟수는 지금 받은 응답에서만 쓴다 (보관한 예전 결과에는 넣지 않음)
+      if (typeof res?.remaining === "number") {
+        setLeft({ remaining: res.remaining, bonus: res.bonus_left });
+      }
+
       // 100%가 찬 걸 잠깐 보여준 뒤 결과로 넘어간다
       setTimeout(() => alive && setData(res), 450);
 
       // 정상 결과만 저장 (한도 초과 / 무효 입력은 저장하지 않는다)
       if (!res?.quota_exceeded && !res?.invalid) {
         try {
-          localStorage.setItem(KEY, JSON.stringify({ input, result: res }));
+          const { remaining: _r, bonus_left: _b, ...keep } = res;
+          localStorage.setItem(KEY, JSON.stringify({ input, result: keep }));
         } catch (e) {
           console.warn("결과 보관 실패", e);
         }
@@ -498,6 +511,23 @@ export default function Result() {
             {department} · {grade} · {term} · {subject} · {focusLabel}
           </p>
           <p className="rs-topic">{topic}</p>
+
+          {/* 남은 무료 횟수 — 회원에게만, 방금 진단한 경우에만 */}
+          {unlocked && data && left && (
+            <p className="mb-3 text-[13px] font-bold text-sm-navy">
+              {left.remaining > 0 ? (
+                <>
+                  오늘 무료 진단 <span className="text-sm-orange">{left.remaining}번</span> 남았어요
+                </>
+              ) : left.bonus != null ? (
+                <>
+                  추가권으로 진단했어요 · 추가권 <span className="text-sm-orange">{left.bonus}번</span> 남았어요
+                </>
+              ) : (
+                "오늘 무료 진단을 모두 사용했어요"
+              )}
+            </p>
+          )}
 
           {/* 로딩 */}
           {!data ? (

@@ -210,10 +210,18 @@ Deno.serve(async (req) => {
       .single();
     if (quotaErr) console.error("quota check failed", quotaErr);
 
-    if (quota?.cached) return json({ ...quota.cached, from_cache: true });
+    // 오늘(최근 24시간) 남은 무료 횟수 — 결과 화면에 "N번 남았어요"로 보여준다
+    const limit = user_id ? DAILY_LIMIT : ANON_LIMIT;
+    const usedBefore = Number(quota?.used_today ?? 0);
+
+    // 이미 진단한 주제는 횟수를 쓰지 않으므로 지금 남은 수 그대로
+    if (quota?.cached) {
+      return json({ ...quota.cached, from_cache: true, remaining: Math.max(0, limit - usedBefore) });
+    }
 
     // 하루 한도를 넘었을 때 — 회원이면 친구 추천으로 받은 추가권이 있는지 본다
     let useBonus = false;
+    let bonusCredits = 0;
     if (quota && quota.allowed === false) {
       if (user_id) {
         const { data: bc } = await supabase
@@ -221,7 +229,8 @@ Deno.serve(async (req) => {
           .select("credits")
           .eq("user_id", user_id)
           .maybeSingle();
-        useBonus = (bc?.credits ?? 0) > 0;
+        bonusCredits = bc?.credits ?? 0;
+        useBonus = bonusCredits > 0;
       }
 
       if (!useBonus) {
@@ -338,7 +347,12 @@ Deno.serve(async (req) => {
       if (e2) console.error("referral reward failed", e2);
     }
 
-    return json(full);
+    // 방금 1번 썼으니 남은 무료 횟수 (추가권으로 진단했으면 무료는 0, 추가권 남은 수를 같이)
+    return json({
+      ...full,
+      remaining: useBonus ? 0 : Math.max(0, limit - (usedBefore + 1)),
+      bonus_left: useBonus ? Math.max(0, bonusCredits - 1) : null,
+    });
   } catch (e) {
     console.error("unhandled", e);
     return json({ error: "서버 오류가 발생했습니다." }, 500);
