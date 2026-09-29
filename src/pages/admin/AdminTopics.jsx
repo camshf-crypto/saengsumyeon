@@ -571,6 +571,20 @@ export default function AdminTopics() {
   const [open, setOpen] = useState(null); // 펼친 줄의 id
   const [page, setPage] = useState(1); // 목록 페이지
   const listTop = useRef(null); // 페이지를 넘기면 목록 맨 위로
+  const [pendingOrders, setPendingOrders] = useState(0); // 입금 확인 대기
+
+  // 입금 확인 대기 건수 — 새 주문이 오면 실시간으로 바뀐다
+  useEffect(() => {
+    if (authLoading || !user) return;
+    const count = () =>
+      supabase.rpc("admin_orders").then(({ data }) => setPendingOrders((data ?? []).filter((o) => o.status === "pending").length));
+    count();
+    const ch = supabase
+      .channel("admin-topics-orders")
+      .on("postgres_changes", { event: "*", schema: "public", table: "pay_orders" }, count)
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [authLoading, user]);
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -721,7 +735,18 @@ export default function AdminTopics() {
 
   return (
     <div className="mx-auto max-w-6xl px-5 py-10">
-      <h1 className="text-2xl font-extrabold tracking-tight text-sm-navy">진단 기록</h1>
+      <div className="flex items-center gap-3">
+        <h1 className="text-2xl font-extrabold tracking-tight text-sm-navy">진단 기록</h1>
+        <a
+          href="/admin/orders"
+          className={`ml-auto flex items-center gap-2 rounded-lg px-4 py-2 text-[13.5px] font-bold ${
+            pendingOrders ? "bg-sm-orange text-white" : "border border-gray-300 text-gray-600"
+          }`}
+        >
+          입금 확인 {pendingOrders ? `대기 ${pendingOrders}건` : ""}
+          <span aria-hidden="true">→</span>
+        </a>
+      </div>
       <p className="mt-2 text-sm text-gray-500">
         학생이 입력한 탐구주제와 AI 진단 결과를 날짜별로 확인합니다. 줄을 누르면 AI 결과 전체가 펼쳐집니다.
       </p>

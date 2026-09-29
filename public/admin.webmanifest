@@ -1,0 +1,13 @@
+{
+  "name": "생수면 관리자",
+  "short_name": "생수면 관리",
+  "start_url": "/admin/orders",
+  "scope": "/admin",
+  "display": "standalone",
+  "background_color": "#18224F",
+  "theme_color": "#18224F",
+  "icons": [
+    { "src": "/admin-icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/admin-icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

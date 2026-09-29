@@ -202,120 +202,39 @@ function ShareGate({ topic, onHome }) {
 }
 
 /*
- * 수요 테스트 — 제안 주제를 본 회원에게 '기억나는 탐구 보고서'를 원하는지 묻는다
- * 실제 기능은 없고, 노출 → 클릭 → 필요한 것 고르기 → 알림 신청만 기록한다
+ * 기억나는 탐구 보고서 시작 — 제안 주제를 받은 회원 모두에게 보인다
+ * 누르면 이 주제로 바로 2 탐구 준비를 시작한다
  */
-const DEMAND_KEY = "sm_demand_notified";
-
-// 학생이 고르는 '가장 필요한 것' — 코드는 기록용(12자 이내)
-const NEEDS = [
-  { code: "memorable", label: "몇 달 뒤에도 기억나는 보고서" },
-  { code: "senior", label: "같은 학과 선배들이 한 탐구 보기" },
-  { code: "interview", label: "이 탐구로 받을 면접 질문 대비" },
-  { code: "rubric", label: "수행평가 채점 기준에 맞추기" },
-  { code: "sources", label: "실제 있는 자료 찾아 정리하기" },
-  { code: "outline", label: "목차·순서 잡기" },
-];
-
-function DemandTest({ inputKey, email }) {
-  const [step, setStep] = useState(() => {
-    try {
-      return localStorage.getItem(DEMAND_KEY) ? "done" : "idle";
-    } catch {
-      return "idle";
-    }
-  }); // idle → pick → notify → done
-  const [need, setNeed] = useState(null);
-  const seen = useRef(null);
-
-  // 노출 — 주제당 한 번
-  useEffect(() => {
-    if (seen.current === inputKey) return;
-    seen.current = inputKey;
-    track("demand_view");
-  }, [inputKey]);
-
-  function open() {
-    track("demand_click");
-    setStep("pick");
-  }
-
-  function pick(n) {
-    track("demand_pick", n.code);
-    setNeed(n);
-    setStep("notify");
-  }
-
-  function notify() {
-    track("demand_notify");
-    try {
-      localStorage.setItem(DEMAND_KEY, "1");
-    } catch {
-      // 무시
-    }
-    setStep("done");
-  }
-
-  const mail = email ? <b className="text-sm-navy">{email}</b> : "가입한 이메일";
-
+function InquiryStart({ input }) {
+  const nav = useNavigate();
   return (
-    <div className="mt-5 rounded-xl border border-gray-200 bg-white p-5 text-center">
-      {step === "idle" && (
-        <>
-          <p className="text-[15.5px] font-extrabold text-sm-navy">선생님은 학기 말에 몰아서 세특을 써요</p>
-          <p className="mt-1.5 text-[13px] leading-relaxed text-gray-600">
-            몇 달 뒤에 봐도 <b className="text-sm-navy">기억나는 보고서</b>가 좋은 세특이 돼요.
-            <br />
-            이 주제로 기억나는 탐구 보고서를 만들어 드릴게요.
-          </p>
-          <button onClick={open} className="tbtn mt-4 w-full">
-            기억나는 탐구 보고서 만들기 →
-          </button>
-        </>
-      )}
-
-      {step === "pick" && (
-        <>
-          <p className="text-[15.5px] font-extrabold text-sm-navy">곧 오픈할 예정이에요!</p>
-          <p className="mt-1.5 text-[13px] text-gray-600">어떤 게 가장 필요해요? 하나만 골라주세요.</p>
-          <div className="mt-4 flex flex-col gap-2">
-            {NEEDS.map((n) => (
-              <button
-                key={n.code}
-                onClick={() => pick(n)}
-                className="w-full rounded-lg border border-gray-300 px-4 py-3 text-left text-[14px] font-bold text-sm-navy transition hover:border-sm-navy hover:bg-gray-50"
-              >
-                {n.label}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-
-      {step === "notify" && (
-        <>
-          <p className="text-[15.5px] font-extrabold text-sm-navy">좋아요, 먼저 알려드릴게요</p>
-          <p className="mt-1.5 text-[13px] leading-relaxed text-gray-600">
-            <b className="text-sm-navy">{need?.label}</b>부터 준비하고 있어요.
-            <br />
-            오픈하면 {mail}로 이메일을 보내드려요.
-          </p>
-          <button onClick={notify} className="tbtn mt-4 w-full">
-            이메일로 출시 알림 받기
-          </button>
-        </>
-      )}
-
-      {step === "done" && (
-        <>
-          <p className="text-[15.5px] font-extrabold text-sm-navy">신청 완료!</p>
-          <p className="mt-1.5 text-[13px] text-gray-600">오픈하면 {mail}로 가장 먼저 이메일을 보내드릴게요.</p>
-        </>
-      )}
-
+    <div className="mt-5 rounded-xl bg-sm-navy p-5 text-center text-white">
+      <p className="text-[18px] font-extrabold">선생님은 학기 말에 몰아서 세특을 써요.</p>
+      <p className="mt-1.5 text-[13.5px] leading-relaxed text-indigo-100">
+        몇 달 뒤에 봐도 <b className="text-white">기억나는 보고서</b>가 좋은 세특이 돼요.
+        <br />
+        노트북·태블릿에서 보기 편해요.
+      </p>
+      <button
+        onClick={() => {
+          nav("/inquiry/new", {
+            state: {
+              topic: input.topic,
+              focus: input.focus ?? "career",
+              department: input.department,
+              subject: input.subject,
+              grade: input.grade,
+              term: input.term,
+            },
+          });
+        }}
+        className="mt-4 h-[50px] w-full rounded-xl bg-white text-[15px] font-extrabold text-sm-navy"
+      >
+        기억나는 탐구 보고서 만들기 →
+      </button>
       {/* 새 서비스 안내 때문에 진단이 유료가 되는 걸로 오해하지 않게 */}
-      <p className="mt-3 text-[12px] text-gray-400">
-        탐구주제 진단은 지금처럼 <b className="text-gray-500">하루 3번 무료</b>예요.
+      <p className="mt-3 text-[12px] text-indigo-200">
+        탐구주제 진단은 지금처럼 <b className="text-white">하루 3번 무료</b>예요.
       </p>
     </div>
   );
@@ -643,8 +562,8 @@ export default function Result() {
                     </div>
                   )}
 
-                  {/* 수요 테스트 — 회원에게만 */}
-                  {data.suggestion && <DemandTest inputKey={inputKey} email={user?.email} />}
+                  {/* 기억나는 탐구 보고서 — 회원 모두에게 */}
+                  {data.suggestion && <InquiryStart input={input} />}
                 </div>
               ) : (
                 // 비로그인 상태 — 이유/제안 블러 처리

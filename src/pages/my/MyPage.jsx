@@ -22,21 +22,32 @@ export default function MyPage() {
   const [busy, setBusy] = useState(true);
   const [err, setErr] = useState("");
   const [openId, setOpenId] = useState(null);
+  const [canInquire, setCanInquire] = useState(false); // 탐구 준비를 먼저 쓸 수 있는 회원인지
+  const [inqByQuery, setInqByQuery] = useState({}); // 진단 기록 번호 → 이미 시작한 탐구 번호
 
   useEffect(() => {
     if (authLoading || !user) return;
     let alive = true;
 
     (async () => {
-      const { data, error } = await supabase.rpc("my_topic_queries");
+      const [q, access, inq] = await Promise.all([
+        supabase.rpc("my_topic_queries"),
+        supabase.rpc("has_design_access"),
+        supabase.from("inquiries").select("id, query_id"),
+      ]);
       if (!alive) return;
       setBusy(false);
-      if (error) {
-        console.error("my queries failed", error);
+
+      if (q.error) {
+        console.error("my queries failed", q.error);
         setErr("기록을 불러오지 못했습니다.");
         return;
       }
-      setRows(data ?? []);
+      setRows(q.data ?? []);
+      setCanInquire(Boolean(access.data));
+      if (!inq.error) {
+        setInqByQuery(Object.fromEntries((inq.data ?? []).filter((x) => x.query_id).map((x) => [x.query_id, x.id])));
+      }
     })();
 
     return () => {
@@ -49,6 +60,23 @@ export default function MyPage() {
     const since = Date.now() - 24 * 60 * 60 * 1000;
     return rows.filter((r) => new Date(r.created_at).getTime() >= since).length;
   }, [rows]);
+
+  // 이 진단으로 탐구 시작 (이미 시작했으면 이어서 하기)
+  function goInquiry(r) {
+    const existing = inqByQuery[r.id];
+    if (existing) return nav(`/inquiry/${existing}`);
+    nav("/inquiry/new", {
+      state: {
+        query_id: r.id,
+        topic: r.topic,
+        focus: r.focus ?? "career",
+        department: r.department,
+        subject: r.subject,
+        grade: r.grade,
+        term: r.term,
+      },
+    });
+  }
 
   if (authLoading) return <div className="py-40 text-center text-gray-400">불러오는 중…</div>;
 
@@ -113,6 +141,7 @@ export default function MyPage() {
         {rows.map((r) => {
           const open = openId === r.id;
           const sug = r.result?.suggestion;
+          const started = Boolean(inqByQuery[r.id]);
           return (
             <div key={r.id} className="overflow-hidden rounded-xl border border-gray-200">
               <button
@@ -129,6 +158,7 @@ export default function MyPage() {
                   </p>
                   <p className="mt-1.5 text-[11.5px] text-gray-400">
                     {new Date(r.created_at).toLocaleDateString("ko-KR")}
+                    {started && <span className="ml-2 font-bold text-sm-navy">· 탐구 진행 중</span>}
                   </p>
                 </div>
 
@@ -164,10 +194,19 @@ export default function MyPage() {
                       {sug.how && (
                         <p className="mt-2 text-[13px] leading-relaxed text-gray-600">{sug.how}</p>
                       )}
-                      <p className="mt-3 border-t border-orange-200 pt-3 text-[12.5px] text-gray-500">
-                        흔함 지수 <b className="text-gray-400">{r.score}</b> →{" "}
-                        <b className="text-[16px] text-sm-orange">{sug.score}</b>
+                      <p className="mt-3 border-t border-orange-200 pt-3 text-[16px] font-extrabold text-sm-orange">
+                        상위 1% 탐구주제
                       </p>
+
+                      {/* 먼저 신청한 회원 — 이 주제로 보고서까지 */}
+                      {canInquire && (
+                        <button
+                          onClick={() => goInquiry(r)}
+                          className="mt-3 h-[48px] w-full rounded-xl bg-sm-navy text-[14.5px] font-extrabold text-white"
+                        >
+                          {started ? "탐구 이어서 하기 →" : "기억나는 탐구 보고서 만들기 →"}
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
