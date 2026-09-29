@@ -61,7 +61,7 @@ export default function LaunchPopup() {
           <button onClick={() => setOpen(false)} className="absolute right-4 top-3 text-[26px] leading-none text-indigo-200 hover:text-white" aria-label="닫기">
             ×
           </button>
-          <span className="inline-block rounded-full bg-sm-orange px-3 py-1 text-[12px] font-extrabold">NEW 오픈</span>
+          <span className="inline-block rounded-full bg-sm-orange px-3 py-1 text-[12px] font-extrabold"></span>
           <p id="launch-title" className="mt-3 text-[26px] font-black leading-tight">
             기억에 남는
             <br />

@@ -110,6 +110,130 @@ function RankList({ title, rows, total }) {
 const shortTime = (t) =>
   new Date(t).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 
+/*
+ * 탐구보고서 단계별 현황 — 어느 단계에서 나가는지, PDF를 누른 사람 중 몇 명이 결제하는지
+ * 윗줄은 탐구 건수, 아랫줄은 사람 수 (관리자 계정은 빼고 센다)
+ */
+/* 초 → "6분 20초" */
+function dur(sec) {
+  const v = Math.round(Number(sec ?? 0));
+  if (v < 60) return `${v}초`;
+  const m = Math.floor(v / 60), s = v % 60;
+  if (m >= 60) return `${Math.floor(m / 60)}시간 ${m % 60}분`;
+  return s ? `${m}분 ${s}초` : `${m}분`;
+}
+
+function InquiryPanel({ f }) {
+  if (!f) return null;
+  if (f.error)
+    return (
+      <div className="mt-10">
+        <h2 className="text-lg font-extrabold text-sm-navy">탐구보고서 단계별 현황</h2>
+        <p className="mt-2 rounded-lg bg-red-50 px-4 py-3 text-[13px] font-bold text-red-600">숫자를 불러오지 못했어요 · {f.error}</p>
+      </div>
+    );
+  const n = (v) => Number(v ?? 0);
+  const pct = (a, b) => (n(b) ? Math.round((n(a) / n(b)) * 100) : null);
+
+  const flow = [
+    { label: "탐구 시작", v: f.start, sub: "탐구팩까지 만든 탐구" },
+    { label: "3단계 들어감", v: f.analyze, prev: f.start, sub: "2단계(탐구 준비)를 마침" },
+    { label: "AI 분석 받음", v: f.ai, prev: f.analyze, sub: "3단계에서 분석 버튼을 누름" },
+    { label: "4단계 들어감", v: f.report, prev: f.ai, sub: "보고서 내용까지 만듦" },
+    { label: "디자인 고름", v: f.design, prev: f.report, sub: "보고서 디자인을 고름" },
+  ];
+  const pay = [
+    { label: "PDF 누름", v: f.pdf_click, prev: f.design, sub: "PDF 저장 → 결제 창을 본 사람" },
+    { label: "입금했어요", v: f.order, prev: f.pdf_click, sub: "주문을 접수한 사람" },
+    { label: "입금 승인", v: f.approved, prev: f.order, sub: "관리자가 승인한 사람" },
+    { label: "PDF 저장", v: f.pdf_saved, prev: f.approved, sub: "실제로 PDF를 저장한 사람" },
+  ];
+
+  // 가장 많이 빠지는 단계 — 두 줄 전체에서 하나
+  const all = [...flow, ...pay];
+  let worst = null;
+  let worstRate = 101;
+  all.forEach((s) => {
+    const r = s.prev == null ? null : pct(s.v, s.prev);
+    if (r != null && r < worstRate) {
+      worstRate = r;
+      worst = s.label;
+    }
+  });
+
+  const Card = ({ s, i }) => {
+    const r = s.prev == null ? null : pct(s.v, s.prev);
+    const bad = s.label === worst;
+    return (
+      <div className={`rounded-xl border p-4 ${bad ? "border-red-300 bg-red-50/50" : "border-gray-200"}`}>
+        <p className="text-[12px] text-gray-500">
+          {i}. {s.label}
+        </p>
+        <p className="mt-1.5 text-lg font-extrabold text-sm-navy">
+          {n(s.v)}
+          {r != null && (
+            <span className={`ml-1.5 text-[12.5px] font-bold ${bad ? "text-red-500" : "text-sm-orange"}`}>{r}%</span>
+          )}
+        </p>
+        <p className="mt-0.5 text-[11.5px] leading-snug text-gray-400">{s.sub}</p>
+        {bad && <p className="mt-1 text-[11.5px] font-bold text-red-500">가장 많이 빠지는 단계</p>}
+      </div>
+    );
+  };
+
+  const overall = pct(f.approved, f.start);
+
+  return (
+    <div className="mt-10">
+      <h2 className="text-lg font-extrabold text-sm-navy">탐구보고서 단계별 현황</h2>
+      <p className="mt-1 text-[12.5px] text-gray-400">
+        어느 단계에서 나가는지, PDF를 누른 사람 중 몇 명이 결제하는지 봅니다. % 는 바로 앞 단계 대비예요. 관리자 계정은 빼고 셉니다.
+      </p>
+
+      <p className="mt-4 text-[12.5px] font-bold text-gray-500">탐구 진행 (탐구 건수)</p>
+      <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-5">
+        {flow.map((s, i) => (
+          <Card key={s.label} s={s} i={i + 1} />
+        ))}
+      </div>
+
+      <p className="mt-4 text-[12.5px] font-bold text-gray-500">PDF · 결제 (사람 수)</p>
+      <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {pay.map((s, i) => (
+          <Card key={s.label} s={s} i={flow.length + i + 1} />
+        ))}
+      </div>
+
+      {/* 단계별 머문 시간 — 탐구 1건이 그 화면에 실제로 머문 시간(다른 탭·5분 이상 가만히 있던 시간은 뺌) */}
+      <p className="mt-4 text-[12.5px] font-bold text-gray-500">단계별 머문 시간 (탐구 1건당 · 보통은 중간값)</p>
+      <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {[
+          ["prepare", "2 탐구 준비"],
+          ["result", "3 결과 분석"],
+          ["report", "4 보고서 디자인"],
+        ].map(([k, l]) => {
+          const st = f.stay?.[k];
+          return (
+            <div key={k} className="rounded-xl border border-gray-200 p-4">
+              <p className="text-[12px] text-gray-500">{l}</p>
+              <p className="mt-1.5 text-lg font-extrabold text-sm-navy">{st ? `보통 ${dur(st.median)}` : "-"}</p>
+              <p className="mt-0.5 text-[11.5px] text-gray-400">{st ? `평균 ${dur(st.avg)} · ${st.n}건` : "아직 기록이 없어요"}</p>
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="mt-2.5 text-[12.5px] text-gray-500">
+        탐구를 시작한 것 대비 입금 승인까지 <b className="text-sm-navy">{overall == null ? "-" : `${overall}%`}</b>
+        <span className="text-gray-400">
+          {" "}
+          · 결제 대기로 저장된 두 번째 탐구 <b className="text-sm-navy">{n(f.waiting)}건</b>
+        </span>
+      </p>
+    </div>
+  );
+}
+
 /* 사용자별 이용 — 한 사람이 몇 번, 며칠에 걸쳐 진단했는지 */
 function UsagePanel({ usage, onPick }) {
   if (!usage) return null;
@@ -295,78 +419,6 @@ function SignupPanel({ f }) {
         결과를 본 비회원 중 <b className="text-sm-navy">{overall == null ? "-" : `${overall}%`}</b>가 가입까지 마쳤어요.
         <span className="text-gray-400"> (% 는 바로 앞 단계 대비)</span>
       </p>
-    </div>
-  );
-}
-
-/* 수요 테스트 선택지 이름 (결과 화면 NEEDS와 같은 코드) */
-const NEED_ORDER = ["memorable", "senior", "interview", "rubric", "sources", "outline"];
-const NEED_LABEL = {
-  memorable: "기억나는 보고서",
-  senior: "선배 탐구 보기",
-  interview: "면접 질문 대비",
-  rubric: "수행평가 채점 기준",
-  sources: "실제 자료 정리",
-  outline: "목차·순서 잡기",
-};
-
-/* 수요 테스트 — 제안을 본 회원 중 '탐구까지 빠르게 완성'을 원하는 비율 */
-function DemandPanel({ d }) {
-  const [showList, setShowList] = useState(false);
-  if (!d) return null;
-  const n = (v) => Number(v ?? 0);
-  const pct = (a, b) => (n(b) ? `${Math.round((n(a) / n(b)) * 100)}%` : "-");
-  const list = d.notify_list ?? [];
-
-  return (
-    <div className="mt-10">
-      <h2 className="text-lg font-extrabold text-sm-navy">수요 테스트 · 기억나는 탐구 보고서</h2>
-      <p className="mt-1 text-[12.5px] text-gray-400">
-        제안 주제 아래 버튼을 본 회원 중 얼마나 누르고 알림을 신청하는지 봅니다. 실제 기능은 아직 없어요.
-        {d.since && ` 기록 시작: ${new Date(d.since).toLocaleString("ko-KR")}`}
-      </p>
-
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {[
-          ["1. 버튼을 본 회원", d.view, ""],
-          ["2. 버튼 클릭", d.click, `본 회원의 ${pct(d.click, d.view)}`],
-          ["3. 필요한 것 고름", d.pick, `클릭의 ${pct(d.pick, d.click)}`],
-          ["4. 출시 알림 신청", d.notify, `클릭의 ${pct(d.notify, d.click)} · 본 회원의 ${pct(d.notify, d.view)}`],
-        ].map(([l, v, sub]) => (
-          <div key={l} className="rounded-xl border border-gray-200 p-4">
-            <p className="text-[12px] text-gray-500">{l}</p>
-            <p className="mt-1.5 text-lg font-extrabold text-sm-navy">{n(v)}</p>
-            <p className="mt-0.5 text-[11.5px] text-gray-400">{sub}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* 학생이 가장 필요하다고 고른 것 */}
-      <div className="mt-3">
-        <RankList
-          title="가장 필요하다고 고른 것 (카드 문구 변경 후부터 쌓여요)"
-          rows={NEED_ORDER.map((k) => ({ key: NEED_LABEL[k], n: n(d.picks?.[k]) })).sort((a, b) => b.n - a.n)}
-          total={n(d.pick)}
-        />
-      </div>
-
-      {list.length > 0 && (
-        <div className="mt-3 rounded-xl border border-gray-200 p-4">
-          <button onClick={() => setShowList((v) => !v)} className="text-[13px] font-bold text-sm-navy">
-            알림 신청자 {list.length}명 {showList ? "접기" : "보기"}
-          </button>
-          {showList && (
-            <ul className="mt-2 max-h-60 space-y-1 overflow-y-auto text-[12.5px] text-gray-600">
-              {list.map((x) => (
-                <li key={x.email} className="flex justify-between">
-                  <span>{x.email}</span>
-                  <span className="text-gray-400">{shortTime(x.at)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -561,7 +613,7 @@ export default function AdminTopics() {
   const [usage, setUsage] = useState(null); // 사용자별 이용
   const [refStats, setRefStats] = useState(null); // 친구 추천
   const [funnel, setFunnel] = useState(null); // 가입 전환
-  const [demand, setDemand] = useState(null); // 수요 테스트
+  const [inqFunnel, setInqFunnel] = useState(null); // 탐구보고서 단계별 현황
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [q, setQ] = useState("");
@@ -591,18 +643,19 @@ export default function AdminTopics() {
     setErr("");
     const args = { p_from: from || null, p_to: to || null };
 
-    const [list, stat, use, refs, fun, dem] = await Promise.all([
+    const [list, stat, use, refs, fun, inf] = await Promise.all([
       fetchAllRows(args),
       supabase.rpc("admin_topic_stats", args),
       fetchAllRows(args, "admin_user_usage"),
       supabase.rpc("admin_referral_stats", args),
       supabase.rpc("admin_signup_funnel", args),
-      supabase.rpc("admin_demand_stats", args),
+      supabase.rpc("admin_inquiry_funnel", args),
     ]);
     setBusy(false);
 
-    if (dem.error) console.warn("demand stats failed", dem.error);
-    setDemand(dem.error ? null : dem.data ?? null);
+    if (inf.error) console.warn("inquiry funnel failed", inf.error);
+    // 실패해도 칸은 보이게 하고 이유를 적는다 (숨기면 왜 안 보이는지 알 수 없어서)
+    setInqFunnel(inf.error ? { error: inf.error.message ?? "불러오지 못했어요" } : inf.data ?? {});
 
     if (fun.error) console.warn("signup funnel failed", fun.error);
     setFunnel(fun.error ? null : fun.data ?? null);
@@ -857,8 +910,8 @@ export default function AdminTopics() {
       {/* 가입 전환 — 비회원이 어디서 멈추는지 */}
       <SignupPanel f={funnel} />
 
-      {/* 수요 테스트 — 다음에 무엇을 만들지 */}
-      <DemandPanel d={demand} />
+      {/* 탐구보고서 — 어느 단계에서 나가는지, PDF 누른 사람 중 몇 명이 결제하는지 (수요 테스트 자리) */}
+      <InquiryPanel f={inqFunnel} />
 
       {/* 친구 추천 — 전환 단계와 A/B 그룹 비교 */}
       <ReferralPanel stats={refStats} />

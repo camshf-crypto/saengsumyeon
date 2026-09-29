@@ -6,6 +6,7 @@ import { track } from "../../lib/track";
 import StepBar from "./StepBar";
 import Paywall from "./Paywall";
 import { isFreeInquiry } from "./freeInquiry";
+import { useStay } from "./useStay";
 import InquirySwitcher from "./InquirySwitcher";
 
 /*
@@ -426,6 +427,7 @@ export default function InquiryResult() {
   const { user, loading: authLoading } = useAuth();
 
   const [inq, setInq] = useState(null);
+  useStay("result", inq?.id); // 체류 시간
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(""); // "" | "fill" | "analyze"

@@ -6,6 +6,7 @@ import { track } from "../../lib/track";
 import StepBar from "./StepBar";
 import Paywall from "./Paywall";
 import { isFreeInquiry } from "./freeInquiry";
+import { useStay } from "./useStay";
 import InquirySwitcher from "./InquirySwitcher";
 
 /*
@@ -357,6 +358,7 @@ export default function InquiryPrepare() {
   const { user, loading: authLoading } = useAuth();
 
   const [inq, setInq] = useState(null);
+  useStay("prepare", inq?.pack ? inq.id : null); // 체류 시간 (탐구팩이 있는 탐구만)
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false); // 탐구팩 만드는 중
   const [searching, setSearching] = useState(false); // AI가 자료 찾는 중
@@ -612,7 +614,9 @@ export default function InquiryPrepare() {
           </p>
           {!building && (
             <button
-              onClick={() => (inq.paid ? buildPack() : setWall({ reason: "start" }))}
+              // 먼저 서버에 열어 달라고 한다 — 승인으로 이용권이 들어와 있으면 그 자리에서 탐구팩을 만들고,
+              // 이용권이 없을 때만 결제 창이 뜬다 (buildPack이 결제 창을 띄움)
+              onClick={() => buildPack()}
               className="mt-6 h-[52px] w-72 rounded-xl bg-sm-navy text-[15px] font-extrabold text-white"
             >
               {inq.paid ? "탐구팩 만들기" : "이용권으로 열기"}
