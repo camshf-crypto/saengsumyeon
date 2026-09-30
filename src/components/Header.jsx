@@ -28,6 +28,13 @@ function OrdersLink({ count, mobile = false }) {
 
 /* 탐구보고서 메뉴 — 누르면 /inquiry 화면(안내 + 내 탐구 목록)으로 들어간다 */
 const REPORT_MENU = "기억에 남는 탐구보고서 작성";
+const SERIES_MENU = [
+  { to: "/motive", label: "지원동기 흔한가" },
+  { to: "/interview", label: "생기부 질문" },
+  { to: "/reading", label: "독서 흔한가" },
+  { to: "/topic", label: "탐구주제 흔한가", also: "/" }, // 메인(/)에 있을 때도 이 메뉴에 불을 켠다
+  { to: "/inquiry", label: REPORT_MENU },
+];
 
 export default function Header() {
   const { user, profile, signOut } = useAuth();
@@ -94,6 +101,17 @@ export default function Header() {
 
         {/* 데스크톱 */}
         <div className="ml-auto hidden items-center gap-2.5 text-[13px] sm:flex">
+          {/* 흔한가 시리즈 메뉴 — 로그인 전에도 보인다 (어떤 서비스가 있는지 먼저 알 수 있게) */}
+          {SERIES_MENU.map((m) => (
+            <Link
+              key={m.to}
+              to={m.to}
+              className={`px-1.5 py-1.5 font-bold transition hover:text-sm-orange ${pathname === m.to || pathname === m.also ? "text-sm-orange" : "text-sm-navy"}`}
+            >
+              {m.label}
+            </Link>
+          ))}
+          <span className="mx-1 h-4 w-px bg-gray-200" aria-hidden="true" />
           {user ? (
             <>
               {isAdmin && (
@@ -107,12 +125,6 @@ export default function Header() {
                   <OrdersLink count={pendingOrders} />
                 </>
               )}
-              <Link
-                to="/inquiry"
-                className={`px-1.5 py-1.5 font-bold transition hover:text-sm-orange ${pathname === "/inquiry" ? "text-sm-orange" : "text-sm-navy"}`}
-              >
-                {REPORT_MENU}
-              </Link>
               <Link
                 to="/my"
                 className="px-1.5 py-1.5 font-bold text-gray-600 transition hover:text-sm-orange"
@@ -147,9 +159,14 @@ export default function Header() {
           )}
         </div>
 
-        {/* 모바일 — 로그인 전에는 버튼만, 로그인 후에는 햄버거 */}
+        {/* 모바일 — 로그인 전에는 회원가입 버튼 + 햄버거, 로그인 후에는 햄버거 */}
         <div className="ml-auto flex items-center gap-2 text-[13px] sm:hidden">
-          {user ? (
+          {!user && (
+            <Link to="/signup" className="rounded-lg bg-sm-navy px-3 py-1.5 font-bold text-white">
+              회원가입
+            </Link>
+          )}
+          {(
             <button
               onClick={() => setOpen(!open)}
               aria-label="메뉴"
@@ -174,35 +191,40 @@ export default function Header() {
                 <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-sm-orange" />
               )}
             </button>
-          ) : (
-            <>
-              <Link to="/login" className="px-2 py-1.5 font-semibold text-gray-600">
-                로그인
-              </Link>
-              <Link
-                to="/signup"
-                className="rounded-lg bg-sm-navy px-3 py-1.5 font-bold text-white"
-              >
-                회원가입
-              </Link>
-            </>
           )}
         </div>
       </div>
 
       {/* 모바일 펼침 메뉴 */}
-      {open && user && (
+      {open && (
         <div className="absolute inset-x-0 top-full z-20 border-b border-gray-200 bg-white shadow-sm sm:hidden">
           <div className="px-5 py-3">
-            <p className="py-2.5 text-[13px] font-semibold text-gray-400">
-              {profile?.name ?? "회원"}님
-            </p>
-            <Link
-              to="/inquiry"
-              className="block border-t border-gray-100 py-3.5 text-[15px] font-bold text-sm-navy"
-            >
-              {REPORT_MENU}
-            </Link>
+            {user && (
+              <p className="py-2.5 text-[13px] font-semibold text-gray-400">
+                {profile?.name ?? "회원"}님
+              </p>
+            )}
+            {SERIES_MENU.map((m) => (
+              <Link
+                key={m.to}
+                to={m.to}
+                onClick={() => setOpen(false)}
+                className={`block border-t border-gray-100 py-3.5 text-[15px] font-bold first:border-t-0 ${pathname === m.to || pathname === m.also ? "text-sm-orange" : "text-sm-navy"}`}
+              >
+                {m.label}
+              </Link>
+            ))}
+            {!user && (
+              <Link
+                to="/login"
+                onClick={() => setOpen(false)}
+                className="block border-t border-gray-100 py-3.5 text-[15px] font-bold text-gray-500"
+              >
+                로그인
+              </Link>
+            )}
+            {user && (
+            <>
             <Link
               to="/my"
               className="block border-t border-gray-100 py-3.5 text-[15px] font-bold text-sm-navy"
@@ -226,6 +248,8 @@ export default function Header() {
             >
               로그아웃
             </button>
+            </>
+            )}
           </div>
         </div>
       )}

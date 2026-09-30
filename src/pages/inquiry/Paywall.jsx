@@ -4,17 +4,18 @@ import { useAuth } from "../../lib/AuthContext";
 import { track } from "../../lib/track";
 
 /*
- * 결제 팝업 — 탐구 준비·결과 분석·보고서 화면이 같이 쓴다
+ * 결제 팝업 — 탐구 준비·결과 분석·보고서 화면, 그리고 생기부 예상질문(kind="interview") 화면이 같이 쓴다
  * ① 상품 고르기 → ② 계좌로 입금 (입금자명 자동) → ③ '입금했어요' → 관리자 승인 후 열림
  * 이용권이 남아 있으면 결제 없이 '이용권 1개로 열기'
  * 금액을 바꾸면 서버 함수 supabase/functions/order 의 금액도 같이 바꿔야 한다
  */
 
 const BANK = { name: "국민은행", number: "649301-04-159726", holder: "세움러닝(김지윤)" };
-const PRODUCTS = [
-  { k: "one", label: "탐구 1건", price: 3900, sub: "지금 이 탐구를 끝까지" },
-  { k: "ten", label: "탐구 10건", price: 32000, sub: "1건당 3,200원 · 18% 할인", best: true },
-];
+// 파는 상품 — 탐구 쪽은 10건, 예상질문 쪽은 예상질문 하나
+const PRODUCTS_BY_KIND = {
+  inquiry: [{ k: "ten", label: "탐구 10건", price: 29000, sub: "1건당 2,900원 · 탐구보고서 10건" }],
+  interview: [{ k: "interview", label: "생기부 예상질문", price: 19000, sub: "" }],
+};
 
 function Copy({ text, label }) {
   const [done, setDone] = useState(false);
@@ -29,9 +30,11 @@ function Copy({ text, label }) {
   );
 }
 
-export default function Paywall({ open, onClose, inquiryId, reason, onUnlocked }) {
+export default function Paywall({ open, onClose, inquiryId, reason, onUnlocked, kind = "inquiry" }) {
   const { user, profile } = useAuth();
-  const [product, setProduct] = useState("one");
+  const PRODUCTS = PRODUCTS_BY_KIND[kind];
+  const isInterview = kind === "interview";
+  const [product, setProduct] = useState(PRODUCTS[0].k);
   const [depositor, setDepositor] = useState("");
   const [receipt, setReceipt] = useState("");
   const [paid, setPaid] = useState(false); // '입금을 마쳤어요' 체크
@@ -52,6 +55,14 @@ export default function Paywall({ open, onClose, inquiryId, reason, onUnlocked }
   // 팝업이 뜨기 전에 — 관리자가 이미 승인해서 열린 탐구면 팝업 없이 바로 연다
   useEffect(() => {
     if (!open || !user) return;
+    if (isInterview) {
+      setChecking(true);
+      supabase.from("interview_access").select("user_id").maybeSingle().then(({ data }) => {
+        if (data) return onUnlocked?.();
+        setChecking(false);
+      });
+      return;
+    }
     if (!inquiryId) return setChecking(false);
     setChecking(true);
     supabase.from("inquiries").select("paid").eq("id", inquiryId).maybeSingle().then(({ data }) => {
@@ -65,19 +76,23 @@ export default function Paywall({ open, onClose, inquiryId, reason, onUnlocked }
   useEffect(() => {
     if (!open || !user) return;
     track("paywall_view", reason);
-    supabase.from("credits").select("balance").maybeSingle().then(({ data }) => setBalance(data?.balance ?? 0));
-    supabase
-      .from("pay_orders").select("*").eq("status", "pending").order("created_at", { ascending: false }).limit(1)
-      .then(({ data }) => setPending(data?.[0] ?? null));
+    if (!isInterview) supabase.from("credits").select("balance").maybeSingle().then(({ data }) => setBalance(data?.balance ?? 0));
+    let q = supabase.from("pay_orders").select("*").eq("status", "pending");
+    q = isInterview ? q.eq("product", "interview") : q.neq("product", "interview");
+    q.order("created_at", { ascending: false }).limit(1).then(({ data }) => setPending(data?.[0] ?? null));
   }, [open, user, reason]);
 
   // 입금 확인 중이면 — 관리자가 승인하는 순간 실시간으로 받아서 저절로 연다 (예비로 30초마다 확인)
   useEffect(() => {
-    if (!open || !pending || !inquiryId || !user) return;
+    if (!open || !pending || !user || (!inquiryId && !isInterview)) return;
     const check = () =>
-      supabase.from("inquiries").select("paid").eq("id", inquiryId).maybeSingle().then(({ data }) => {
-        if (data?.paid) onUnlocked?.();
-      });
+      isInterview
+        ? supabase.from("interview_access").select("user_id").maybeSingle().then(({ data }) => {
+            if (data) onUnlocked?.();
+          })
+        : supabase.from("inquiries").select("paid").eq("id", inquiryId).maybeSingle().then(({ data }) => {
+            if (data?.paid) onUnlocked?.();
+          });
     const ch = supabase
       .channel(`my-order-${user.id}`)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pay_orders", filter: `user_id=eq.${user.id}` }, (e) => {
@@ -132,12 +147,16 @@ export default function Paywall({ open, onClose, inquiryId, reason, onUnlocked }
       <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-[12px] font-bold text-sm-orange">이용권이 필요해요</p>
+            <p className="text-[12px] font-bold text-sm-orange">{isInterview ? "생기부 예상질문" : "이용권이 필요해요"}</p>
             <p className="mt-1 text-[19px] font-extrabold text-sm-navy">
-              {reason === "start" ? "무료 탐구 1건을 다 썼어요" : reason === "pdf" ? "이 보고서를 PDF로 저장하려면" : "탐구를 끝까지 이어가려면"}
+              {isInterview
+                ? "내 생기부로 면접 예상 질문 뽑기"
+                : reason === "start" ? "무료 탐구 1건을 다 썼어요" : reason === "pdf" ? "이 보고서를 PDF로 저장하려면" : "탐구를 끝까지 이어가려면"}
             </p>
             <p className="mt-1 text-[13px] leading-relaxed text-gray-500">
-              {reason === "pdf" ? (
+              {isInterview ? (
+                <><b>생기부 정리 가이드 PDF</b>와 <b>생기부 예상 질문 · PDF 저장</b>이 열려요. </>
+              ) : reason === "pdf" ? (
                 <>무료 체험으로 만든 보고서예요. <b>이용권 1개</b>로 이 보고서를 PDF로 저장할 수 있어요.</>
               ) : (
                 <>이용권 1개로 탐구 1건의 <b>AI 자료 찾기 · 결과 분석 · 보고서 디자인 · PDF 저장</b>이 모두 열려요.</>
@@ -180,8 +199,8 @@ export default function Paywall({ open, onClose, inquiryId, reason, onUnlocked }
             <div className="mt-5 space-y-5">
               {/* ① 상품 */}
               <div>
-                <p className="text-[13px] font-extrabold text-sm-navy">① 이용권 고르기</p>
-                <div className="mt-2 grid grid-cols-2 gap-2">
+                <p className="text-[13px] font-extrabold text-sm-navy">① {PRODUCTS.length > 1 ? "이용권 고르기" : "상품"}</p>
+                <div className={`mt-2 grid gap-2 ${PRODUCTS.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
                   {PRODUCTS.map((p) => (
                     <button key={p.k} onClick={() => setProduct(p.k)} className={`relative rounded-xl border-2 p-3 text-left ${product === p.k ? "border-sm-navy bg-indigo-50" : "border-gray-200"}`}>
                       {p.best && <span className="absolute -top-2 right-2 rounded-full bg-sm-orange px-2 py-0.5 text-[10.5px] font-bold text-white">할인</span>}

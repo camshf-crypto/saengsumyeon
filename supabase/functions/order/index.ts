@@ -4,7 +4,7 @@
 // 비밀값: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT (관리자 폰 푸시 알림)
 //
 // 요청 (로그인 필수)
-//   { product: "one" | "ten", depositor, receipt?, inquiry_id? }
+//   { product: "ten" | "interview", depositor, receipt?, inquiry_id? }
 //
 // 금액을 바꾸면 화면(src/pages/inquiry/Paywall.jsx)과 DB 함수 grant_order 의 금액도 같이 바꿔야 한다
 
@@ -20,8 +20,8 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
 
 const PRODUCTS: Record<string, { name: string; qty: number; amount: number }> = {
-  one: { name: "탐구 1건", qty: 1, amount: 3900 },
-  ten: { name: "탐구 10건", qty: 10, amount: 32000 },
+  ten: { name: "탐구 10건", qty: 10, amount: 29000 },
+  interview: { name: "생기부 예상질문", qty: 1, amount: 19000 },
 };
 
 /*

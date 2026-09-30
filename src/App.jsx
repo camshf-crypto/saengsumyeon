@@ -16,6 +16,9 @@ import MyPage from "./pages/my/MyPage";
 import AdminTopics from "./pages/admin/AdminTopics";
 import AdminOrders from "./pages/admin/AdminOrders";
 import InquiryHome from "./pages/inquiry/InquiryHome";
+import Reading from "./pages/reading/Reading";
+import Motive from "./pages/motive/Motive";
+import Interview from "./pages/interview/Interview";
 import InquiryPrepare from "./pages/inquiry/InquiryPrepare";
 import InquiryResult from "./pages/inquiry/InquiryResult";
 import InquiryReport from "./pages/inquiry/InquiryReport";
@@ -88,11 +91,16 @@ export default function App() {
           <Routes>
             {/* 진단 흐름: 주제 입력 → 결과(일부 공개) → 가입 → 결과 전체 */}
             <Route path="/" element={<Landing />} />
+            {/* 탐구주제 흔한가 — 메인(/)과 같은 화면. 흔한가 시리즈 주소를 맞추려고 따로 둔다 (예전 링크 /는 그대로 동작) */}
+            <Route path="/topic" element={<Landing />} />
             {/* 결과는 로그인 없이도 보여야 한다. 잠금은 화면 안에서 처리 */}
             <Route path="/result" element={<Result />} />
 
             {/* 기억에 남는 탐구보고서 — 헤더 메뉴로 들어오는 첫 화면 (4단계 안내 + 내 탐구 목록) */}
             <Route path="/inquiry" element={<InquiryHome />} />
+            <Route path="/reading" element={<Reading />} />
+            <Route path="/motive" element={<Motive />} />
+            <Route path="/interview" element={<Interview />} />
             {/* 탐구 준비 — /inquiry/new 는 새로 만들기, /inquiry/:id 는 다시 열기 */}
             <Route path="/inquiry/:id" element={<InquiryPrepare />} />
             {/* 결과 분석 — 직접 분석 / AI 분석 */}
