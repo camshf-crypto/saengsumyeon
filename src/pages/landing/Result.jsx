@@ -205,12 +205,26 @@ function ShareGate({ topic, onHome }) {
  * 다음 단계 — 제안 주제를 받은 회원 모두에게 보인다
  * 누르면 이 주제로 바로 2 탐구 준비를 시작한다 (설명 없이 자연스럽게 넘어가게)
  */
-function InquiryStart({ input }) {
+function InquiryStart({ input, suggestion }) {
   const nav = useNavigate();
+  // 버튼이 보인 것 기록 — 주제당 한 번 (관리자 화면 '다음 단계 누름' 비율의 분모)
+  const seen = useRef(null);
+  const key = JSON.stringify(input);
+  useEffect(() => {
+    if (seen.current === key) return;
+    seen.current = key;
+    track("next_view");
+  }, [key]);
+
   return (
-    <div className="mt-6 text-center">
+    <div className="mt-5 rounded-xl bg-sm-navy p-5 text-center text-white">
+      <p className="text-[18px] font-extrabold">선생님은 학기 말에 몰아서 세특을 써요.</p>
+      <p className="mt-1.5 text-[13.5px] leading-relaxed text-indigo-100">
+        몇 달 뒤에 봐도 <b className="text-white">기억나는 보고서</b>가 좋은 세특이 돼요.
+      </p>
       <button
         onClick={() => {
+          track("next_click");
           nav("/inquiry/new", {
             state: {
               topic: input.topic,
@@ -219,15 +233,17 @@ function InquiryStart({ input }) {
               subject: input.subject,
               grade: input.grade,
               term: input.term,
+              suggestion, // 무료 체험 질문 카드에 보여줄 상위 1% 주제
             },
           });
         }}
-        className="h-[56px] w-full rounded-xl bg-sm-navy text-[16px] font-extrabold text-white"
+        className="mt-4 h-[50px] w-full rounded-xl bg-white text-[15px] font-extrabold text-sm-navy"
       >
-        다음 단계 
+        기억나는 탐구 보고서 만들기 →
       </button>
-      <p className="mt-2 text-[12px] leading-relaxed text-gray-400">
-        주제 진단은 지금처럼 하루 3번 무료예요
+      {/* 새 서비스 안내 때문에 진단이 유료가 되는 걸로 오해하지 않게 */}
+      <p className="mt-3 text-[12px] text-indigo-200">
+        탐구주제 진단은 지금처럼 <b className="text-white">하루 3번 무료</b>예요.
       </p>
     </div>
   );
@@ -556,7 +572,7 @@ export default function Result() {
                   )}
 
                   {/* 다음 단계 → 탐구 준비 — 회원 모두에게 */}
-                  {data.suggestion && <InquiryStart input={input} />}
+                  {data.suggestion && <InquiryStart input={input} suggestion={data.suggestion.topic} />}
                 </div>
               ) : (
                 // 비로그인 상태 — 이유/제안 블러 처리

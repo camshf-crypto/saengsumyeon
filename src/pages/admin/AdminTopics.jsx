@@ -190,6 +190,31 @@ function InquiryPanel({ f }) {
         어느 단계에서 나가는지, PDF를 누른 사람 중 몇 명이 결제하는지 봅니다. % 는 바로 앞 단계 대비예요. 관리자 계정은 빼고 셉니다.
       </p>
 
+      {/* 결과 화면 → 다음 단계 → 무료 체험 (사람 수) */}
+      <p className="mt-4 text-[12.5px] font-bold text-gray-500">결과 화면에서 넘어오기 (사람 수)</p>
+      <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[
+          { label: "다음 단계 버튼을 본 회원", v: f.next_view, sub: "상위 1% 주제 결과를 본 회원" },
+          { label: "다음 단계 누름", v: f.next_click, prev: f.next_view, sub: "결과 화면에서 버튼을 누른 회원" },
+          { label: "무료 체험 '네'", v: f.trial_yes, prev: f.next_click, sub: `'아니요' ${n(f.trial_no)}명` },
+          { label: "탐구 시작한 회원", v: f.starters, prev: f.trial_yes, sub: "탐구팩까지 만든 회원 (이용권 포함)" },
+        ].map((s, i) => {
+          const r = s.prev == null ? null : pct(s.v, s.prev);
+          return (
+            <div key={s.label} className="rounded-xl border border-gray-200 p-4">
+              <p className="text-[12px] text-gray-500">
+                {String.fromCharCode(65 + i)}. {s.label}
+              </p>
+              <p className="mt-1.5 text-lg font-extrabold text-sm-navy">
+                {n(s.v)}
+                {r != null && <span className="ml-1.5 text-[12.5px] font-bold text-sm-orange">{r}%</span>}
+              </p>
+              <p className="mt-0.5 text-[11.5px] leading-snug text-gray-400">{s.sub}</p>
+            </div>
+          );
+        })}
+      </div>
+
       <p className="mt-4 text-[12.5px] font-bold text-gray-500">탐구 진행 (탐구 건수)</p>
       <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-5">
         {flow.map((s, i) => (
