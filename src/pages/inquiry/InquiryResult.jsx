@@ -5,7 +5,6 @@ import { useAuth } from "../../lib/AuthContext";
 import { track } from "../../lib/track";
 import StepBar from "./StepBar";
 import Paywall from "./Paywall";
-import { isFreeInquiry } from "./freeInquiry";
 import { useStay } from "./useStay";
 import InquirySwitcher from "./InquirySwitcher";
 
@@ -468,7 +467,8 @@ export default function InquiryResult() {
   const series = useMemo(() => (data ? seriesOf(data, qIndex) : []), [data, qIndex]);
   const research = ["lit", "case", "data"].includes(inq?.method);
   const hasSources = (inq?.sources?.list ?? []).some((x) => x.selected && x.url);
-  const mode = inq?.analysis_mode; // null → 아직 안 고름
+  // 결과 정리는 늘 AI가 한다 — '내가 직접 하기 / AI가 해주기' 고르기 없음
+  const mode = inq ? "ai" : null;
   const ai = inq?.results?.ai;
   const show = aiOpen && Boolean(ai); // 지금 화면에 AI 분석을 보여주는지
 
@@ -491,13 +491,15 @@ export default function InquiryResult() {
   async function runAi(d = data) {
     setBusy("analyze");
     setErr("");
-    const { data: res, message } = await callInquiry({ action: "analyze", inquiry_id: id, data: d });
+    const mine = (answers.mine || `${answers.notable} ${answers.why}`).trim();
+    const { data: res, message } = await callInquiry({ action: "analyze", inquiry_id: id, data: d, mine });
     setBusy("");
     if (message) return setErr(message);
     setInq(res.inquiry);
     setAiOpen(true);
+    // 가장 임팩트 있는 후보(첫 번째)로 기억 문장 칸을 채운다 — 학생이 직접 쓴 게 있으면 그대로 둔다
     const first = res.inquiry.results?.ai?.memory?.[0];
-    if (first && !memory.l1) setMemory(first);
+    if (first && !memory.l1 && !memory.l2) setMemory({ l1: first.l1, l2: first.l2 });
   }
 
   // AI가 해주기 — 자료 탐구면 먼저 자료를 읽고, 그다음 분석
@@ -516,15 +518,6 @@ export default function InquiryResult() {
     runAiAll();
   }
 
-  // 처음 고르기 — 처음 고른 것만 analysis_mode에 남긴다
-  async function chooseMode(m) {
-    track(m === "self" ? "analyze_self" : "analyze_ai", inq.method);
-    track("results_upload");
-    const { data: row } = await supabase.from("inquiries").update({ analysis_mode: m }).eq("id", id).select("*").single();
-    if (row) setInq(row);
-    // AI 모드: 자료 탐구면 비교표 채우기까지만. 분석은 학생이 'AI 분석 받기'를 눌렀을 때
-    if (m === "ai" && research && hasSources && data?.filled_by !== "ai") runFill();
-  }
 
   // 직접 하다가 AI 도움 받기
   async function helpFromAi() {
@@ -565,7 +558,10 @@ export default function InquiryResult() {
 
   // 넘어갈 수 있는지 — 기억 문장 + 학생 생각
   const mine = mode === "self" ? `${answers.notable} ${answers.why}`.trim() : answers.mine.trim();
-  const ready = memory.l1 && memory.l2 && mine.length >= 10;
+  const mineOk = mine.length >= 10;
+  const ready = memory.l1 && memory.l2 && mineOk;
+  // 기억 문장 칸은 AI 분석을 받은 뒤에 열린다 (이미 써 둔 기억 문장이 있으면 그대로 보여준다)
+  const memoryOpen = show || Boolean(memory.l1 || memory.l2);
 
   function toDesign() {
     supabase
@@ -579,27 +575,33 @@ export default function InquiryResult() {
   useEffect(() => {
     if (user) supabase.rpc("is_admin").then(({ data }) => setIsAdmin(Boolean(data)));
   }, [user]);
-  // 무료 체험 탐구인지 (null = 확인 중) — 보고서 디자인까지 무료, PDF 저장만 이용권
-  const [free, setFree] = useState(null);
-  useEffect(() => {
-    if (!user || !inq?.id) return;
-    isFreeInquiry(user.id, inq.id).then(setFree);
-  }, [user, inq?.id, Boolean(inq?.pack)]);
+  // 무료 체험 탐구인지 — 2단계에서 학생이 무료 체험을 쓰기로 한 탐구 (보고서 디자인까지 무료, PDF 저장만 이용권)
+  const free = inq ? Boolean(inq.free_trial) : null;
   const locked = inq && !inq.paid && !isAdmin && free === false; // 무료 체험 탐구는 열어 둔다
+
+  // 3단계에 들어오면 AI가 바로 결과를 정리한다 (한 번만)
+  //  - 문헌·사례·데이터: 2단계에서 고른 자료를 읽고 비교표를 채운다 (비교표가 비어 있을 때만 — 학생이 채운 칸은 덮어쓰지 않음)
+  //  - 실험·설문·관찰: 학생이 직접 모은 숫자를 넣어야 해서 채우기는 없음
+  //  분석·기억 문장 후보는 학생이 '내 생각 한 줄'을 쓰고 'AI 분석 받기'를 누를 때
+  const autoFilled = useRef(false);
+  useEffect(() => {
+    if (!inq || !data || autoFilled.current || busy) return;
+    if (!(inq.paid || isAdmin || free === true)) return; // 무료 체험 확인 전이거나 이용권이 필요한 탐구면 기다린다
+    autoFilled.current = true;
+    if (!inq.analysis_mode) {
+      track("analyze_ai", inq.method);
+      track("results_upload");
+      supabase.from("inquiries").update({ analysis_mode: "ai" }).eq("id", id).then(({ error }) => error && console.warn(error));
+    }
+    const empty = data.kind === "text" && !(data.cells ?? []).flat().some((v) => String(v ?? "").trim());
+    if (research && hasSources && data.filled_by !== "ai" && empty) runFill();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inq?.id, Boolean(data), inq?.paid, isAdmin, free]);
 
   if (authLoading) return <div className="py-40 text-center text-gray-400">불러오는 중…</div>;
   if (!user) return <div className="py-40 text-center text-gray-500">로그인이 필요합니다.</div>;
 
   const field = "w-full resize-none rounded-lg border border-gray-300 p-3 text-[13.5px] leading-relaxed outline-none focus:border-sm-navy";
-  const aiDesc = research
-    ? hasSources
-      ? "2단계에서 ‘보고서에 쓰기’로 고른 자료만 AI가 직접 읽고 비교표를 채운 뒤, 분석과 기억 문장 후보까지 정리해요."
-      : "2단계에서 고른 자료가 없어요. 비교표를 채워 주면 AI가 분석해요."
-    : "넣은 숫자로 AI가 해석과 기억 문장 후보를 먼저 정리해요. 나는 확인하고 고르기만.";
-  const selfDesc = research
-    ? "자료를 읽고 비교표를 내가 채워요. 해석도 내 말로 써요."
-    : "그래프는 자동으로 그려드려요. 해석은 내 말로 써요.";
-
   return (
     <div className="min-h-screen bg-gray-100">
       <header className="flex h-[60px] items-center gap-6 border-b border-gray-200 bg-white px-6">
@@ -619,27 +621,6 @@ export default function InquiryResult() {
 
       {err && <p className="mx-auto mt-5 max-w-3xl rounded-lg bg-red-50 px-4 py-3 text-center text-[14px] font-bold text-red-600">{err}</p>}
       {!inq && !err && <p className="py-40 text-center text-gray-400">불러오는 중…</p>}
-
-      {inq && data && !mode && (
-        <div className="mx-auto max-w-4xl p-6">
-          <div className="rounded-2xl border border-gray-200 bg-white p-7">
-            <p className="text-[12px] font-bold text-sm-orange">3 결과 분석</p>
-            <p className="mt-1 text-[20px] font-extrabold text-sm-navy">결과를 어떻게 정리할까요?</p>
-            <p className="mt-1 text-[13px] text-gray-500">{inq.suggestion}</p>
-            <div className="mt-5 grid gap-3 md:grid-cols-2">
-              <button onClick={() => chooseMode("self")} className="rounded-2xl border-2 border-gray-200 p-5 text-left hover:border-sm-navy">
-                <p className="text-[17px] font-extrabold text-sm-navy">내가 직접 하기</p>
-                <p className="mt-2 text-[13px] leading-relaxed text-gray-600">{selfDesc}</p>
-              </button>
-              <button onClick={() => chooseMode("ai")} className="rounded-2xl border-2 border-sm-navy bg-sm-navy p-5 text-left text-white">
-                <p className="text-[17px] font-extrabold">AI가 해주기</p>
-                <p className="mt-2 text-[13px] leading-relaxed text-indigo-100">{aiDesc}</p>
-              </button>
-            </div>
-            <p className="mt-3 text-[12px] text-gray-400">어느 쪽이든 마지막에 ‘내 생각 한 줄’은 직접 써요. 직접 하다가 막히면 AI 도움을 받을 수 있어요.</p>
-          </div>
-        </div>
-      )}
 
       {inq && data && mode && (
         <div className="mx-auto flex max-w-[1400px] flex-col gap-5 p-5 lg:flex-row lg:items-start">
@@ -713,9 +694,16 @@ export default function InquiryResult() {
                   </p>
                   <textarea rows={3} value={answers.mine} onChange={(e) => setAnswers({ ...answers, mine: e.target.value })} className={field} />
                   {!show && !busy && (
-                    <button onClick={openAi} className="h-11 w-full rounded-lg bg-sm-navy text-[14px] font-bold text-white">
-                      {research && hasSources && data.filled_by !== "ai" ? "AI가 자료 읽고 분석하기" : "AI 분석 받기"}
-                    </button>
+                    <>
+                      <button
+                        onClick={openAi}
+                        disabled={!mineOk}
+                        className="h-11 w-full rounded-lg bg-sm-navy text-[14px] font-bold text-white disabled:opacity-40"
+                      >
+                        {research && hasSources && data.filled_by !== "ai" ? "AI가 자료 읽고 분석하기" : "AI 분석 받기"}
+                      </button>
+                      {!mineOk && <p className="text-center text-[12px] text-gray-400">내 생각을 한 줄(10자 이상) 쓰면 AI 분석을 받을 수 있어요</p>}
+                    </>
                   )}
                 </>
               )}
@@ -741,17 +729,36 @@ export default function InquiryResult() {
                 </div>
               )}
 
+              {!memoryOpen ? (
+                <div>
+                  <p className="text-[15px] font-extrabold text-sm-navy">기억 문장</p>
+                  <div className="mt-2 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-5 text-center">
+                    <p className="text-[13px] font-bold text-gray-500">🔒 내 생각을 먼저 써 주세요</p>
+                    <p className="mt-1 text-[12px] leading-relaxed text-gray-400">
+                      내 생각 한 줄을 쓰고 ‘AI 분석 받기’를 누르면,
+                      <br />
+                      AI가 결과·내 생각·자료에서 임팩트 있는 문장을 찾아 여기에 채워 줘요.
+                    </p>
+                  </div>
+                </div>
+              ) : (
               <div className={show ? "border-t border-gray-100 pt-3" : ""}>
                 <p className="text-[15px] font-extrabold text-sm-navy">기억 문장</p>
                 <p className="text-[12px] text-gray-500">
-                  보고서 가운데 가장 크게 들어갈 한 문장이에요. {mode === "self" && !show ? "내 결과로 직접 만들어요." : ""}
+                  보고서 가운데 가장 크게 들어갈 한 문장이에요.{" "}
+                  {show ? "AI가 결과·내 생각·자료에서 임팩트 있는 문장을 찾았어요. 골라서 다듬어요." : "‘AI 분석 받기’를 누르면 AI가 결과·내 생각·자료에서 임팩트 있는 문장을 찾아 채워 줘요."}
                 </p>
                 {show && ai?.memory?.length > 0 && (
                   <div className="mt-2 space-y-1.5">
                     {ai.memory.map((m, i) => {
                       const on = m.l1 === memory.l1 && m.l2 === memory.l2;
                       return (
-                        <button key={i} onClick={() => setMemory(m)} className={`w-full rounded-lg border px-3 py-2 text-left text-[14px] font-extrabold ${on ? "border-sm-navy bg-sm-navy text-white" : "border-gray-300 text-sm-navy"}`}>
+                        <button key={i} onClick={() => setMemory({ l1: m.l1, l2: m.l2 })} className={`w-full rounded-lg border px-3 py-2 text-left text-[14px] font-extrabold ${on ? "border-sm-navy bg-sm-navy text-white" : "border-gray-300 text-sm-navy"}`}>
+                          {m.from && (
+                            <span className={`mr-1.5 rounded px-1.5 py-0.5 align-middle text-[10.5px] font-bold ${on ? "bg-white/20 text-white" : "bg-orange-50 text-sm-orange"}`}>
+                              {m.from === "학생 말" ? "내 생각에서" : m.from === "자료" ? "자료에서" : "결과에서"}
+                            </span>
+                          )}
                           {m.l1} {m.l2}
                         </button>
                       );
@@ -763,13 +770,14 @@ export default function InquiryResult() {
                   <input value={memory.l2} onChange={(e) => setMemory({ ...memory, l2: e.target.value })} placeholder="둘째 줄 (결과)" className="rounded-lg border border-gray-300 px-3 py-2 text-[14px] outline-none focus:border-sm-navy" />
                 </div>
               </div>
+              )}
 
               <button onClick={toDesign} disabled={!ready} className="h-[52px] w-full rounded-xl bg-sm-navy text-[15px] font-extrabold text-white disabled:opacity-40">
                 기억나는 보고서로 만들기 →
               </button>
               {!ready && (
                 <p className="text-center text-[12px] text-gray-400">
-                  기억 문장 두 줄과 {mode === "self" ? "‘눈에 띈 점’·‘왜 그랬을까’" : "내 생각 한 줄"}을 쓰면 넘어갈 수 있어요
+                  {!mineOk ? "내 생각 한 줄 → AI 분석 받기 → 기억 문장 순서로 채우면 넘어갈 수 있어요" : "기억 문장 두 줄을 채우면 넘어갈 수 있어요"}
                 </p>
               )}
             </div>

@@ -6,7 +6,6 @@ import { getClientId } from "./lib/clientId";
 import { saveRefCode } from "./lib/referral";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
-import LaunchPopup from "./components/LaunchPopup";
 
 import Landing from "./pages/landing/Landing";
 import Result from "./pages/landing/Result";
@@ -75,8 +74,6 @@ function Layout({ children }) {
       <Header />
       <main className="flex-1">{children}</main>
       <Footer />
-      {/* 메인에 들어오면 '기억에 남는 탐구보고서 오픈' 안내 */}
-      {pathname === "/" && <LaunchPopup />}
     </div>
   );
 }

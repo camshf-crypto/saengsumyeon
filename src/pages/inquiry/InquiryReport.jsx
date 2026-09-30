@@ -5,7 +5,6 @@ import { useAuth } from "../../lib/AuthContext";
 import { track } from "../../lib/track";
 import StepBar from "./StepBar";
 import Paywall from "./Paywall";
-import { isFreeInquiry } from "./freeInquiry";
 import { useStay } from "./useStay";
 import InquirySwitcher from "./InquirySwitcher";
 import { A4, TEMPLATES, renderPages, emptyVoices } from "./templates";
@@ -812,12 +811,8 @@ export default function InquiryReport() {
   useEffect(() => {
     if (user) supabase.rpc("is_admin").then(({ data }) => setIsAdmin(Boolean(data)));
   }, [user]);
-  // 무료 체험 탐구인지 (null = 확인 중) — 보고서 디자인까지 무료, PDF 저장만 이용권
-  const [free, setFree] = useState(null);
-  useEffect(() => {
-    if (!user || !inq?.id) return;
-    isFreeInquiry(user.id, inq.id).then(setFree);
-  }, [user, inq?.id, Boolean(inq?.pack)]);
+  // 무료 체험 탐구인지 — 2단계에서 학생이 무료 체험을 쓰기로 한 탐구 (보고서 디자인까지 무료, PDF 저장만 이용권)
+  const free = inq ? Boolean(inq.free_trial) : null;
   const locked = inq && !inq.paid && !isAdmin && free === false; // 무료 체험이 아닌 미결제 탐구는 화면부터 막는다
   const [pdfWall, setPdfWall] = useState(false); // PDF 저장을 눌렀을 때 결제 창
 
@@ -876,6 +871,13 @@ export default function InquiryReport() {
           <InquirySwitcher currentId={inq?.id} />
         </div>
       </header>
+
+      {/* 휴대폰 안내 — 보고서 편집은 A4를 크게 봐야 해서 */}
+      <p className="break-keep bg-orange-50 px-5 py-3 text-center text-[13px] font-bold leading-relaxed text-orange-800 md:hidden">
+        보고서 디자인은 노트북·태블릿에서 보기 편해요.
+        <br />
+        같은 계정으로 로그인하면 이어서 볼 수 있어요.
+      </p>
 
       {err && <p className="mx-auto mt-5 max-w-3xl rounded-lg bg-red-50 px-4 py-3 text-center text-[14px] font-bold text-red-600">{err}</p>}
       {!inq && !err && <p className="py-40 text-center text-gray-400">불러오는 중…</p>}

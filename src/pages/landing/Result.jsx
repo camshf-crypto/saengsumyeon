@@ -202,19 +202,13 @@ function ShareGate({ topic, onHome }) {
 }
 
 /*
- * 기억나는 탐구 보고서 시작 — 제안 주제를 받은 회원 모두에게 보인다
- * 누르면 이 주제로 바로 2 탐구 준비를 시작한다
+ * 다음 단계 — 제안 주제를 받은 회원 모두에게 보인다
+ * 누르면 이 주제로 바로 2 탐구 준비를 시작한다 (설명 없이 자연스럽게 넘어가게)
  */
 function InquiryStart({ input }) {
   const nav = useNavigate();
   return (
-    <div className="mt-5 rounded-xl bg-sm-navy p-5 text-center text-white">
-      <p className="text-[18px] font-extrabold">선생님은 학기 말에 몰아서 세특을 써요.</p>
-      <p className="mt-1.5 text-[13.5px] leading-relaxed text-indigo-100">
-        몇 달 뒤에 봐도 <b className="text-white">기억나는 보고서</b>가 좋은 세특이 돼요.
-        <br />
-        노트북·태블릿에서 보기 편해요.
-      </p>
+    <div className="mt-6 text-center">
       <button
         onClick={() => {
           nav("/inquiry/new", {
@@ -228,13 +222,12 @@ function InquiryStart({ input }) {
             },
           });
         }}
-        className="mt-4 h-[50px] w-full rounded-xl bg-white text-[15px] font-extrabold text-sm-navy"
+        className="h-[56px] w-full rounded-xl bg-sm-navy text-[16px] font-extrabold text-white"
       >
-        기억나는 탐구 보고서 만들기 →
+        다음 단계 
       </button>
-      {/* 새 서비스 안내 때문에 진단이 유료가 되는 걸로 오해하지 않게 */}
-      <p className="mt-3 text-[12px] text-indigo-200">
-        탐구주제 진단은 지금처럼 <b className="text-white">하루 3번 무료</b>예요.
+      <p className="mt-2 text-[12px] leading-relaxed text-gray-400">
+        주제 진단은 지금처럼 하루 3번 무료예요
       </p>
     </div>
   );
@@ -562,7 +555,7 @@ export default function Result() {
                     </div>
                   )}
 
-                  {/* 기억나는 탐구 보고서 — 회원 모두에게 */}
+                  {/* 다음 단계 → 탐구 준비 — 회원 모두에게 */}
                   {data.suggestion && <InquiryStart input={input} />}
                 </div>
               ) : (

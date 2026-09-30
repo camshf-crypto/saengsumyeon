@@ -5,7 +5,7 @@ import { useAuth } from "../../lib/AuthContext";
 import { track } from "../../lib/track";
 import StepBar from "./StepBar";
 import Paywall from "./Paywall";
-import { isFreeInquiry } from "./freeInquiry";
+import { trialUsedElsewhere } from "./freeInquiry";
 import { useStay } from "./useStay";
 import InquirySwitcher from "./InquirySwitcher";
 
@@ -28,32 +28,51 @@ const METHOD_NAME = Object.fromEntries(METHODS.map((m) => [m.k, m.label]));
 
 /* 위쪽 단계 표시 */
 
-/* 글 목록 한 칸 */
+/* 칸 제목 — 누르면 그 칸을 접었다 펼쳤다 */
+function FoldTitle({ title, open, onToggle, extra }) {
+  return (
+    <button type="button" onClick={onToggle} className="flex w-full items-center gap-2 text-left">
+      <h3 className="text-[15px] font-extrabold text-sm-navy">{title}</h3>
+      {extra}
+      <span className="ml-auto rounded-md border border-gray-200 px-2 py-0.5 text-[12px] font-bold text-gray-500">
+        {open ? "접기 ▲" : "펼치기 ▼"}
+      </span>
+    </button>
+  );
+}
+
+/* 글 목록 한 칸 — 처음엔 접힌 채로, 제목을 누르면 펼친다 */
 function List({ title, items }) {
+  const [open, setOpen] = useState(false); // 처음엔 접어 두고, 제목을 눌러 펼친다
   if (!items?.length) return null;
   return (
     <section className="space-y-2">
-      <h3 className="text-[15px] font-extrabold text-sm-navy">{title}</h3>
-      <ul className="space-y-1.5 text-[14px] leading-relaxed text-gray-700">
+      <FoldTitle title={title} open={open} onToggle={() => setOpen((v) => !v)} extra={!open && <span className="text-[12px] text-gray-400">{items.length}개</span>} />
+      {open && <ul className="space-y-1.5 text-[14px] leading-relaxed text-gray-700">
         {items.map((x, i) => (
           <li key={i} className="flex gap-2">
             <span className="text-sm-orange">·</span>
             <span>{typeof x === "string" ? x : JSON.stringify(x)}</span>
           </li>
         ))}
-      </ul>
+      </ul>}
     </section>
   );
 }
 
-/* 빈 기록표 — 실험·관찰 */
+/* 빈 기록표 — 실험·관찰 · 처음엔 접힌 채로, 제목을 누르면 펼친다 */
 function RecordTable({ table }) {
+  const [open, setOpen] = useState(false); // 처음엔 접어 두고, 제목을 눌러 펼친다
   if (!table?.rows?.length || !table?.cols?.length) return null;
   return (
     <section className="space-y-2">
-      <h3 className="text-[15px] font-extrabold text-sm-navy">
-        기록표 {table.unit ? <span className="text-[12.5px] font-bold text-gray-400">단위 {table.unit}</span> : null}
-      </h3>
+      <FoldTitle
+        title="기록표"
+        open={open}
+        onToggle={() => setOpen((v) => !v)}
+        extra={table.unit ? <span className="text-[12.5px] font-bold text-gray-400">단위 {table.unit}</span> : null}
+      />
+      {open && <>
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-[13px]">
           <thead>
@@ -76,37 +95,22 @@ function RecordTable({ table }) {
           </tbody>
         </table>
       </div>
-      <p className="text-[12.5px] text-gray-400">인쇄해서 채우거나, 결과 올리기에서 바로 입력하면 돼요.</p>
+      <p className="text-[12.5px] text-gray-400">인쇄해서 채우거나, 다음 단계(결과 분석)에서 바로 입력하면 돼요.</p>
+      </>}
     </section>
   );
 }
 
 /* 문헌·사례·데이터 — 자료 조사를 직접 할지, AI가 찾아줄지 */
 const RESEARCH = ["lit", "case", "data"];
-
-function ResearchChoice({ onPick, busy }) {
-  return (
-    <div className="rounded-2xl border-2 border-sm-navy/10 bg-indigo-50/60 p-5">
-      <p className="text-[16px] font-extrabold text-sm-navy">자료 조사를 어떻게 할까요?</p>
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
-        <button onClick={() => onPick("self")} disabled={busy} className="rounded-xl border-2 border-gray-200 bg-white p-4 text-left hover:border-sm-navy disabled:opacity-50">
-          <p className="text-[15.5px] font-extrabold text-sm-navy">내가 직접 찾기</p>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-gray-600">아래 검색어·찾을 곳을 보고<br />내가 자료를 모아요</p>
-        </button>
-        <button onClick={() => onPick("ai")} disabled={busy} className="rounded-xl border-2 border-sm-navy bg-sm-navy p-4 text-left text-white disabled:opacity-50">
-          <p className="text-[15.5px] font-extrabold">AI가 찾아주기</p>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-indigo-100">AI가 인터넷에서 실제 자료를 찾아<br />링크·요약까지 정리해요</p>
-        </button>
-      </div>
-    </div>
-  );
-}
+// 실험·설문·관찰 — 결과는 직접 모으고, AI는 '비슷하게 해 본 사례'(보고서·블로그 글 등)만 찾아준다
+const SIMILAR = { exp: "실험", survey: "설문조사", obs: "관찰" };
 
 /*
  * 자료 목록 — AI가 찾은 자료 + 내가 찾아 추가한 자료
  * '보고서에 쓰기'로 고른 자료만 3단계에서 AI가 읽고 요약한다
  */
-function SourceList({ list, onOpen, onToggle, onAdd, onRemove, showAi }) {
+function SourceList({ list, onOpen, onToggle, onAdd, onRemove, showAi, similar }) {
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
   const shown = list.map((x, i) => ({ ...x, i })).filter((x) => showAi || x.added_by === "me");
@@ -120,19 +124,42 @@ function SourceList({ list, onOpen, onToggle, onAdd, onRemove, showAi }) {
         <span className="rounded-full bg-sm-navy px-2.5 py-0.5 text-[12px] font-bold text-white">보고서에 쓸 자료 {picked}개</span>
       </div>
       <p className="rounded-lg bg-orange-50 px-4 py-2.5 text-[12.5px] leading-relaxed text-orange-900">
-        {showAi ? "AI가 인터넷에서 찾은 자료예요. " : ""}
-        <b>직접 열어서 확인하고, 보고서에 쓸 자료만 골라요.</b> 고른 자료만 3단계에서 AI가 읽고 요약해요.
+        {similar ? (
+          <>
+            {showAi ? `AI가 찾은 비슷한 ${similar} 사례예요. ` : ""}
+            <b>직접 열어서 확인하고, 참고할 자료만 골라요.</b> 고른 자료는 보고서의 참고 자료에 들어가요.
+          </>
+        ) : (
+          <>
+            {showAi ? "AI가 인터넷에서 찾은 자료예요. " : ""}
+            <b>직접 열어서 확인하고, 보고서에 쓸 자료만 골라요.</b> 고른 자료만 3단계에서 AI가 읽고 요약해요.
+          </>
+        )}
       </p>
 
       <div className="grid gap-3 md:grid-cols-2">
         {shown.map((x) => (
           <div key={x.i} className={`rounded-xl border-2 p-4 ${x.selected ? "border-sm-navy bg-indigo-50/40" : "border-gray-200"}`}>
-            <p className="text-[12px] font-bold text-sm-orange">
-              {x.added_by === "me" ? "내가 찾은 자료" : `${x.kind ?? ""}${x.publisher ? ` · ${x.publisher}` : ""}`}
-            </p>
+            <div className="flex items-start gap-2">
+              <p className="min-w-0 flex-1 text-[12px] font-bold text-sm-orange">
+                {x.added_by === "me" ? "내가 찾은 자료" : `${x.kind ?? ""}${x.publisher ? ` · ${x.publisher}` : ""}`}
+              </p>
+              {/* 서버가 본문을 읽고 요약을 맞췄는지 */}
+              {x.added_by !== "me" && x.checked === "body" && (
+                <span className="shrink-0 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-bold text-green-700">본문 확인됨</span>
+              )}
+              {x.added_by !== "me" && x.checked === "link" && (
+                <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-bold text-gray-500">직접 확인 필요</span>
+              )}
+            </div>
             <p className="mt-1 text-[14px] font-bold leading-snug text-sm-navy">{x.title}</p>
+            {x.match && (
+              <p className="mt-2 rounded-md bg-indigo-50 px-2.5 py-1.5 text-[12px] font-bold leading-snug text-sm-navy">
+                {similar ? "비슷한 점" : "고른 이유"} · {x.match}
+              </p>
+            )}
             {x.summary && <p className="mt-2 text-[12.5px] leading-relaxed text-gray-600">{x.summary}</p>}
-            {x.use && <p className="mt-1.5 text-[12.5px] leading-relaxed text-sm-navy"><b>이렇게 써요</b> · {x.use}</p>}
+            {x.use && <p className="mt-1.5 text-[12.5px] leading-relaxed text-sm-navy"><b>{similar ? "참고할 점" : "이렇게 써요"}</b> · {x.use}</p>}
             <div className="mt-3 grid grid-cols-2 gap-2">
               <a
                 href={x.url}
@@ -182,9 +209,59 @@ function SourceList({ list, onOpen, onToggle, onAdd, onRemove, showAi }) {
 }
 
 /* 방법별 탐구팩 본문 */
-function PackBody({ method, pack }) {
+function PackBody({ method, pack, topic }) {
   const p = pack?.pack ?? {};
   const [copied, setCopied] = useState(false);
+
+  // 친구들에게 나눠 줄 종이 설문지 — 새 창에 A4로 그려서 바로 인쇄 (이름·학교 같은 개인정보 칸은 넣지 않는다)
+  function printSurvey() {
+    const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const qs = (p.questions ?? [])
+      .map((q, i) => {
+        const body = q.options?.length
+          ? `<div class="opts">${q.options.map((o) => `<span class="opt"><span class="box"></span>${esc(o)}</span>`).join("")}</div>`
+          : `<div class="line"></div><div class="line"></div><div class="line"></div>`;
+        return `<li><p class="q">${i + 1}. ${esc(q.text)}</p>${body}</li>`;
+      })
+      .join("");
+    const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>설문지</title>
+<style>
+@page { size: A4; margin: 16mm; }
+body { font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif; color: #111; font-size: 13.5px; line-height: 1.55; margin: 0; }
+h1 { font-size: 20px; margin: 0 0 4px; }
+.topic { margin: 0; color: #444; font-size: 13px; }
+.intro { border: 1px solid #bbb; border-radius: 6px; padding: 10px 12px; margin: 12px 0 18px; font-size: 12.5px; background: #fafafa; }
+ol { list-style: none; padding: 0; margin: 0; }
+li { margin: 0 0 16px; page-break-inside: avoid; }
+.q { font-weight: 700; margin: 0 0 7px; }
+.opts { display: flex; flex-wrap: wrap; gap: 7px 20px; padding-left: 16px; }
+.opt { display: inline-flex; align-items: center; gap: 6px; }
+.box { width: 13px; height: 13px; border: 1.5px solid #333; border-radius: 2px; display: inline-block; }
+.line { border-bottom: 1px solid #999; height: 26px; margin-left: 16px; }
+.foot { margin-top: 22px; text-align: center; font-size: 12px; color: #555; }
+</style></head><body>
+<h1>설문지</h1>
+<p class="topic">${esc(topic)}</p>
+${p.intro ? `<div class="intro">${esc(p.intro)}</div>` : ""}
+<ol>${qs}</ol>
+<p class="foot">응답해 주셔서 고맙습니다.</p>
+</body></html>`;
+    const w = window.open("", "_blank");
+    if (!w) return window.alert("팝업이 막혔어요. 브라우저 주소창 오른쪽에서 팝업을 허용해 주세요.");
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    // 글꼴이 그려진 뒤 인쇄 창을 한 번만 띄운다
+    let done = false;
+    const go = () => {
+      if (done) return;
+      done = true;
+      w.focus();
+      w.print();
+    };
+    w.onload = go;
+    setTimeout(go, 700); // onload가 안 오는 브라우저 대비
+  }
 
   // 설문 문항을 구글 폼에 붙여넣기 좋게
   function copySurvey() {
@@ -206,7 +283,10 @@ function PackBody({ method, pack }) {
         <section className="space-y-2">
           <div className="flex items-center gap-2">
             <h3 className="text-[15px] font-extrabold text-sm-navy">설문 문항 · {p.questions?.length ?? 0}개</h3>
-            <button onClick={copySurvey} className="ml-auto rounded-lg border border-sm-navy px-3 py-1.5 text-[13px] font-bold text-sm-navy">
+            <button onClick={printSurvey} className="ml-auto rounded-lg bg-sm-navy px-3 py-1.5 text-[13px] font-bold text-white">
+              인쇄용 설문지
+            </button>
+            <button onClick={copySurvey} className="rounded-lg border border-sm-navy px-3 py-1.5 text-[13px] font-bold text-sm-navy">
               {copied ? "복사했어요 · 구글 폼에 붙여넣기" : "구글 폼용으로 복사"}
             </button>
           </div>
@@ -371,13 +451,37 @@ export default function InquiryPrepare() {
   useEffect(() => {
     if (user) supabase.rpc("is_admin").then(({ data }) => setIsAdmin(Boolean(data)));
   }, [user]);
-  // 무료 체험 탐구인지 (null = 확인 중) — 보고서 디자인까지 무료, PDF 저장만 이용권
-  const [free, setFree] = useState(null);
+  // 무료 체험 — 2단계에서 "무료 체험 1건을 사용할게요"를 누른 탐구가 무료 체험 탐구가 된다
+  const free = Boolean(inq?.free_trial);
+  const [trialTaken, setTrialTaken] = useState(null); // 다른 탐구에 이미 무료 체험을 썼는지 (null = 확인 중)
   useEffect(() => {
     if (!user || !inq?.id) return;
-    isFreeInquiry(user.id, inq.id).then(setFree);
-  }, [user, inq?.id, Boolean(inq?.pack)]);
-  const locked = inq && !inq.paid && !isAdmin && free === false; // 이용권이 필요한 탐구
+    trialUsedElsewhere(user.id, inq.id).then(setTrialTaken);
+  }, [user, inq?.id]);
+  const opened = Boolean(inq?.paid || isAdmin || free); // AI 자료 찾기·다음 단계를 바로 쓸 수 있는 탐구
+  const locked = inq && !opened && trialTaken === true; // 무료 체험도 다 써서 이용권이 필요한 탐구
+  const [askTrial, setAskTrial] = useState(null); // 무료 체험 쓸지 묻는 창 — 누르고 나서 할 일: "research" | "result"
+  const [usingTrial, setUsingTrial] = useState(false);
+
+  // 이 탐구를 쓸 수 있게 하고 다음 일을 한다 — 열린 탐구면 바로, 무료 체험이 남았으면 물어보고, 없으면 결제 창
+  function needOpen(next) {
+    if (opened) return true;
+    if (trialTaken === false) setAskTrial(next);
+    else setWall({ reason: next === "research" ? "research" : "result" });
+    return false;
+  }
+  async function useTrial() {
+    const next = askTrial;
+    setUsingTrial(true);
+    const { data, message, paywall } = await callInquiry({ action: "use_free", inquiry_id: inq.id });
+    setUsingTrial(false);
+    setAskTrial(null);
+    if (paywall) return setWall({ reason: next === "research" ? "research" : "result" });
+    if (message) return setErr(message);
+    setInq((x) => ({ ...data.inquiry, research_view: x?.research_view }));
+    if (next === "research") findSources(data.inquiry);
+    else nav(`/inquiry/${inq.id}/result`);
+  }
 
   // 잠겨 있는 동안 — 관리자가 승인하는 순간 실시간으로 받아서 연다 (예비로 30초마다, 화면으로 돌아올 때도)
   const [justOpened, setJustOpened] = useState(false);
@@ -444,6 +548,40 @@ export default function InquiryPrepare() {
   }, [inq?.id, inq?.paid, Boolean(inq?.pack)]);
   const started = useRef(false);
 
+  // 처음 들어올 때 — 무료 체험이 남은 학생에게는 탐구팩을 만들기 전에 먼저 묻는다
+  const [entryAsk, setEntryAsk] = useState(false);
+
+  // 새 탐구 만들기 (useFree: "무료 체험 1건을 쓸게요"를 누르고 왔는지)
+  async function startNew(useFree) {
+    setEntryAsk(false);
+    setBusy(true);
+    const { data, message, paywall, inquiry: pending } = await callInquiry({
+      action: "start",
+      query_id: state.query_id,
+      topic: state.topic,
+      focus: state.focus,
+      department: state.department,
+      subject: state.subject,
+      grade: state.grade,
+      term: state.term,
+      use_free: useFree,
+    });
+    setBusy(false);
+    if (paywall) {
+      setWall({ reason: "start" });
+      // 주제는 '결제 대기'로 저장됨 → 그 탐구 화면으로 바꿔 두고 결제 창을 띄운다
+      if (pending) {
+        setInq(pending);
+        return nav(`/inquiry/${pending.id}`, { replace: true });
+      }
+      return setErr(message);
+    }
+    if (message) return setErr(message);
+    setInq(data.inquiry);
+    nav(`/inquiry/${data.inquiry.id}`, { replace: true });
+    track("pack_view");
+  }
+
   // 새로 만들기 또는 불러오기
   useEffect(() => {
     if (authLoading || !user || started.current) return;
@@ -452,37 +590,17 @@ export default function InquiryPrepare() {
     (async () => {
       if (id === "new") {
         if (!state?.topic && !state?.query_id) return nav("/", { replace: true });
-        setBusy(true);
-        const { data, message, paywall, inquiry: pending } = await callInquiry({
-          action: "start",
-          query_id: state.query_id,
-          topic: state.topic,
-          focus: state.focus,
-          department: state.department,
-          subject: state.subject,
-          grade: state.grade,
-          term: state.term,
-        });
-        setBusy(false);
-        if (paywall) {
-          setWall({ reason: "start" });
-          // 주제는 '결제 대기'로 저장됨 → 그 탐구 화면으로 바꿔 두고 결제 창을 띄운다
-          if (pending) {
-            setInq(pending);
-            return nav(`/inquiry/${pending.id}`, { replace: true });
-          }
-          return setErr(message);
-        }
-        if (message) return setErr(message);
-        setInq(data.inquiry);
-        nav(`/inquiry/${data.inquiry.id}`, { replace: true });
-      } else {
-        const { data, error } = await supabase.from("inquiries").select("*").eq("id", id).maybeSingle();
-        if (error || !data) return setErr("탐구를 찾지 못했어요.");
-        setInq(data);
+        // 무료 체험이 남았으면 먼저 물어본다 (관리자는 묻지 않음)
+        const [{ data: admin }, used] = await Promise.all([supabase.rpc("is_admin"), trialUsedElsewhere(user.id, null)]);
+        if (!admin && !used) return setEntryAsk(true);
+        return startNew(false);
       }
+      const { data, error } = await supabase.from("inquiries").select("*").eq("id", id).maybeSingle();
+      if (error || !data) return setErr("탐구를 찾지 못했어요.");
+      setInq(data);
       track("pack_view");
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, user, id, state, nav]);
 
   // 방법 바꾸기
@@ -497,16 +615,25 @@ export default function InquiryPrepare() {
   }
 
   // 자료 조사 방식 고르기 — 처음 고른 것만 research_mode에 남긴다
-  async function pickResearch(m) {
-    if (m === "ai" && locked) return setWall({ reason: "research" });
-    track(m === "ai" ? "research_ai" : "research_self", inq.method);
-    let row = inq;
-    if (!inq.research_mode) {
-      const { data } = await supabase.from("inquiries").update({ research_mode: m }).eq("id", inq.id).select("*").single();
-      if (data) row = data;
-    }
-    setInq({ ...row, research_view: m });
-    if (m === "ai" && !row.sources?.list?.some((x) => x.added_by !== "me")) findSources(row);
+  // AI 자료 찾기는 학생이 '이 주제로 AI 자료 찾기 시작'을 눌러야 시작한다 (막 눌러 들어온 주제에 AI 비용·무료 체험을 쓰지 않게)
+  const aiCount = (inq?.sources?.list ?? []).filter((x) => x.added_by !== "me").length;
+  const hasAiSources = aiCount > 0;
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (!inq?.pack || !opened || autoRan.current || searching || hasAiSources) return;
+    if (Number(inq.sources?.count ?? 0) >= 2) return; // AI 자료 찾기는 탐구당 2번까지
+    autoRan.current = true;
+    track("research_ai", inq.method);
+    if (!inq.research_mode) supabase.from("inquiries").update({ research_mode: "ai" }).eq("id", inq.id).then(({ error }) => error && console.warn(error));
+    findSources(inq);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inq?.id, Boolean(inq?.pack), opened, hasAiSources]);
+
+  function startResearch() {
+    if (!needOpen("research")) return;
+    track("research_ai", inq.method);
+    if (!inq.research_mode) supabase.from("inquiries").update({ research_mode: "ai" }).eq("id", inq.id).then(({ error }) => error && console.warn(error));
+    findSources();
   }
 
   // AI가 실제 자료 찾기 (웹 검색, 30초~1분)
@@ -547,7 +674,7 @@ export default function InquiryPrepare() {
       track("result_blocked_no_source", inq.method);
       return setNeedPick(true);
     }
-    if (locked) return setWall({ reason: "result" });
+    if (!needOpen("result")) return;
     nav(`/inquiry/${inq.id}/result`);
   }
   function goPick() {
@@ -555,15 +682,6 @@ export default function InquiryPrepare() {
     sourceArea.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  // 메모 저장 (입력을 멈추고 0.8초 뒤)
-  const memoTimer = useRef(null);
-  function onMemo(v) {
-    setInq((x) => ({ ...x, memo: v }));
-    clearTimeout(memoTimer.current);
-    memoTimer.current = setTimeout(() => {
-      supabase.from("inquiries").update({ memo: v }).eq("id", inq.id).then(({ error }) => error && console.warn(error));
-    }, 800);
-  }
 
   if (authLoading) return <div className="py-40 text-center text-gray-400">불러오는 중…</div>;
   if (!user) return <div className="py-40 text-center text-gray-500">로그인이 필요합니다.</div>;
@@ -581,17 +699,39 @@ export default function InquiryPrepare() {
         <div className="ml-auto"><InquirySwitcher currentId={inq?.id} /></div>
       </header>
 
-      {/* 휴대폰 안내 */}
-      <p className="bg-orange-50 px-5 py-3 text-center text-[13px] font-bold text-orange-800 md:hidden">
-        탐구 준비부터는 노트북·태블릿에서 보기 편해요. 같은 계정으로 로그인하면 이어서 볼 수 있어요.
-      </p>
 
       {err && <p className="mx-auto mt-6 max-w-3xl rounded-lg bg-red-50 px-4 py-3 text-center text-[14px] font-bold text-red-600">{err}</p>}
 
-      {!inq && !err && (
+      {/* 처음 들어왔을 때 — 무료 체험 1건을 쓸지 먼저 묻는다 */}
+      {entryAsk && (
+        <div className="mx-auto mt-12 max-w-xl rounded-2xl border border-gray-200 bg-white p-8 text-center">
+          <p className="text-[12px] font-bold text-sm-orange">무료 체험</p>
+          <p className="mt-1 text-[20px] font-extrabold text-sm-navy">무료 체험 1건을 사용하실 건가요?</p>
+          <p className="mt-3 rounded-lg bg-gray-50 px-4 py-3 text-[14px] font-bold leading-snug text-sm-navy">{state?.topic}</p>
+          <p className="mt-4 text-[13.5px] leading-relaxed text-gray-600">
+            이 주제로 <b className="text-sm-navy">탐구 준비 · AI 자료 찾기 · 결과 분석 · 보고서 디자인</b>까지
+            <br />
+            무료로 해 볼 수 있어요.
+          </p>
+          <button onClick={() => startNew(true)} className="mt-6 h-[52px] w-full max-w-sm rounded-xl bg-sm-navy text-[15px] font-extrabold text-white">
+            네, 이 주제로 쓸게요
+          </button>
+          <button onClick={() => nav(-1)} className="mt-2 h-11 w-full max-w-sm rounded-xl border border-gray-300 text-[14px] font-bold text-gray-600">
+            아니요, 다른 주제 볼래요
+          </button>
+        </div>
+      )}
+
+      {!inq && !err && !entryAsk && (
         <div className="py-40 text-center">
-          <p className="text-[16px] font-bold text-sm-navy">탐구 방법을 고르고, 탐구팩을 만들고 있어요</p>
-          <p className="mt-2 text-[13px] text-gray-500">20~40초 걸려요</p>
+          {busy ? (
+            <>
+              <p className="text-[16px] font-bold text-sm-navy">탐구 방법을 고르고, 탐구팩을 만들고 있어요</p>
+              <p className="mt-2 text-[13px] text-gray-500">20~40초 걸려요. 다 되면 AI가 이어서 자료를 찾아요.</p>
+            </>
+          ) : (
+            <p className="text-[14px] text-gray-400">불러오는 중…</p>
+          )}
         </div>
       )}
 
@@ -668,53 +808,42 @@ export default function InquiryPrepare() {
               <h1 className="mt-1 text-[19px] font-extrabold leading-snug text-sm-navy">{inq.suggestion}</h1>
               <p className="mt-1 text-[12.5px] text-gray-500">{inq.department} · {inq.grade} · {inq.subject}</p>
             </div>
-            {pack?.reason && <p className="rounded-lg bg-orange-50 px-4 py-3 text-[13px] leading-relaxed text-orange-900"><b>왜 이 방법?</b> {pack.reason}</p>}
             {pack?.purpose && <p className="text-[14px] leading-relaxed text-gray-700"><b className="text-sm-navy">탐구 목적</b> · {pack.purpose}</p>}
-            {RESEARCH.includes(inq.method) && (
-              <div ref={sourceArea} className="scroll-mt-5 space-y-5">
-                {(() => {
-                  const view = inq.research_view ?? inq.research_mode;
-                  if (!view) return <ResearchChoice onPick={pickResearch} busy={searching} />;
-                  if (view === "ai")
-                    return searching ? (
-                      <p className="rounded-xl bg-indigo-50 px-4 py-6 text-center text-[14px] font-bold text-sm-navy">
-                        AI가 인터넷에서 실제 자료를 찾고 있어요… (30초~1분)
-                      </p>
-                    ) : inq.sources?.list?.some((x) => x.added_by !== "me") ? (
-                      <>
-                        <SourceList list={inq.sources.list} onOpen={openSource} onToggle={toggleSource} onAdd={addSource} onRemove={removeSource} showAi />
-                        <button onClick={() => pickResearch("self")} className="text-[12.5px] font-bold text-gray-500 underline">
-                          검색어를 보고 직접 더 찾기
-                        </button>
-                      </>
-                    ) : (
-                      <button onClick={() => findSources()} className="h-11 w-full rounded-lg bg-sm-navy text-[14px] font-bold text-white">
-                        AI가 자료 찾기
-                      </button>
-                    );
-                  return (
-                    <>
-                      <div className="flex items-center gap-3 rounded-xl bg-gray-50 px-4 py-3">
-                        <p className="text-[13px] text-gray-600">아래 <b>검색어·찾을 곳</b>을 보고 직접 찾아서, 찾은 자료를 추가해요.</p>
-                        <button onClick={() => pickResearch("ai")} className="ml-auto shrink-0 rounded-lg border border-sm-navy px-3 py-1.5 text-[12.5px] font-bold text-sm-navy">
-                          {inq.sources?.list?.some((x) => x.added_by !== "me") ? "AI가 찾은 자료 보기" : "AI가 찾아주기"}
-                        </button>
-                      </div>
-                      <SourceList list={listOf()} onOpen={openSource} onToggle={toggleSource} onAdd={addSource} onRemove={removeSource} showAi={false} />
-                    </>
-                  );
-                })()}
-              </div>
-            )}
-
-            {/* AI가 찾은 자료를 보는 중에는 탐구팩(검색어 안내)을 아래로 접어둔다 */}
-            {(inq.research_view ?? inq.research_mode) === "ai" && RESEARCH.includes(inq.method) ? (
+            {/* 자료 — 들어오면 AI가 바로 찾아 두고, 학생은 열어 보고 고르기만. 직접 찾은 자료는 맨 아래 칸에서 추가 */}
+            <div ref={sourceArea} className="scroll-mt-5 space-y-3">
+              {searching ? (
+                <p className="rounded-xl bg-indigo-50 px-4 py-6 text-center text-[14px] font-bold text-sm-navy">
+                  {SIMILAR[inq.method] ? `AI가 비슷한 ${SIMILAR[inq.method]} 사례를 찾아 읽고 있어요… (1분~1분 30초)` : "AI가 자료를 찾아 읽고 좋은 것만 고르고 있어요… (1분~1분 30초)"}
+                  <span className="mt-1 block text-[12px] font-normal text-gray-500">여러 번 검색하고, 본문을 직접 읽어서 비슷한 정도를 따져 골라요</span>
+                </p>
+              ) : (
+                !hasAiSources && (
+                  <div className="rounded-2xl border-2 border-sm-navy/10 bg-indigo-50/60 p-5 text-center">
+                    <p className="text-[15px] font-extrabold text-sm-navy">
+                      {SIMILAR[inq.method] ? `이 주제로 비슷한 ${SIMILAR[inq.method]}을 AI가 찾아볼까요?` : "이 주제로 AI가 자료를 찾아볼까요?"}
+                    </p>
+                    <p className="mt-1 text-[12.5px] text-gray-600">아래 탐구팩을 먼저 보고, 이 주제로 하겠다면 시작해요.</p>
+                    <button onClick={startResearch} className="mt-3 h-12 w-full max-w-md rounded-xl bg-sm-navy text-[15px] font-extrabold text-white">
+                      이 주제로 AI 자료 찾기 시작
+                    </button>
+                    {!opened && trialTaken === false && (
+                      <p className="mt-2 text-[12px] font-bold text-sm-orange">시작하면 무료 체험 1건을 써요</p>
+                    )}
+                  </div>
+                )
+              )}
+              {!searching && (
+                <SourceList list={listOf()} onOpen={openSource} onToggle={toggleSource} onAdd={addSource} onRemove={removeSource} showAi similar={SIMILAR[inq.method]} />
+              )}
+            </div>
+            {/* 문헌·사례·데이터는 AI가 자료를 찾아 주니 탐구팩(검색어 안내)은 아래로 접어둔다 */}
+            {RESEARCH.includes(inq.method) ? (
               <details className="rounded-xl border border-gray-200 p-4">
                 <summary className="cursor-pointer text-[13.5px] font-bold text-sm-navy">탐구팩 (검색어·비교 기준) 펼쳐 보기</summary>
-                <div className="mt-4"><PackBody method={inq.method} pack={pack} /></div>
+                <div className="mt-4"><PackBody method={inq.method} pack={pack} topic={inq.suggestion} /></div>
               </details>
             ) : (
-              <PackBody method={inq.method} pack={pack} />
+              <PackBody method={inq.method} pack={pack} topic={inq.suggestion} />
             )}
           </main>
 
@@ -731,36 +860,71 @@ export default function InquiryPrepare() {
               </div>
             )}
 
-            <div className="space-y-3 rounded-2xl border border-gray-200 bg-white p-5">
-              <div className="grid grid-cols-2 gap-3">
-                <div><p className="text-[12px] font-bold text-gray-500">AI가 준비한 것</p><p className="mt-1 text-[13px] font-bold text-sm-navy">방법 · 탐구팩 · 기록표</p></div>
-                <div><p className="text-[12px] font-bold text-gray-500">내가 할 것</p><p className="mt-1 text-[13px] font-bold text-sm-orange">{pack?.do ?? "탐구하고 기록하기"}</p></div>
+            {/* AI가 한 일과 이유 — 무엇을 왜 준비했는지, 자료를 왜 골랐는지, AI가 한 것이라 꼭 확인할 것 */}
+            <div className="space-y-4 rounded-2xl border border-gray-200 bg-white p-5">
+              <div>
+                <p className="text-[12px] font-bold text-gray-500">AI가 준비한 것</p>
+                <ul className="mt-2 space-y-2.5 text-[13px] leading-relaxed text-gray-700">
+                  <li>
+                    <b className="text-sm-navy">{METHOD_NAME[inq.method]}로 정한 이유</b>
+                    <p className="mt-0.5">{pack?.reason || "이 주제를 가장 안전하고 구체적으로 확인할 수 있는 방법이에요."}</p>
+                  </li>
+                  {aiCount > 0 && (
+                    <li>
+                      <b className="text-sm-navy">
+                        {SIMILAR[inq.method] ? `비슷한 ${SIMILAR[inq.method]} ${aiCount}개를 찾은 이유` : `자료 ${aiCount}개를 찾은 이유`}
+                      </b>
+                      <p className="mt-0.5">
+                        {inq.sources?.why ||
+                          (SIMILAR[inq.method]
+                            ? "다른 사람이 실제로 해 본 과정과 결과를 보면, 내 탐구를 설계하고 결과를 비교할 기준이 생겨요."
+                            : "같은 기준으로 비교할 수 있게, 서로 다른 출처(공식자료·논문·기사)에서 주제와 직접 관련된 자료를 골랐어요.")}
+                      </p>
+                    </li>
+                  )}
+                  <li>
+                    <b className="text-sm-navy">탐구팩</b>
+                    <p className="mt-0.5">
+                      {RESEARCH.includes(inq.method) ? "검색어·찾을 곳·비교 기준을 정리해 뒀어요." : "순서·준비물·기록표를 정리해 뒀어요. 그대로 따라 하면 돼요."}
+                    </p>
+                  </li>
+                </ul>
               </div>
+
+              <div className="border-t border-gray-100 pt-3">
+                <p className="text-[12px] font-bold text-gray-500">내가 할 것</p>
+                <p className="mt-1 text-[13px] font-bold leading-relaxed text-sm-orange">{pack?.do ?? "탐구하고 기록하기"}</p>
+              </div>
+
+              <div className="rounded-xl bg-amber-50 p-3.5">
+                <p className="text-[12.5px] font-extrabold text-amber-900">AI가 한 것이라 꼭 확인해요</p>
+                <ul className="mt-1.5 space-y-1 text-[12.5px] leading-relaxed text-amber-900">
+                  <li>· 자료는 <b>직접 열어서</b> 실제로 있는 내용인지 확인해요</li>
+                  <li>· 요약·숫자는 틀릴 수 있어요. 보고서엔 원문에서 확인한 것만 써요</li>
+                  <li>· 결과는 내가 직접 모은 것만 써요. AI는 결과를 대신 만들지 않아요</li>
+                  <li>· 보고서에 쓴 자료는 제목·링크(출처)를 꼭 남겨요</li>
+                </ul>
+              </div>
+
               {pack?.memo_points?.length > 0 && (
                 <div className="border-t border-gray-100 pt-3">
                   <p className="text-[12.5px] font-bold text-sm-navy">탐구하면서 메모해 둘 것</p>
                   <ul className="mt-1 space-y-0.5 text-[12.5px] text-gray-600">{pack.memo_points.map((m, i) => <li key={i}>· {m}</li>)}</ul>
                 </div>
               )}
-              <textarea
-                value={inq.memo ?? ""}
-                onChange={(e) => onMemo(e.target.value)}
-                rows={4}
-                placeholder="막힌 점, 예상과 다른 점을 적어두면 보고서에 그대로 들어가요"
-                className="w-full resize-none rounded-lg border border-gray-300 p-3 text-[13px] outline-none focus:border-sm-navy"
-              />
+
             </div>
 
             {justOpened && (
               <p className="rounded-xl bg-green-50 px-4 py-3 text-center text-[13.5px] font-bold text-green-700">
-                입금이 확인돼서 열렸어요! 결과를 올려 보세요.
+                입금이 확인돼서 열렸어요! 다음 단계로 넘어가 보세요.
               </p>
             )}
             <button
               onClick={goResult}
               className={`h-[52px] w-full rounded-xl text-[15px] font-extrabold text-white ${locked ? "bg-gray-400" : "bg-sm-navy"}`}
             >
-              {locked ? "결과 올리기 · 이용권 필요" : "탐구 끝나면 · 결과 올리기"}
+              {locked ? "다음 단계 · 이용권 필요" : "다음 단계 →"}
             </button>
             {locked && (
               <p className="text-center text-[12px] leading-relaxed text-gray-500">
@@ -770,6 +934,29 @@ export default function InquiryPrepare() {
               </p>
             )}
           </aside>
+        </div>
+      )}
+
+      {/* 무료 체험 1건을 이 탐구에 쓸지 묻기 */}
+      {askTrial && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-5" onClick={() => !usingTrial && setAskTrial(null)}>
+          <div role="dialog" aria-modal="true" className="w-full max-w-[440px] rounded-2xl bg-white p-6 text-center shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <p className="text-[12px] font-bold text-sm-orange">무료 체험</p>
+            <p className="mt-1 text-[19px] font-extrabold text-sm-navy">무료 체험 1건을 사용하실 건가요?</p>
+            <p className="mt-2 rounded-lg bg-gray-50 px-3 py-2 text-[13px] font-bold leading-snug text-sm-navy">{inq.suggestion}</p>
+            <p className="mt-3 text-[13px] leading-relaxed text-gray-600">
+              이 주제로 <b className="text-sm-navy">AI 자료 찾기 · 결과 분석 · 보고서 디자인</b>까지
+              <br />
+              무료로 해 볼 수 있어요. PDF 저장만 이용권이 필요해요.
+            </p>
+            <p className="mt-2 text-[12px] text-gray-400">무료 체험은 1건뿐이라, 쓰고 나면 다른 주제는 이용권으로 시작해요.</p>
+            <button onClick={useTrial} disabled={usingTrial} className="mt-5 h-12 w-full rounded-xl bg-sm-navy text-[15px] font-extrabold text-white disabled:opacity-50">
+              {usingTrial ? "여는 중…" : "네, 이 주제로 쓸게요"}
+            </button>
+            <button onClick={() => setAskTrial(null)} disabled={usingTrial} className="mt-2 h-11 w-full rounded-xl border border-gray-300 text-[14px] font-bold text-gray-600">
+              아니요, 다른 주제 볼래요
+            </button>
+          </div>
         </div>
       )}
 
