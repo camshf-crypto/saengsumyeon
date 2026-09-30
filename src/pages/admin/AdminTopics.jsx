@@ -835,12 +835,11 @@ function MotiveTab({ series }) {
   const C = SERVICE.motive.color;
   return (
     <>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="진단" value={`${num(m.total)}건`} sub={`회원 ${num(m.members)} · 비회원 ${num(m.anon)}`} />
         <Stat label="사용자" value={`${num(m.people)}명`} />
         <Stat label="평균 흔함 지수" value={m.avg_score == null ? "-" : `${m.avg_score}점`} />
         <Stat label="대학 데이터로 분석" value={`${num(m.with_univ)}건`} rate={pctOf(m.with_univ, m.total)} sub="나머지는 대학 미입력·목록 밖" />
-        <Stat label="면접 답변 / 자소서" value={`${pctOf(m.interview_share, m.total) ?? "-"}% · ${m.total ? 100 - (pctOf(m.interview_share, m.total) ?? 0) : "-"}%`} />
       </div>
       <p className="mt-4 text-[12.5px] font-bold text-gray-500">다음 행동</p>
       <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -909,7 +908,7 @@ function InterviewTab({ series }) {
 
 /* 상품별 매출 */
 function SalesTable({ sales }) {
-  const PRICE = { interview: 19000, ten: 29000, one: 3900 };
+  const PRICE = { interview: 29000, ten: 29000, one: 3900 };
   return (
     <div className="mt-3 overflow-x-auto rounded-xl border border-gray-200">
       <table className="w-full min-w-[640px] text-left text-[13px]">

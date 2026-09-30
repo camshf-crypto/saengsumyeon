@@ -1,7 +1,7 @@
 // 지원동기 흔한가 — 고3 대입 지원동기(면접 답변·자소서)가 얼마나 흔한지 진단
 // 배포: npx supabase functions deploy motive --project-ref xhywexuazwipwvzrldwo --no-verify-jwt
 //
-// 요청 { university?, department, use_for: "interview"|"document", motive, client_id }
+// 요청 { university?, department, motive, client_id }
 // 응답 { score, verdict_level, univ, remaining }
 //      무료를 다 쓰면 { quota_exceeded: true, next_open }, 지원동기가 아니면 { invalid: true }
 // 횟수: 회원 일주일 2번(다 쓰면 친구 초대 1명당 1번 — motive_bonus), 비회원 일주일 1번
@@ -47,7 +47,7 @@ async function creditsOf(admin: any, who: { userId?: string; clientId?: string }
   return { weekly, bonus, next };
 }
 
-const SYSTEM = `고3 학생의 대입 지원동기(면접 답변 또는 자소서 문장)가 얼마나 흔한지 진단한다. JSON만 출력.
+const SYSTEM = `고3 학생의 대입 지원동기가 얼마나 흔한지 진단한다. JSON만 출력.
 
 무효(지원동기가 아닌 글·의미 없는 문자열·부적절한 내용)면 {"invalid":true,"invalid_reason":"한 문장"}.
 
@@ -246,7 +246,6 @@ Deno.serve(async (req) => {
     const ai = await ask(
       `[지원 대학] ${university || "(안 적음)"}
 [지원 학과] ${department}
-[쓰는 곳] ${useFor === "interview" ? "면접 답변 (말로 하는 답)" : "자소서·서류 (글)"}
 [학생이 쓴 지원동기]
 ${motive}${univBlock}`,
       { service: "motive", userId: user?.id, clientId }

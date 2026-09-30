@@ -298,7 +298,7 @@ export default function MyPage() {
                 key={r.id}
                 open={openId === r.id}
                 onToggle={() => toggle(r.id)}
-                meta={[r.university, r.department, r.use_for === "document" ? "자소서·서류" : "면접 답변"].filter(Boolean).join(" · ")}
+                meta={[r.university, r.department].filter(Boolean).join(" · ")}
                 title={String(r.motive ?? "").slice(0, 60) + (String(r.motive ?? "").length > 60 ? "…" : "")}
                 sub={day(r.created_at)}
                 score={{ value: x.score, label: verdict(x.score, "나만의 지원동기예요") }}

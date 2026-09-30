@@ -9,7 +9,7 @@ import "../landing/landing.css";
 
 /*
  * 지원동기 흔한가 — /motive (고3 대입 시즌)
- * 지원 대학(선택) · 지원 학과 · 면접/자소서 · 지원동기 글 → 흔함 지수 · 뻔한 표현 형광펜
+ * 지원 대학(선택) · 지원 학과 · 지원동기 글 → 흔함 지수 · 대학 기준 분석
  *   · 왜 흔한지 · 내 경험으로 바꾸는 질문 3개 · 다시 짜는 틀(계기 → 한 일·배운 점 → 대학에서 할 것)
  * 무료 3번 (계정·브라우저 기준 전체), 비회원은 흔함 지수 아래를 흐리게
  */
@@ -309,7 +309,7 @@ export default function Motive() {
   }
 
   const r = result;
-  const meta = [form.university, form.department, form.use_for === "document" ? "자소서·서류" : "면접 답변"].filter(Boolean).join(" · ");
+  const meta = [form.university, form.department].filter(Boolean).join(" · ");
 
   return (
     // 입력 화면은 화면 폭 가득 초록색, 나머지는 가운데 좁게
@@ -367,30 +367,6 @@ export default function Motive() {
                       <SuggestList items={suggest(form.department, DEPARTMENTS)} onPick={(v) => { set("department", v); setFocus(null); }} />
                     )}
                   </div>
-                </div>
-
-                {/* 어디에 쓰는지 */}
-                <div className="mb-2.5 grid grid-cols-2 gap-2.5">
-                  {[
-                    ["interview", "면접 답변", "말로 하는 지원동기"],
-                    ["document", "자소서·서류", "글로 쓰는 지원동기"],
-                  ].map(([v, l, d]) => {
-                    const on = form.use_for === v;
-                    return (
-                      <button
-                        key={v}
-                        type="button"
-                        onClick={() => set("use_for", v)}
-                        aria-pressed={on}
-                        className={`rounded-xl px-4 py-3 text-center transition ${
-                          on ? "bg-white text-sm-navy shadow-md ring-2 ring-sm-navy" : "bg-white/20 text-white ring-1 ring-white/40 hover:bg-white/30"
-                        }`}
-                      >
-                        <p className="text-[14.5px] font-extrabold">{l}</p>
-                        <p className={`mt-0.5 text-[12px] ${on ? "text-gray-500" : "text-white/90"}`}>{d}</p>
-                      </button>
-                    );
-                  })}
                 </div>
 
                 <div className="relative">
