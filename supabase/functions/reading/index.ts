@@ -78,7 +78,31 @@ const SYSTEM = `고등학생이 생기부 독서활동으로 읽은 책이 얼�
 "alternatives":[{"level":"초급","title":"","author":"","why":"","from_candidates":false},{"level":"중급","title":"","author":"","why":"","from_candidates":false},{"level":"고급","title":"","author":"","why":"","from_candidates":false}],
 "next":{"question":"","title":"","author":"","why":""}}`;
 
-async function ask(user: string) {
+/* AI 사용량 기록 — 관리자 화면의 'AI 비용·실패' 칸에 쓴다 (기록이 실패해도 진단에는 영향 없음) */
+const PRICE: Record<string, [number, number]> = { "gpt-5": [1.25, 10], "gpt-5-mini": [0.25, 2] }; // 100만 토큰당 달러 (입력, 출력)
+const USAGE_DB = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+type Ctx = { service: string; userId?: string | null; clientId?: string | null };
+async function logUsage(ctx: Ctx, model: string, usage: any, ok: boolean) {
+  try {
+    const [pi, po] = PRICE[model] ?? [0, 0];
+    const inT = Number(usage?.prompt_tokens ?? 0);
+    const outT = Number(usage?.completion_tokens ?? 0); // 생각하는 과정 토큰 포함
+    await USAGE_DB.from("ai_usage").insert({
+      service: ctx.service,
+      user_id: ctx.userId ?? null,
+      client_id: ctx.clientId ?? null,
+      model,
+      input_tokens: inT,
+      output_tokens: outT,
+      cost_usd: (inT * pi + outT * po) / 1e6,
+      ok,
+    });
+  } catch (e) {
+    console.warn("usage log failed", e);
+  }
+}
+
+async function ask(user: string, ctx: Ctx) {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")}` },
@@ -93,12 +117,19 @@ async function ask(user: string) {
   const body = await res.text();
   if (!res.ok) {
     console.error("openai error", res.status, body.slice(0, 800));
+    await logUsage(ctx, MODEL, null, false);
     return null;
   }
+  let usage: any = null;
   try {
-    return JSON.parse(JSON.parse(body).choices?.[0]?.message?.content ?? "");
+    const j = JSON.parse(body);
+    usage = j.usage;
+    const out = JSON.parse(j.choices?.[0]?.message?.content ?? "");
+    await logUsage(ctx, MODEL, usage, true);
+    return out;
   } catch (e) {
     console.error("parse failed", e);
+    await logUsage(ctx, MODEL, usage, false);
     return null;
   }
 }
@@ -211,7 +242,8 @@ Deno.serve(async (req) => {
 
 [덜 흔한 책 후보] ${
           candidates.length ? candidates.map((c: any) => `${c.title}${c.author ? ` / ${c.author}` : ""} (같은 학과 ${c.dept_count ?? 0}번)`).join("; ") : "(없음)"
-        }`
+        }`,
+        { service: "reading", userId: user?.id, clientId }
       );
       if (!ai) return json({ error: "진단하지 못했어요. 잠시 후 다시 시도해 주세요." }, 502);
       if (ai.invalid) return json({ invalid: true, invalid_reason: clean(ai.invalid_reason, 120) });

@@ -30,7 +30,7 @@ function OrdersLink({ count, mobile = false }) {
 const REPORT_MENU = "기억에 남는 탐구보고서 작성";
 const SERIES_MENU = [
   { to: "/motive", label: "지원동기 흔한가" },
-  { to: "/interview", label: "생기부 질문" },
+  { to: "/interview", label: "면접 예상 질문" },
   { to: "/reading", label: "독서 흔한가" },
   { to: "/topic", label: "탐구주제 흔한가", also: "/" }, // 메인(/)에 있을 때도 이 메뉴에 불을 켠다
   { to: "/inquiry", label: REPORT_MENU },
@@ -129,7 +129,7 @@ export default function Header() {
                 to="/my"
                 className="px-1.5 py-1.5 font-bold text-gray-600 transition hover:text-sm-orange"
               >
-                내 기록
+                마이페이지
               </Link>
               <span className="font-semibold text-sm-navy">
                 {profile?.name ?? "회원"}님
@@ -229,7 +229,7 @@ export default function Header() {
               to="/my"
               className="block border-t border-gray-100 py-3.5 text-[15px] font-bold text-sm-navy"
             >
-              내 기록
+              마이페이지
             </Link>
             {isAdmin && (
               <>

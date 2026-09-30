@@ -286,7 +286,7 @@ export default function Reading() {
             <div className="wrap">
               {err && <p className="mx-auto mb-4 max-w-[560px] rounded-lg bg-white px-4 py-3 text-center text-[13.5px] font-bold text-red-600">{err}</p>}
               <p className="mid" style={{ color: THEME.mid }}>
-                내 독서 <u style={{ borderColor: THEME.mid }}>흔한가</u>?
+                내 세특 독서 <u style={{ borderColor: THEME.mid }}>흔한가</u>?
               </p>
               <h1 style={{ textShadow: THEME.shadow }}>독서 진단</h1>
 
@@ -509,7 +509,10 @@ export default function Reading() {
 
           {/* 탐구주제 흔한가로 — 같은 학과·과목으로 이어서 */}
           <button
-            onClick={() => nav("/topic")}
+            onClick={() => {
+              track("cross_topic");
+              nav("/topic");
+            }}
             className="mt-4 flex w-full items-center justify-between rounded-xl border-[1.5px] border-sm-orange bg-orange-50 px-5 py-4 text-left"
           >
             <span>

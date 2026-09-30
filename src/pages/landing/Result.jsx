@@ -254,7 +254,10 @@ function ReadingLink() {
   const nav = useNavigate();
   return (
     <button
-      onClick={() => nav("/reading")}
+      onClick={() => {
+        track("cross_reading");
+        nav("/reading");
+      }}
       className="mt-5 flex w-full items-center justify-between rounded-xl border-[1.5px] border-[#3D6BEF] bg-[#EEF3FF] px-5 py-4 text-left"
     >
       <span>

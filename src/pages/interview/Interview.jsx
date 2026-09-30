@@ -55,7 +55,7 @@ function SuggestList({ items, onPick }) {
 }
 
 /* 뽑은 질문을 A4로 인쇄 → 'PDF로 저장' (여러 대학이면 대학마다 새 쪽) */
-function printPdf(list) {
+export function printPdf(list) {
   const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const pages = list
     .map((r, idx) => {
@@ -136,7 +136,11 @@ export default function Interview() {
   }, [user]);
 
   // 잠긴 버튼을 누르면 — 비회원은 로그인, 회원은 결제 창
-  const openPay = () => (user ? setPayOpen(true) : nav("/login"));
+  const openPay = () => {
+    if (!user) return nav("/login");
+    track("interview_pay");
+    setPayOpen(true);
+  };
 
   const setT = (i, k, v) => setTargets((a) => a.map((t, j) => (j === i ? { ...t, [k]: v } : t)));
   const addT = () => setTargets((a) => (a.length >= MAX_TARGETS ? a : [...a, { university: "", department: "" }]));

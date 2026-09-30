@@ -72,7 +72,31 @@ score 0~100 (높을수록 흔함): 거의 모든 문장이 위 표현 85~100 / �
 {"invalid":false,"score":0,
 "univ_factors":[{"factor":"","seen":0,"evidence":"","tip":""}],"univ_summary":"","univ_question":""}`;
 
-async function ask(user: string) {
+/* AI 사용량 기록 — 관리자 화면의 'AI 비용·실패' 칸에 쓴다 (기록이 실패해도 진단에는 영향 없음) */
+const PRICE: Record<string, [number, number]> = { "gpt-5": [1.25, 10], "gpt-5-mini": [0.25, 2] }; // 100만 토큰당 달러 (입력, 출력)
+const USAGE_DB = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+type Ctx = { service: string; userId?: string | null; clientId?: string | null };
+async function logUsage(ctx: Ctx, model: string, usage: any, ok: boolean) {
+  try {
+    const [pi, po] = PRICE[model] ?? [0, 0];
+    const inT = Number(usage?.prompt_tokens ?? 0);
+    const outT = Number(usage?.completion_tokens ?? 0); // 생각하는 과정 토큰 포함
+    await USAGE_DB.from("ai_usage").insert({
+      service: ctx.service,
+      user_id: ctx.userId ?? null,
+      client_id: ctx.clientId ?? null,
+      model,
+      input_tokens: inT,
+      output_tokens: outT,
+      cost_usd: (inT * pi + outT * po) / 1e6,
+      ok,
+    });
+  } catch (e) {
+    console.warn("usage log failed", e);
+  }
+}
+
+async function ask(user: string, ctx: Ctx) {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")}` },
@@ -87,12 +111,19 @@ async function ask(user: string) {
   const body = await res.text();
   if (!res.ok) {
     console.error("openai error", res.status, body.slice(0, 800));
+    await logUsage(ctx, MODEL, null, false);
     return null;
   }
+  let usage: any = null;
   try {
-    return JSON.parse(JSON.parse(body).choices?.[0]?.message?.content ?? "");
+    const j = JSON.parse(body);
+    usage = j.usage;
+    const out = JSON.parse(j.choices?.[0]?.message?.content ?? "");
+    await logUsage(ctx, MODEL, usage, true);
+    return out;
   } catch (e) {
     console.error("parse failed", e);
+    await logUsage(ctx, MODEL, usage, false);
     return null;
   }
 }
@@ -217,7 +248,8 @@ Deno.serve(async (req) => {
 [지원 학과] ${department}
 [쓰는 곳] ${useFor === "interview" ? "면접 답변 (말로 하는 답)" : "자소서·서류 (글)"}
 [학생이 쓴 지원동기]
-${motive}${univBlock}`
+${motive}${univBlock}`,
+      { service: "motive", userId: user?.id, clientId }
     );
     if (!ai) return json({ error: "진단하지 못했어요. 잠시 후 다시 시도해 주세요." }, 502);
     if (ai.invalid) return json({ invalid: true, invalid_reason: clean(ai.invalid_reason, 120) });

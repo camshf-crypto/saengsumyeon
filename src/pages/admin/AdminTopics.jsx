@@ -75,7 +75,7 @@ function Pager({ page, pages, onChange }) {
 }
 
 /* 상위 항목을 막대로 */
-function RankList({ title, rows, total }) {
+function RankList({ title, rows, total, color }) {
   if (!rows?.length) return null;
   const max = Math.max(...rows.map((r) => r.n));
   return (
@@ -87,8 +87,8 @@ function RankList({ title, rows, total }) {
             <span className="w-24 shrink-0 truncate text-gray-600">{r.key || "-"}</span>
             <span className="h-[7px] flex-1 overflow-hidden rounded-full bg-gray-100">
               <span
-                className="block h-full rounded-full bg-sm-orange"
-                style={{ width: `${(r.n / max) * 100}%` }}
+                className={`block h-full rounded-full ${color ? "" : "bg-sm-orange"}`}
+                style={{ width: `${(r.n / max) * 100}%`, ...(color ? { background: color } : {}) }}
               />
             </span>
             <span className="w-16 shrink-0 text-right">
@@ -552,6 +552,411 @@ function ReferralPanel({ stats }) {
   );
 }
 
+/* ───────────── 흔한가 시리즈 새 탭 ───────────── */
+
+const TABS = [
+  { k: "sum", label: "요약", color: "#18224F" },
+  { k: "topic", label: "탐구주제", color: "#EA580C" },
+  { k: "reading", label: "독서", color: "#2F56D6" },
+  { k: "motive", label: "지원동기", color: "#0B8A5E" },
+  { k: "interview", label: "면접 예상질문", color: "#7C3AED" },
+  { k: "inquiry", label: "탐구보고서", color: "#18224F" },
+  { k: "growth", label: "가입·추천·결제", color: "#18224F" },
+];
+const SERVICE = {
+  topic: { label: "탐구주제", color: "#EA580C", bg: "#FFF7ED" },
+  reading: { label: "독서", color: "#2F56D6", bg: "#EEF3FF" },
+  motive: { label: "지원동기", color: "#0B8A5E", bg: "#ECFBF3" },
+  interview: { label: "면접 예상질문", color: "#7C3AED", bg: "#F3E8FF" },
+  inquiry: { label: "탐구보고서", color: "#18224F", bg: "#EEF1FA" },
+};
+const PRODUCT = { interview: "생기부 예상질문", ten: "탐구 10건", one: "탐구 1건 (예전)" };
+const USD_KRW = 1400; // AI 비용 원화 환산 (대략)
+const num = (v) => Number(v ?? 0);
+const won = (v) => `${Math.round(num(v)).toLocaleString()}원`;
+const pctOf = (a, b) => (num(b) ? Math.round((num(a) / num(b)) * 100) : null);
+
+/* 숫자 칸 */
+function Stat({ label, value, sub, rate, color, bad, flag }) {
+  return (
+    <div className={`rounded-xl border p-4 ${bad ? "border-red-300 bg-red-50/50" : "border-gray-200"}`}>
+      <p className="text-[12px] text-gray-500">{label}</p>
+      <p className="mt-1.5 text-lg font-extrabold" style={{ color: color ?? "#18224F" }}>
+        {value}
+        {rate != null && <span className={`ml-1.5 text-[12.5px] font-bold ${bad ? "text-red-500" : "text-sm-orange"}`}>{rate}%</span>}
+      </p>
+      {sub && <p className="mt-0.5 text-[11.5px] leading-snug text-gray-400">{sub}</p>}
+      {flag && <p className="mt-1 text-[11.5px] font-bold text-red-500">{flag}</p>}
+    </div>
+  );
+}
+
+function Loading({ what }) {
+  return <p className="py-16 text-center text-sm text-gray-400">{what ?? "숫자"}를 불러오는 중…</p>;
+}
+function Failed({ msg }) {
+  return <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-[13px] font-bold text-red-600">숫자를 불러오지 못했어요 · {msg}</p>;
+}
+
+/* 날짜별 추이 — 서비스별 선 그래프 (SVG) */
+function TrendChart({ rows }) {
+  if (!rows?.length) return <p className="py-10 text-center text-[13px] text-gray-400">이 기간에는 기록이 없어요.</p>;
+  const keys = ["topic", "reading", "motive", "interview"];
+  const W = 900, H = 220, L = 36, R = 10, T = 10, B = 26;
+  const max = Math.max(1, ...rows.flatMap((d) => keys.map((k) => num(d[k]))));
+  const x = (i) => L + (rows.length === 1 ? (W - L - R) / 2 : (i * (W - L - R)) / (rows.length - 1));
+  const y = (v) => T + (H - T - B) * (1 - v / max);
+  const every = Math.max(1, Math.ceil(rows.length / 10));
+  return (
+    <div className="overflow-x-auto">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full min-w-[640px]" role="img" aria-label="서비스별 날짜별 진단 수">
+        {[0, 0.5, 1].map((t) => (
+          <g key={t}>
+            <line x1={L} x2={W - R} y1={y(max * t)} y2={y(max * t)} stroke="#F3F4F6" />
+            <text x={L - 6} y={y(max * t) + 4} fontSize="11" textAnchor="end" fill="#9CA3AF">{Math.round(max * t)}</text>
+          </g>
+        ))}
+        {rows.map((d, i) =>
+          i % every === 0 ? (
+            <text key={d.day} x={x(i)} y={H - 6} fontSize="11" textAnchor="middle" fill="#9CA3AF">{d.day.slice(5)}</text>
+          ) : null
+        )}
+        {keys.map((k) => (
+          <g key={k}>
+            <polyline fill="none" stroke={SERVICE[k].color} strokeWidth="2.5" points={rows.map((d, i) => `${x(i)},${y(num(d[k]))}`).join(" ")} />
+            {rows.map((d, i) => (
+              <circle key={i} cx={x(i)} cy={y(num(d[k]))} r="3" fill={SERVICE[k].color}>
+                <title>{`${d.day} ${SERVICE[k].label} ${num(d[k])}건`}</title>
+              </circle>
+            ))}
+          </g>
+        ))}
+      </svg>
+      <div className="mt-2 flex flex-wrap gap-4 text-[12.5px]">
+        {keys.map((k) => (
+          <span key={k} className="flex items-center gap-1.5 text-gray-600">
+            <i className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: SERVICE[k].color }} />
+            {SERVICE[k].label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* AI 비용·실패 표 */
+function AiCostTable({ rows, revenue }) {
+  const total = (rows ?? []).reduce((a, r) => a + num(r.cost_usd), 0) * USD_KRW;
+  return (
+    <div className="overflow-x-auto rounded-xl border border-gray-200">
+      <table className="w-full min-w-[640px] text-left text-[13px]">
+        <thead className="border-b border-gray-200 bg-gray-50 text-[12px] font-bold text-gray-500">
+          <tr>
+            <th className="px-4 py-2.5">서비스</th>
+            <th className="px-4 py-2.5 text-right">AI 호출</th>
+            <th className="px-4 py-2.5 text-right">실패</th>
+            <th className="px-4 py-2.5 text-right">1번당 비용</th>
+            <th className="px-4 py-2.5 text-right">비용 합계</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(rows ?? []).map((r) => {
+            const failRate = pctOf(r.fails, r.calls);
+            return (
+              <tr key={r.key} className="border-b border-gray-100 last:border-0">
+                <td className="px-4 py-2.5 font-bold" style={{ color: SERVICE[r.key]?.color }}>{SERVICE[r.key]?.label ?? r.key}</td>
+                <td className="px-4 py-2.5 text-right">{num(r.calls).toLocaleString()}</td>
+                <td className={`px-4 py-2.5 text-right ${failRate >= 5 ? "font-bold text-red-500" : "text-gray-500"}`}>
+                  {num(r.fails)}
+                  {failRate != null && <em className="ml-1 not-italic text-[11px]">{failRate}%</em>}
+                </td>
+                <td className="px-4 py-2.5 text-right">{won(num(r.avg_usd) * USD_KRW)}</td>
+                <td className="px-4 py-2.5 text-right font-bold text-sm-navy">{won(num(r.cost_usd) * USD_KRW)}</td>
+              </tr>
+            );
+          })}
+          {!rows?.length && (
+            <tr>
+              <td colSpan={5} className="px-4 py-8 text-center text-gray-400">아직 AI 사용 기록이 없어요. 서버를 새로 배포한 뒤부터 쌓여요.</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+      <p className="border-t border-gray-100 px-4 py-2.5 text-[12.5px] text-gray-500">
+        AI 비용 <b className="text-sm-navy">{won(total)}</b> · 승인 매출 <b className="text-sm-orange">{won(revenue)}</b>
+        {revenue > 0 && <span className="text-gray-400"> · 매출 대비 {Math.round((total / revenue) * 100)}%</span>}
+        <span className="text-gray-400"> (1달러 {USD_KRW.toLocaleString()}원으로 환산, 실패 5% 이상은 빨간색)</span>
+      </p>
+    </div>
+  );
+}
+
+/* 요약 탭 */
+function SummaryTab({ series, growth, topicStats, funnel, pendingOrders }) {
+  if (!series || !growth) return <Loading />;
+  if (series.error || growth.error) return <Failed msg={series.error || growth.error} />;
+  const r = series.reading ?? {}, m = series.motive ?? {}, iv = series.interview ?? {};
+  const sales = series.sales ?? [];
+  const revenue = sales.reduce((a, x) => a + num(x.revenue), 0);
+  const totalDiag = num(topicStats?.total) + num(r.total) + num(m.total) + num(iv.runs);
+  const cu = growth.cross_use ?? {};
+
+  const rows = [
+    { k: "topic", total: topicStats?.total, people: topicStats?.people, members: topicStats?.members, avg: topicStats?.avg_score, conv: `결과 본 비회원 → 가입 ${pctOf(funnel?.signup_done, funnel?.result_view) ?? "-"}%` },
+    { k: "reading", total: r.total, people: r.people, members: r.members, avg: r.avg_score, conv: `친구 보상 ${num(r.bonus_friends)}명 · 탐구주제로 이동 ${num(series.cross?.reading_to_topic)}번` },
+    { k: "motive", total: m.total, people: m.people, members: m.members, avg: m.avg_score, conv: `→ 면접 예상질문 바로가기 ${num(m.to_interview_people)}명` },
+    { k: "interview", total: iv.runs, people: iv.run_people, members: iv.runs, avg: null, conv: `화면 본 사람 → 입금 ${pctOf(iv.order_people, iv.view_people) ?? "-"}%` },
+  ];
+
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat label="새 회원" value={`${num(funnel?.signup_done)}명`} sub="가입 마무리까지 끝낸 회원" />
+        <Stat label="전체 진단" value={`${totalDiag.toLocaleString()}건`} sub="4개 서비스 합계" />
+        <Stat label="승인 매출" value={won(revenue)} color="#EA580C" sub={sales.map((x) => `${PRODUCT[x.key] ?? x.key} ${num(x.approved)}건`).join(" · ") || "아직 없어요"} />
+        <Stat label="입금 대기" value={`${pendingOrders}건`} sub="결제 승인 화면에서 확인" />
+      </div>
+
+      <h2 className="mt-8 text-lg font-extrabold text-sm-navy">서비스별 한눈에</h2>
+      <div className="mt-3 overflow-x-auto rounded-xl border border-gray-200">
+        <table className="w-full min-w-[720px] text-left text-[13px]">
+          <thead className="border-b border-gray-200 bg-gray-50 text-[12px] font-bold text-gray-500">
+            <tr>
+              <th className="px-4 py-2.5">서비스</th>
+              <th className="px-4 py-2.5 text-right">진단</th>
+              <th className="px-4 py-2.5 text-right">사용자</th>
+              <th className="px-4 py-2.5 text-right">회원 비율</th>
+              <th className="px-4 py-2.5 text-right">평균 흔함</th>
+              <th className="px-4 py-2.5">핵심 전환</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((x) => (
+              <tr key={x.k} className="border-b border-gray-100 last:border-0">
+                <td className="px-4 py-2.5">
+                  <span className="rounded-md px-2 py-0.5 text-[12px] font-extrabold" style={{ background: SERVICE[x.k].bg, color: SERVICE[x.k].color }}>
+                    {SERVICE[x.k].label}
+                  </span>
+                </td>
+                <td className="px-4 py-2.5 text-right font-bold text-sm-navy">{num(x.total).toLocaleString()}</td>
+                <td className="px-4 py-2.5 text-right">{num(x.people).toLocaleString()}명</td>
+                <td className="px-4 py-2.5 text-right">{pctOf(x.members, x.total) ?? "-"}%</td>
+                <td className="px-4 py-2.5 text-right">{x.avg ?? "-"}</td>
+                <td className="px-4 py-2.5 text-gray-600">{x.conv}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <h2 className="mt-8 text-lg font-extrabold text-sm-navy">날짜별 진단 수</h2>
+      <div className="mt-3 rounded-xl border border-gray-200 p-5">
+        <TrendChart rows={growth.trend} />
+      </div>
+
+      <h2 className="mt-8 text-lg font-extrabold text-sm-navy">AI 비용</h2>
+      <p className="mt-1 text-[12.5px] text-gray-400">서버를 새로 배포한 뒤부터 쌓여요. 탐구주제·탐구보고서는 서버에 기록을 붙인 뒤부터 나와요.</p>
+      <div className="mt-3">
+        <AiCostTable rows={growth.ai} revenue={revenue} />
+      </div>
+
+      <div className="mt-8 grid gap-3 lg:grid-cols-2">
+        <div>
+          <h2 className="text-lg font-extrabold text-sm-navy">어디서 가입했나</h2>
+          <p className="mt-1 text-[12.5px] text-gray-400">가입 직전에 마지막으로 누른 가입 버튼의 서비스</p>
+          <div className="mt-3">
+            <RankList title="가입 경로" rows={growth.signup_source} total={(growth.signup_source ?? []).reduce((a, x) => a + num(x.n), 0)} color="#18224F" />
+            {!growth.signup_source?.length && <p className="rounded-xl border border-gray-200 py-8 text-center text-[13px] text-gray-400">이 기간에 가입한 회원이 없어요.</p>}
+          </div>
+        </div>
+        <div>
+          <h2 className="text-lg font-extrabold text-sm-navy">여러 서비스를 쓴 회원</h2>
+          <p className="mt-1 text-[12.5px] text-gray-400">기간 안에 진단한 회원 {num(cu.members)}명 기준</p>
+          <div className="mt-3 grid grid-cols-3 gap-3">
+            <Stat label="1개만" value={`${num(cu.one)}명`} rate={pctOf(cu.one, cu.members)} />
+            <Stat label="2개" value={`${num(cu.two)}명`} rate={pctOf(cu.two, cu.members)} />
+            <Stat label="3개 이상" value={`${num(cu.three_plus)}명`} rate={pctOf(cu.three_plus, cu.members)} />
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-3">
+            <Stat label="탐구 + 독서" value={`${num(cu.topic_reading)}명`} />
+            <Stat label="탐구 + 지원동기" value={`${num(cu.topic_motive)}명`} />
+            <Stat label="독서 + 지원동기" value={`${num(cu.reading_motive)}명`} />
+          </div>
+        </div>
+      </div>
+
+      <h2 className="mt-8 text-lg font-extrabold text-sm-navy">진단끼리 넘어가기</h2>
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Stat label="탐구주제 → 독서" value={`${num(series.cross?.topic_to_reading)}번`} sub="[독서 흔한가 진단하러 가기]" />
+        <Stat label="독서 → 탐구주제" value={`${num(series.cross?.reading_to_topic)}번`} sub="[탐구주제 흔한가 진단하러 가기]" />
+        <Stat label="지원동기 → 면접 예상질문" value={`${num(m.to_interview_people)}명`} sub="[면접 예상질문 바로가기]" />
+      </div>
+    </>
+  );
+}
+
+/* 독서 탭 */
+function ReadingTab({ series }) {
+  if (!series) return <Loading />;
+  if (series.error) return <Failed msg={series.error} />;
+  const r = series.reading ?? {};
+  const C = SERVICE.reading.color;
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <Stat label="진단" value={`${num(r.total)}건`} sub={`회원 ${num(r.members)} · 비회원 ${num(r.anon)}`} />
+        <Stat label="사용자" value={`${num(r.people)}명`} sub={num(r.people) ? `1인당 ${(num(r.total) / num(r.people)).toFixed(1)}권` : ""} />
+        <Stat label="평균 흔함 지수" value={r.avg_score == null ? "-" : `${r.avg_score}점`} />
+        <Stat label="비회원 → 가입 버튼" value={`${num(r.gate)}번`} rate={pctOf(r.gate, r.anon)} sub="비회원 진단 대비" />
+        <Stat label="무료 소진" value={`${num(r.gate_quota)}번`} sub="비회원 한도 화면에서 가입 누름" />
+      </div>
+      <p className="mt-4 text-[12.5px] font-bold text-gray-500">친구 초대</p>
+      <div className="mt-2 grid grid-cols-3 gap-3">
+        <Stat label="보상 받은 친구" value={`${num(r.bonus_friends)}명`} sub="친구가 가입하고 독서 진단을 마침" />
+        <Stat label="받은 권수" value={`${num(r.bonus_granted)}권`} sub="친구 1명당 +2권" />
+        <Stat label="쓴 추가 권수" value={`${num(r.bonus_used)}권`} />
+      </div>
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <RankList title="많이 나온 책 TOP 10" rows={r.top_books} total={num(r.total)} color={C} />
+        <div className="space-y-3">
+          <RankList title="책 수준" rows={r.levels} total={num(r.total)} color={C} />
+          <RankList title="희망 학과" rows={r.departments} total={num(r.total)} color={C} />
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* 지원동기 탭 */
+function MotiveTab({ series }) {
+  if (!series) return <Loading />;
+  if (series.error) return <Failed msg={series.error} />;
+  const m = series.motive ?? {};
+  const C = SERVICE.motive.color;
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <Stat label="진단" value={`${num(m.total)}건`} sub={`회원 ${num(m.members)} · 비회원 ${num(m.anon)}`} />
+        <Stat label="사용자" value={`${num(m.people)}명`} />
+        <Stat label="평균 흔함 지수" value={m.avg_score == null ? "-" : `${m.avg_score}점`} />
+        <Stat label="대학 데이터로 분석" value={`${num(m.with_univ)}건`} rate={pctOf(m.with_univ, m.total)} sub="나머지는 대학 미입력·목록 밖" />
+        <Stat label="면접 답변 / 자소서" value={`${pctOf(m.interview_share, m.total) ?? "-"}% · ${m.total ? 100 - (pctOf(m.interview_share, m.total) ?? 0) : "-"}%`} />
+      </div>
+      <p className="mt-4 text-[12.5px] font-bold text-gray-500">다음 행동</p>
+      <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat label="비회원 → 가입 버튼" value={`${num(m.gate)}번`} rate={pctOf(m.gate, m.anon)} />
+        <Stat label="무료 소진 → 가입" value={`${num(m.gate_quota)}번`} />
+        <Stat label="친구 보상 / 쓴 횟수" value={`${num(m.bonus_granted)}번 · ${num(m.bonus_used)}번`} />
+        <Stat label="→ 면접 예상질문 바로가기" value={`${num(m.to_interview_people)}명`} color={SERVICE.interview.color} sub="유료 상품으로 넘어간 사람" />
+      </div>
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <RankList title="많이 나온 대학 TOP 10" rows={m.top_univ} total={num(m.total)} color={C} />
+        <RankList title="지원 학과 TOP 10" rows={m.departments} total={num(m.total)} color={C} />
+      </div>
+    </>
+  );
+}
+
+/* 면접 예상질문 탭 */
+function InterviewTab({ series }) {
+  if (!series) return <Loading />;
+  if (series.error) return <Failed msg={series.error} />;
+  const iv = series.interview ?? {};
+  const steps = [
+    { label: "1. 화면 본 사람", v: iv.view_people, sub: "/interview 방문" },
+    { label: "2. 결제 창 연 사람", v: iv.pay_open_people, prev: iv.view_people, sub: "🔒 버튼을 누름" },
+    { label: "3. 입금했어요", v: iv.order_people, prev: iv.pay_open_people, sub: "주문 접수" },
+    { label: "4. 입금 승인", v: iv.approved_people, prev: iv.order_people },
+    { label: "5. 질문 뽑음", v: iv.run_people, prev: iv.approved_people },
+    { label: "6. PDF 받음", v: iv.pdf_people, prev: iv.run_people },
+  ];
+  let worst = -1, worstRate = 101;
+  steps.forEach((s, i) => {
+    const r = s.prev == null ? null : pctOf(s.v, s.prev);
+    if (r != null && r < worstRate) {
+      worstRate = r;
+      worst = i;
+    }
+  });
+  return (
+    <>
+      <p className="text-[12.5px] font-bold text-gray-500">결제까지 흐름 (사람 수 · %는 바로 앞 단계 대비 · 관리자 제외)</p>
+      <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-6">
+        {steps.map((s, i) => (
+          <Stat
+            key={s.label}
+            label={s.label}
+            value={num(s.v)}
+            rate={s.prev == null ? null : pctOf(s.v, s.prev)}
+            sub={s.sub}
+            bad={i === worst}
+            flag={i === worst ? "가장 많이 빠지는 단계" : null}
+          />
+        ))}
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat label="결제한 전체 회원" value={`${num(iv.access_total)}명`} sub="기간과 상관없이 누적" />
+        <Stat label="질문 뽑기 횟수" value={`${num(iv.runs)}번`} />
+        <Stat label="1번에 고른 대학" value={iv.avg_targets == null ? "-" : `평균 ${iv.avg_targets}곳`} />
+        <Stat label="가이드 PDF 받음" value={`${num(iv.guide_people)}명`} />
+      </div>
+      <div className="mt-3">
+        <RankList title="많이 뽑은 대학" rows={iv.top_univ} color={SERVICE.interview.color} />
+      </div>
+    </>
+  );
+}
+
+/* 상품별 매출 */
+function SalesTable({ sales }) {
+  const PRICE = { interview: 19000, ten: 29000, one: 3900 };
+  return (
+    <div className="mt-3 overflow-x-auto rounded-xl border border-gray-200">
+      <table className="w-full min-w-[640px] text-left text-[13px]">
+        <thead className="border-b border-gray-200 bg-gray-50 text-[12px] font-bold text-gray-500">
+          <tr>
+            <th className="px-4 py-2.5">상품</th>
+            <th className="px-4 py-2.5 text-right">가격</th>
+            <th className="px-4 py-2.5 text-right">주문</th>
+            <th className="px-4 py-2.5 text-right">승인</th>
+            <th className="px-4 py-2.5 text-right">대기</th>
+            <th className="px-4 py-2.5 text-right">승인 매출</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(sales ?? []).map((x) => (
+            <tr key={x.key} className="border-b border-gray-100 last:border-0">
+              <td className="px-4 py-2.5 font-bold text-sm-navy">{PRODUCT[x.key] ?? x.key}</td>
+              <td className="px-4 py-2.5 text-right">{PRICE[x.key] ? won(PRICE[x.key]) : "-"}</td>
+              <td className="px-4 py-2.5 text-right">{num(x.orders)}</td>
+              <td className="px-4 py-2.5 text-right">{num(x.approved)}</td>
+              <td className="px-4 py-2.5 text-right">{num(x.pending)}</td>
+              <td className="px-4 py-2.5 text-right font-bold text-sm-orange">{won(x.revenue)}</td>
+            </tr>
+          ))}
+          {!sales?.length && (
+            <tr>
+              <td colSpan={6} className="px-4 py-8 text-center text-gray-400">이 기간에 주문이 없어요.</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* 친구 추천 보상 — 서비스별 */
+function BonusSummary({ series }) {
+  if (!series || series.error) return null;
+  const r = series.reading ?? {}, m = series.motive ?? {};
+  return (
+    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <Stat label="독서 보상 (친구 1명당 +2권)" value={`${num(r.bonus_friends)}명 · ${num(r.bonus_granted)}권`} sub={`쓴 권수 ${num(r.bonus_used)}권`} color={SERVICE.reading.color} />
+      <Stat label="지원동기 보상 (친구 1명당 +1번)" value={`${num(m.bonus_granted)}번`} sub={`쓴 횟수 ${num(m.bonus_used)}번`} color={SERVICE.motive.color} />
+    </div>
+  );
+}
+
 /* 줄을 펼쳤을 때 보이는 AI 결과 */
 function AiDetail({ r }) {
   const res = r.result ?? {};
@@ -649,6 +1054,20 @@ export default function AdminTopics() {
   const [page, setPage] = useState(1); // 목록 페이지
   const listTop = useRef(null); // 페이지를 넘기면 목록 맨 위로
   const [pendingOrders, setPendingOrders] = useState(0); // 입금 확인 대기
+  const [series, setSeries] = useState(null); // 독서·지원동기·면접·매출 통계
+  const [growth, setGrowth] = useState(null); // 추이·가입 경로·여러 서비스 사용·AI 비용
+  // 탭 — 주소 끝 ?tab=reading 처럼 두면 그 탭으로 열린다
+  const [tab, setTabState] = useState(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    return TABS.some((x) => x.k === t) ? t : "sum";
+  });
+  const setTab = (t) => {
+    setTabState(t);
+    const u = new URL(window.location.href);
+    if (t === "sum") u.searchParams.delete("tab");
+    else u.searchParams.set("tab", t);
+    window.history.replaceState(null, "", u);
+  };
 
   // 입금 확인 대기 건수 — 새 주문이 오면 실시간으로 바뀐다
   useEffect(() => {
@@ -668,15 +1087,22 @@ export default function AdminTopics() {
     setErr("");
     const args = { p_from: from || null, p_to: to || null };
 
-    const [list, stat, use, refs, fun, inf] = await Promise.all([
+    const [list, stat, use, refs, fun, inf, ser, gro] = await Promise.all([
       fetchAllRows(args),
       supabase.rpc("admin_topic_stats", args),
       fetchAllRows(args, "admin_user_usage"),
       supabase.rpc("admin_referral_stats", args),
       supabase.rpc("admin_signup_funnel", args),
       supabase.rpc("admin_inquiry_funnel", args),
+      supabase.rpc("admin_series_stats", args),
+      supabase.rpc("admin_growth_stats", args),
     ]);
     setBusy(false);
+
+    if (ser.error) console.warn("series stats failed", ser.error);
+    setSeries(ser.error ? { error: ser.error.message ?? "불러오지 못했어요" } : ser.data ?? {});
+    if (gro.error) console.warn("growth stats failed", gro.error);
+    setGrowth(gro.error ? { error: gro.error.message ?? "불러오지 못했어요" } : gro.data ?? {});
 
     if (inf.error) console.warn("inquiry funnel failed", inf.error);
     // 실패해도 칸은 보이게 하고 이유를 적는다 (숨기면 왜 안 보이는지 알 수 없어서)
@@ -814,7 +1240,7 @@ export default function AdminTopics() {
   return (
     <div className="mx-auto max-w-6xl px-5 py-10">
       <div className="flex items-center gap-3">
-        <h1 className="text-2xl font-extrabold tracking-tight text-sm-navy">진단 기록</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight text-sm-navy">관리자</h1>
         <a
           href="/admin/orders"
           className={`ml-auto flex items-center gap-2 rounded-lg px-4 py-2 text-[13.5px] font-bold ${
@@ -826,7 +1252,7 @@ export default function AdminTopics() {
         </a>
       </div>
       <p className="mt-2 text-sm text-gray-500">
-        학생이 입력한 탐구주제와 AI 진단 결과를 날짜별로 확인합니다. 줄을 누르면 AI 결과 전체가 펼쳐집니다.
+        흔한가 시리즈 전체 이용과 매출을 봅니다. 기간은 모든 탭에 같이 적용돼요.
       </p>
 
       {/* 기간 */}
@@ -864,8 +1290,63 @@ export default function AdminTopics() {
         </button>
       </div>
 
+      {/* 탭 */}
+      <div className="mt-6 flex gap-1 overflow-x-auto border-b-2 border-gray-200">
+        {TABS.map((t) => (
+          <button
+            key={t.k}
+            onClick={() => setTab(t.k)}
+            className="-mb-[2px] whitespace-nowrap border-b-[3px] px-4 py-2.5 text-[14px] font-extrabold transition"
+            style={tab === t.k ? { color: t.color, borderColor: t.color } : { color: "#6B7280", borderColor: "transparent" }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       {err && <p className="mt-5 text-sm font-semibold text-red-500">{err}</p>}
 
+      {/* ── 요약 탭 */}
+      {tab === "sum" && (
+        <div className="mt-6">
+          <SummaryTab series={series} growth={growth} topicStats={stats} funnel={funnel} pendingOrders={pendingOrders} />
+        </div>
+      )}
+      {tab === "reading" && (
+        <div className="mt-6">
+          <ReadingTab series={series} />
+        </div>
+      )}
+      {tab === "motive" && (
+        <div className="mt-6">
+          <MotiveTab series={series} />
+        </div>
+      )}
+      {tab === "interview" && (
+        <div className="mt-6">
+          <InterviewTab series={series} />
+        </div>
+      )}
+      {tab === "inquiry" && <InquiryPanel f={inqFunnel} />}
+      {tab === "growth" && (
+        <>
+          <div className="mt-6">
+            <h2 className="text-lg font-extrabold text-sm-navy">상품별 매출</h2>
+            <p className="mt-1 text-[12.5px] text-gray-400">승인된 주문만 매출로 셉니다. 관리자 계정 주문은 뺍니다.</p>
+            {series?.error ? <Failed msg={series.error} /> : <SalesTable sales={series?.sales} />}
+          </div>
+          <SignupPanel f={funnel} />
+          <ReferralPanel stats={refStats} />
+          <div className="mt-6">
+            <p className="text-[12.5px] font-bold text-gray-500">독서·지원동기 친구 보상 (이 기간)</p>
+            <BonusSummary series={series} />
+          </div>
+        </>
+      )}
+
+      {/* ── 탐구주제 탭: 기존 내용 그대로 */}
+      {tab === "topic" && (
+      <>
       {/* 요약 */}
       {stats && (
         <>
@@ -932,14 +1413,6 @@ export default function AdminTopics() {
       {/* 사용자별 이용 — 회원을 누르면 아래 목록을 그 사람으로 거른다 */}
       <UsagePanel usage={usage} onPick={(email) => email && setQ(email)} />
 
-      {/* 가입 전환 — 비회원이 어디서 멈추는지 */}
-      <SignupPanel f={funnel} />
-
-      {/* 탐구보고서 — 어느 단계에서 나가는지, PDF 누른 사람 중 몇 명이 결제하는지 (수요 테스트 자리) */}
-      <InquiryPanel f={inqFunnel} />
-
-      {/* 친구 추천 — 전환 단계와 A/B 그룹 비교 */}
-      <ReferralPanel stats={refStats} />
 
       {/* 목록 */}
       <div ref={listTop} className="mt-10 flex flex-wrap items-center gap-2 scroll-mt-4">
@@ -1115,6 +1588,8 @@ export default function AdminTopics() {
       </div>
 
       <Pager page={page} pages={pages} onChange={goPage} />
+      </>
+      )}
     </div>
   );
 }
