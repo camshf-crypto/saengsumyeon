@@ -182,6 +182,128 @@ const RESEARCH = ["lit", "case", "data"];
 const SIMILAR = { exp: "실험", survey: "설문조사", obs: "관찰" };
 
 /*
+ * 처음 쓰는 학생용 튜토리얼 — 자료 카드가 처음 나왔을 때 한 번만
+ * 화면을 어둡게 하고 누를 곳만 밝게 비춘 뒤 말풍선으로 설명한다 (data-tour 붙은 곳)
+ * 다 보거나 건너뛰면 이 브라우저에서는 다시 안 뜬다
+ */
+const TOUR_KEY = "sm_tour_sources_v1";
+const TOUR_STEPS = [
+  { sel: '[data-tour="open"]', title: "① 자료를 열어서 확인해요", body: "AI가 찾은 자료가 실제로 있는지, 내 주제와 맞는지 직접 열어 봐요. 면접에서 물어볼 수 있어요." },
+  { sel: '[data-tour="pick"]', title: "② 쓸 자료는 ‘보고서에 쓰기’를 눌러요", body: "2~4개면 충분해요. 고른 자료만 3단계에서 AI가 읽고 비교표를 채워요." },
+  { sel: '[data-tour="next"]', title: "③ 다 골랐으면 ‘다음 단계’를 눌러요", body: "3단계에서 AI가 고른 자료로 결과를 정리해 줘요." },
+];
+function SourceTour({ onDone }) {
+  const [idx, setIdx] = useState(0);
+  const [rect, setRect] = useState(null);
+  const [mobile, setMobile] = useState(() => window.innerWidth < 768);
+  const step = TOUR_STEPS[idx];
+
+  useEffect(() => {
+    let alive = true;
+    let el = null;
+    let tries = 0;
+    let raf = 0;
+    setRect(null);
+    const measure = () => el && alive && setRect(el.getBoundingClientRect());
+    // 스크롤이 끝날 때까지 약 1초 동안 매 프레임 자리를 다시 잰다 (휴대폰은 스크롤이 길다)
+    const follow = (until) => {
+      measure();
+      if (Date.now() < until) raf = requestAnimationFrame(() => follow(until));
+    };
+    // 누를 곳이 화면에 나타날 때까지 잠깐 기다렸다가 찾는다 (최대 약 3초)
+    const find = () => {
+      if (!alive) return;
+      el = document.querySelector(step.sel);
+      if (!el) {
+        if (tries++ < 20) return setTimeout(find, 150);
+        return; // 끝내 못 찾으면 어둡게만 두고 말풍선으로 안내
+      }
+      // 누를 곳으로 즉시 이동 — 부드러운 스크롤은 휴대폰에서 중간에 끊길 때가 있어서 쓰지 않는다
+      // 휴대폰은 아래에 말풍선이 있으니 누를 곳을 화면 위쪽 1/3쯤에 둔다
+      const goTo = () => {
+        el.scrollIntoView({ block: "center" });
+        if (window.innerWidth < 768) {
+          const r = el.getBoundingClientRect();
+          window.scrollBy(0, r.top - window.innerHeight * 0.22);
+        }
+      };
+      goTo();
+      // 화면이 늦게 그려져 자리가 밀렸으면 한 번 더
+      setTimeout(() => {
+        if (!alive || !el) return;
+        const r = el.getBoundingClientRect();
+        if (r.top < 0 || r.bottom > window.innerHeight - (window.innerWidth < 768 ? 220 : 0)) goTo();
+        follow(Date.now() + 600);
+      }, 400);
+      follow(Date.now() + 1000);
+    };
+    find();
+    const onResize = () => {
+      setMobile(window.innerWidth < 768);
+      measure();
+    };
+    window.addEventListener("resize", onResize);
+    window.addEventListener("scroll", measure, true);
+    return () => {
+      alive = false;
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("scroll", measure, true);
+    };
+  }, [idx, step.sel]);
+
+  const last = idx === TOUR_STEPS.length - 1;
+  const pad = 6;
+  // PC: 말풍선을 밝힌 곳 아래(모자라면 위)에 / 휴대폰: 화면 아래에 고정
+  const below = rect ? rect.bottom + 180 < window.innerHeight : true;
+  // 휴대폰: 화면 폭에 맞춰 누를 곳 바로 아래(자리가 없으면 위)에 붙인다
+  const TIP_H = 175; // 말풍선 대략 높이
+  const tipStyle = mobile
+    ? {
+        left: 12,
+        right: 12,
+        top: rect
+          ? rect.bottom + pad + 12 + TIP_H < window.innerHeight
+            ? rect.bottom + pad + 12
+            : Math.max(12, rect.top - pad - 12 - TIP_H)
+          : window.innerHeight * 0.4,
+      }
+    : {
+        width: 320,
+        top: rect ? (below ? rect.bottom + pad + 10 : Math.max(12, rect.top - pad - 10 - 150)) : window.innerHeight / 2 - 80,
+        left: rect ? Math.min(Math.max(12, rect.left), window.innerWidth - 332) : window.innerWidth / 2 - 160,
+      };
+
+  return (
+    <div className="fixed inset-0 z-[60]" role="dialog" aria-modal="true">
+      {/* 누를 곳만 밝게 — 바깥은 큰 그림자로 어둡게 */}
+      {rect ? (
+        <div
+          className="pointer-events-none fixed rounded-xl ring-4 ring-sm-orange"
+          style={{ top: rect.top - pad, left: rect.left - pad, width: rect.width + pad * 2, height: rect.height + pad * 2, boxShadow: "0 0 0 9999px rgba(15,23,42,.55)" }}
+        />
+      ) : (
+        <div className="fixed inset-0 bg-slate-900/55" />
+      )}
+      <div className="fixed rounded-2xl bg-white p-4 shadow-2xl" style={tipStyle}>
+        <p className="text-[11.5px] font-bold text-sm-orange">처음이라면 이렇게 해요 · {idx + 1}/{TOUR_STEPS.length}</p>
+        <p className="mt-1 text-[15px] font-extrabold text-sm-navy">{step.title}</p>
+        <p className="mt-1 text-[13px] leading-relaxed text-gray-600">{step.body}</p>
+        <div className="mt-3 flex items-center gap-2">
+          <button onClick={onDone} className="text-[12.5px] font-bold text-gray-400">건너뛰기</button>
+          <button
+            onClick={() => (last ? onDone() : setIdx(idx + 1))}
+            className="ml-auto rounded-lg bg-sm-navy px-4 py-2 text-[13px] font-bold text-white"
+          >
+            {last ? "알겠어요" : "다음"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/*
  * 자료 목록 — AI가 찾은 자료 + 내가 찾아 추가한 자료
  * '보고서에 쓰기'로 고른 자료만 3단계에서 AI가 읽고 요약한다
  */
@@ -198,6 +320,26 @@ function SourceList({ list, onOpen, onToggle, onAdd, onRemove, showAi, similar }
         <h3 className="text-[15px] font-extrabold text-sm-navy">{showAi ? "자료 고르기" : "내가 찾은 자료"}</h3>
         <span className="rounded-full bg-sm-navy px-2.5 py-0.5 text-[12px] font-bold text-white">보고서에 쓸 자료 {picked}개</span>
       </div>
+      {/* 지금 할 일 — 자료가 나오면 항상 보인다 (한 일은 체크) */}
+      {showAi && list.some((x) => x.added_by !== "me") && (
+        <div className="rounded-xl border-2 border-sm-navy/15 bg-indigo-50/50 px-4 py-3">
+          <p className="text-[12.5px] font-extrabold text-sm-navy">지금 할 일</p>
+          <ol className="mt-1.5 grid gap-1.5 text-[13px] sm:grid-cols-3">
+            {[
+              [list.some((x) => x.opened), "자료를 열어서 확인하기"],
+              [picked > 0, `쓸 자료에 ‘보고서에 쓰기’ 누르기 (${picked}개)`],
+              [false, "오른쪽 아래 ‘다음 단계 →’ 누르기"],
+            ].map(([done, t], i) => (
+              <li key={t} className={`flex items-center gap-2 ${done ? "text-gray-400" : "font-bold text-sm-navy"}`}>
+                <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${done ? "bg-green-500 text-white" : "bg-sm-navy text-white"}`}>
+                  {done ? "✓" : i + 1}
+                </span>
+                <span className={done ? "line-through" : ""}>{t}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
       <p className="rounded-lg bg-orange-50 px-4 py-2.5 text-[12.5px] leading-relaxed text-orange-900">
         {similar ? (
           <>
@@ -213,7 +355,7 @@ function SourceList({ list, onOpen, onToggle, onAdd, onRemove, showAi, similar }
       </p>
 
       <div className="grid gap-3 md:grid-cols-2">
-        {shown.map((x) => (
+        {shown.map((x, n) => (
           <div key={x.i} className={`rounded-xl border-2 p-4 ${x.selected ? "border-sm-navy bg-indigo-50/40" : "border-gray-200"}`}>
             <div className="flex items-start gap-2">
               <p className="min-w-0 flex-1 text-[12px] font-bold text-sm-orange">
@@ -241,12 +383,14 @@ function SourceList({ list, onOpen, onToggle, onAdd, onRemove, showAi, similar }
                 target="_blank"
                 rel="noreferrer"
                 onClick={() => onOpen(x.i)}
+                data-tour={n === 0 ? "open" : undefined}
                 className={`flex h-10 items-center justify-center rounded-lg border text-[13px] font-bold ${x.opened ? "border-green-400 text-green-700" : "border-sm-navy text-sm-navy"}`}
               >
                 {x.opened ? "확인했어요 ✓" : "열어서 확인 ↗"}
               </a>
               <button
                 onClick={() => onToggle(x.i)}
+                data-tour={n === 0 ? "pick" : undefined}
                 className={`h-10 rounded-lg text-[13px] font-bold ${x.selected ? "bg-sm-navy text-white" : "border border-gray-300 text-gray-600"}`}
               >
                 {x.selected ? "보고서에 쓰기 ✓" : "보고서에 쓰기"}
@@ -698,6 +842,28 @@ export default function InquiryPrepare() {
   const [manualOpen, setManualOpen] = useState(false);
   const hasMine = (inq?.sources?.list ?? []).some((x) => x.added_by === "me");
   const showList = hasAiSources || hasMine || manualOpen;
+  const pickedCount = (inq?.sources?.list ?? []).filter((x) => x.selected).length;
+  // 자료 카드가 처음 나오면 튜토리얼 한 번 (이 브라우저에서 본 적 없을 때)
+  const [tourOn, setTourOn] = useState(false);
+  useEffect(() => {
+    if (!hasAiSources || searching) return;
+    let seen = false;
+    try {
+      seen = Boolean(localStorage.getItem(TOUR_KEY));
+    } catch {
+      // 저장이 막힌 브라우저면 매번 보여주지 않게 그냥 넘어간다
+      seen = true;
+    }
+    if (!seen) setTimeout(() => setTourOn(true), 500);
+  }, [hasAiSources, searching]);
+  function endTour() {
+    setTourOn(false);
+    try {
+      localStorage.setItem(TOUR_KEY, "1");
+    } catch {
+      // 무시
+    }
+  }
   const autoRan = useRef(false);
   useEffect(() => {
     if (!inq?.pack || !opened || autoRan.current || searching || hasAiSources) return;
@@ -1009,7 +1175,10 @@ export default function InquiryPrepare() {
             )}
             <button
               onClick={goResult}
-              className={`h-[52px] w-full rounded-xl text-[15px] font-extrabold text-white ${locked ? "bg-gray-400" : "bg-sm-navy"}`}
+              data-tour="next"
+              className={`h-[52px] w-full rounded-xl text-[15px] font-extrabold text-white ${locked ? "bg-gray-400" : "bg-sm-navy"} ${
+                !locked && pickedCount > 0 ? "ring-4 ring-sm-orange/40 animate-pulse" : ""
+              }`}
             >
               {locked ? "다음 단계 · 이용권 필요" : "다음 단계 →"}
             </button>
@@ -1070,6 +1239,8 @@ export default function InquiryPrepare() {
           </div>
         </div>
       )}
+
+      {tourOn && <SourceTour onDone={endTour} />}
 
       <Paywall open={Boolean(wall)} reason={wall?.reason} inquiryId={inq?.id} onClose={() => setWall(null)} onUnlocked={reload} />
     </div>
