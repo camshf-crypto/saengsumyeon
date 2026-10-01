@@ -1,0 +1,12 @@
+# 검색엔진 안내 — 진단 화면은 열고, 개인 화면·관리자는 막는다
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /my
+Disallow: /login
+Disallow: /signup
+Disallow: /auth
+Disallow: /result
+Disallow: /inquiry/
+
+Sitemap: https://saengsumyeon.vercel.app/sitemap.xml

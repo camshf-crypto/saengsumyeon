@@ -261,8 +261,8 @@ function ReadingLink() {
       className="mt-5 flex w-full items-center justify-between rounded-xl border-[1.5px] border-[#3D6BEF] bg-[#EEF3FF] px-5 py-4 text-left"
     >
       <span>
-        <b className="block text-[15px] font-extrabold text-sm-navy">내 독서도 흔한지 궁금하다면</b>
-        <span className="text-[12.5px] text-gray-600">내가 읽은 책이 다들 읽는 책인지 진단해 봐요</span>
+        <b className="block text-[15px] font-extrabold text-sm-navy">내 세특 독서도 흔한지 궁금하다면</b>
+        <span className="text-[12.5px] text-gray-600">생기부에 쓸 책, 내 진로와 맞는지 확인해 봐요</span>
       </span>
       <span className="shrink-0 rounded-lg bg-[#3D6BEF] px-3 py-2 text-[13px] font-extrabold text-white">독서 흔한가 진단하러 가기 →</span>
     </button>
