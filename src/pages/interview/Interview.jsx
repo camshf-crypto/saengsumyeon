@@ -257,7 +257,7 @@ export default function Interview() {
 
       {/* ① 준비 */}
       <section className="mt-6 rounded-2xl border border-gray-200 p-5">
-        <p className="text-[15px] font-extrabold text-sm-navy">① 생기부 정리하기</p>
+        <p className="text-[15px] font-extrabold text-sm-navy">① 생기부 예상질문</p>
         {paid ? (
           <a
             href={GUIDE_PDF}
@@ -265,7 +265,7 @@ export default function Interview() {
             onClick={() => track("interview_guide")}
             className="mt-3 flex h-12 items-center justify-center rounded-xl bg-indigo-50 text-[14.5px] font-extrabold text-sm-navy ring-1 ring-indigo-200"
           >
-            생기부 정리 가이드 PDF 받기
+            생기부 예상질문 가이드 PDF 받기
           </a>
         ) : (
           <button
