@@ -253,6 +253,7 @@ export default function Interview() {
       </h1>
       <p className="mt-2 text-[14px] leading-relaxed text-gray-600">
         지원 대학의 면접 데이터(평가요소·질문 스타일)에 맞춰, 내 생기부에서 나올 질문만 골라 드려요.
+      </p>
 
       {/* ① 준비 */}
       <section className="mt-6 rounded-2xl border border-gray-200 p-5">
@@ -271,7 +272,7 @@ export default function Interview() {
             onClick={openPay}
             className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gray-100 text-[14.5px] font-extrabold text-gray-400 ring-1 ring-gray-200"
           >
-            🔒 생기부 정리 가이드 PDF 받기 <span className="rounded-full bg-sm-orange px-2 py-0.5 text-[12px] text-white">19,000원</span>
+            🔒 생기부 예상질문 가이드 PDF 받기 <span className="rounded-full bg-sm-orange px-2 py-0.5 text-[12px] text-white">19,000원</span>
           </button>
         )}
         <ol className="mt-4 space-y-2">
