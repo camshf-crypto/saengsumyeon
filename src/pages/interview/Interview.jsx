@@ -18,7 +18,7 @@ const GUIDE_PDF = "/guides/saengsumyeon-guide.pdf";
 // 준비 방법 — 문구를 바꾸려면 여기만 고친다
 const GUIDE_STEPS = [
   "내 학교생활기록부를 준비해요. 나이스나 학교에서 PDF로 받을 수 있어요.",
-  "생기부 정리 가이드를 따라 하면, 3년 동안의 내 활동이 한눈에 요약돼요.",
+  "생기부 예상질문 가이드를 따라하면, 3년 동안의 내 활동이 한눈에 요약돼요.",
   "요약된 내용을 전부 복사해요.",
   "아래에 지원 대학·학과를 적고, 요약한 내용을 붙여 넣으면 끝이에요.",
 ];
@@ -252,8 +252,7 @@ export default function Interview() {
         지원 대학 면접 예상 질문 뽑기
       </h1>
       <p className="mt-2 text-[14px] leading-relaxed text-gray-600">
-        지원 대학의 면접 데이터(평가요소·질문 스타일)에 맞춰, 내 생기부에서 나올 질문만 골라 드려요. 수시 6곳까지 한 번에 뽑을 수 있어요.
-      </p>
+        지원 대학의 면접 데이터(평가요소·질문 스타일)에 맞춰, 내 생기부에서 나올 질문만 골라 드려요.
 
       {/* ① 준비 */}
       <section className="mt-6 rounded-2xl border border-gray-200 p-5">
