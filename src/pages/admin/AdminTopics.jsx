@@ -280,14 +280,14 @@ function UsagePanel({ usage, onPick }) {
 
   return (
     <div className="mt-10">
-      <h2 className="text-lg font-extrabold text-sm-navy">사용자별 이용</h2>
+      <h2 className="text-lg font-extrabold text-sm-navy">탐구주제 진단한 사람</h2>
       <p className="mt-1 text-[12.5px] text-gray-400">
-        회원은 계정, 비회원은 브라우저 기준으로 묶었어요. 새로 진단한 횟수만 셉니다.
+        고른 기간에 탐구주제 진단을 한 번이라도 한 사람만 셉니다 (가입만 하고 진단 안 한 회원은 빠져요). 회원은 계정, 비회원은 브라우저 기준이에요. 전체 가입자 수는 [요약] 탭에서 봐요.
       </p>
 
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          ["이용자", `${people}명`, `회원 ${members} · 비회원 ${people - members}`],
+          ["진단한 사람", `${people}명`, `진단한 회원 ${members} · 비회원 ${people - members}`],
           ["1인당 평균 진단", people ? `${(total / people).toFixed(1)}회` : "-", `총 ${total}건`],
           ["재방문자 (2일 이상)", `${returning}명`, `${pct(returning)}%`],
           ["3회 이상 진단", `${heavy}명`, `${pct(heavy)}%`],
@@ -570,7 +570,7 @@ const SERVICE = {
   interview: { label: "면접 예상질문", color: "#7C3AED", bg: "#F3E8FF" },
   inquiry: { label: "탐구보고서", color: "#18224F", bg: "#EEF1FA" },
 };
-const PRODUCT = { interview: "생기부 예상질문", ten: "탐구 10건", one: "탐구 1건 (예전)" };
+const PRODUCT = { interview: "생기부 예상질문 1곳", interview6: "생기부 예상질문 6곳", ten: "탐구 10건", one: "탐구 1건 (예전)" };
 const USD_KRW = 1400; // AI 비용 원화 환산 (대략)
 const num = (v) => Number(v ?? 0);
 const won = (v) => `${Math.round(num(v)).toLocaleString()}원`;
@@ -691,8 +691,18 @@ function AiCostTable({ rows, revenue }) {
   );
 }
 
+/* 고른 기간을 글자로 — "오늘", "최근 7일", "9/24 ~ 9/30", "전체 기간" */
+function rangeLabel(from, to) {
+  if (!from && !to) return "전체 기간";
+  const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+  const hit = RANGES.find((r) => r.from() === from && r.to() === to);
+  if (hit) return hit.label === "오늘" ? "오늘" : hit.label === "전체" ? "전체 기간" : `최근 ${hit.label}`;
+  if (from && to) return from === to ? md(from) : `${md(from)} ~ ${md(to)}`;
+  return from ? `${md(from)}부터` : `${md(to)}까지`;
+}
+
 /* 요약 탭 */
-function SummaryTab({ series, growth, topicStats, funnel, pendingOrders }) {
+function SummaryTab({ series, growth, topicStats, funnel, pendingOrders, members, period, topicUsers }) {
   if (!series || !growth) return <Loading />;
   if (series.error || growth.error) return <Failed msg={series.error || growth.error} />;
   const r = series.reading ?? {}, m = series.motive ?? {}, iv = series.interview ?? {};
@@ -700,9 +710,14 @@ function SummaryTab({ series, growth, topicStats, funnel, pendingOrders }) {
   const revenue = sales.reduce((a, x) => a + num(x.revenue), 0);
   const totalDiag = num(topicStats?.total) + num(r.total) + num(m.total) + num(iv.runs);
   const cu = growth.cross_use ?? {};
+  // 가입 경로 — 새 회원이 가입 직전에 누른 가입 버튼의 서비스 (탐구주제·독서·지원동기 / 친구 추천 링크 / 바로 가입)
+  const src = Object.fromEntries((growth.signup_source ?? []).map((x) => [x.key, num(x.n)]));
+  const srcTotal = Object.values(src).reduce((a, v) => a + v, 0);
+  const JOIN = { topic: "탐구주제", reading: "독서", motive: "지원동기" };
 
   const rows = [
-    { k: "topic", total: topicStats?.total, people: topicStats?.people, members: topicStats?.members, avg: topicStats?.avg_score, conv: `결과 본 비회원 → 가입 ${pctOf(funnel?.signup_done, funnel?.result_view) ?? "-"}%` },
+    // 사용자 = 그 기간에 진단한 사람 수 (회원 + 비회원) — 네 서비스 모두 같은 기준
+    { k: "topic", total: topicStats?.total, people: topicUsers ?? topicStats?.people, members: topicStats?.members, avg: topicStats?.avg_score, conv: `결과 본 비회원 → 가입 ${pctOf(funnel?.signup_done, funnel?.result_view) ?? "-"}%` },
     { k: "reading", total: r.total, people: r.people, members: r.members, avg: r.avg_score, conv: `친구 보상 ${num(r.bonus_friends)}명 · 탐구주제로 이동 ${num(series.cross?.reading_to_topic)}번` },
     { k: "motive", total: m.total, people: m.people, members: m.members, avg: m.avg_score, conv: `→ 면접 예상질문 바로가기 ${num(m.to_interview_people)}명` },
     { k: "interview", total: iv.runs, people: iv.run_people, members: iv.runs, avg: null, conv: `화면 본 사람 → 입금 ${pctOf(iv.order_people, iv.view_people) ?? "-"}%` },
@@ -711,21 +726,29 @@ function SummaryTab({ series, growth, topicStats, funnel, pendingOrders }) {
   return (
     <>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="새 회원" value={`${num(funnel?.signup_done)}명`} sub="가입 마무리까지 끝낸 회원" />
+        <Stat
+          label="전체 회원"
+          value={members ? `${num(members.total).toLocaleString()}명` : "-"}
+          sub={`${period} 새 회원 ${num(funnel?.signup_done)}명${members ? ` · 최근 7일 로그인 ${num(members.active_7d).toLocaleString()}명` : ""}`}
+        />
         <Stat label="전체 진단" value={`${totalDiag.toLocaleString()}건`} sub="4개 서비스 합계" />
         <Stat label="승인 매출" value={won(revenue)} color="#EA580C" sub={sales.map((x) => `${PRODUCT[x.key] ?? x.key} ${num(x.approved)}건`).join(" · ") || "아직 없어요"} />
         <Stat label="입금 대기" value={`${pendingOrders}건`} sub="결제 승인 화면에서 확인" />
       </div>
 
       <h2 className="mt-8 text-lg font-extrabold text-sm-navy">서비스별 한눈에</h2>
+      <p className="mt-1 text-[12.5px] text-gray-400">
+        {period}에 각 서비스를 쓴 사람(회원 + 비회원)과, 그 서비스의 가입 버튼으로 가입한 새 회원이에요.
+      </p>
       <div className="mt-3 overflow-x-auto rounded-xl border border-gray-200">
-        <table className="w-full min-w-[720px] text-left text-[13px]">
+        <table className="w-full min-w-[820px] text-left text-[13px]">
           <thead className="border-b border-gray-200 bg-gray-50 text-[12px] font-bold text-gray-500">
             <tr>
               <th className="px-4 py-2.5">서비스</th>
               <th className="px-4 py-2.5 text-right">진단</th>
-              <th className="px-4 py-2.5 text-right">사용자</th>
-              <th className="px-4 py-2.5 text-right">회원 비율</th>
+              <th className="px-4 py-2.5 text-right">사용한 사람</th>
+              <th className="px-4 py-2.5 text-right">회원 진단 비율</th>
+              <th className="px-4 py-2.5 text-right">이 서비스로 가입</th>
               <th className="px-4 py-2.5 text-right">평균 흔함</th>
               <th className="px-4 py-2.5">핵심 전환</th>
             </tr>
@@ -741,6 +764,16 @@ function SummaryTab({ series, growth, topicStats, funnel, pendingOrders }) {
                 <td className="px-4 py-2.5 text-right font-bold text-sm-navy">{num(x.total).toLocaleString()}</td>
                 <td className="px-4 py-2.5 text-right">{num(x.people).toLocaleString()}명</td>
                 <td className="px-4 py-2.5 text-right">{pctOf(x.members, x.total) ?? "-"}%</td>
+                <td className="px-4 py-2.5 text-right">
+                  {JOIN[x.k] ? (
+                    <>
+                      <b className="text-sm-navy">{num(src[JOIN[x.k]])}명</b>
+                      {srcTotal > 0 && <em className="ml-1 not-italic text-[11px] text-gray-400">{pctOf(src[JOIN[x.k]], srcTotal)}%</em>}
+                    </>
+                  ) : (
+                    <span className="text-gray-300" title="로그인해야 쓸 수 있는 서비스라 가입 경로로 세지 않아요">-</span>
+                  )}
+                </td>
                 <td className="px-4 py-2.5 text-right">{x.avg ?? "-"}</td>
                 <td className="px-4 py-2.5 text-gray-600">{x.conv}</td>
               </tr>
@@ -748,6 +781,12 @@ function SummaryTab({ series, growth, topicStats, funnel, pendingOrders }) {
           </tbody>
         </table>
       </div>
+
+      <p className="mt-2 text-[12.5px] text-gray-500">
+        {period} 새 회원 <b className="text-sm-navy">{srcTotal}명</b> 중 · 친구 추천 링크 <b className="text-sm-navy">{num(src["친구 추천 링크"])}명</b> · 바로 가입{" "}
+        <b className="text-sm-navy">{num(src["바로 가입"])}명</b>
+        <span className="text-gray-400"> (바로 가입 = 진단 결과의 가입 버튼을 거치지 않고 헤더 등에서 직접 가입)</span>
+      </p>
 
       <h2 className="mt-8 text-lg font-extrabold text-sm-navy">날짜별 진단 수</h2>
       <div className="mt-3 rounded-xl border border-gray-200 p-5">
@@ -856,18 +895,132 @@ function MotiveTab({ series }) {
   );
 }
 
-/* 면접 예상질문 탭 */
-function InterviewTab({ series }) {
-  if (!series) return <Loading />;
+/* 면접 예상질문 탭 — 학생 활동과 뽑힌 질문을 나란히 본다 */
+const IV_KIND = { subject: "세특", club: "동아리", career: "진로", autonomy: "자율" };
+const IV_TERMS = ["고1 1학기", "고1 2학기", "고2 1학기", "고2 2학기", "고3 1학기"];
+const IV_SHORT = 25; // 이보다 짧은 활동은 '짧음' 표시 — 질문이 약한 게 입력 탓인지 보려고
+const ivActs = (r) => (Array.isArray(r.activities) ? r.activities : []);
+const ivGroups = (r) => r.result?.results?.[0]?.groups ?? [];
+const ivQCount = (r) => ivGroups(r).reduce((a, g) => a + (g.questions?.length ?? 0), 0);
+const ivShortN = (r) => ivActs(r).filter((a) => String(a.content ?? "").trim().length < IV_SHORT).length;
+const ivWho = (r) => r.user_id ?? `guest:${r.client_id}`;
+const ivClaimed = (r) => r.is_member && r.client_id; // 비회원으로 뽑고 가입해서 계정으로 옮긴 기록
+
+/* 줄을 펼치면 — 왼쪽 학생 활동, 오른쪽 뽑힌 질문 */
+function InterviewDetail({ r }) {
+  const acts = ivActs(r);
+  const groups = ivGroups(r);
+  const guestView = !r.is_member; // 비회원 화면에는 앞 2개만 보였다
+  const byTerm = {};
+  acts.forEach((a) => {
+    const k = `${a.grade} ${a.term}`;
+    (byTerm[k] ??= []).push(a);
+  });
+  let n = 0;
+  return (
+    <div className="grid gap-6 bg-gray-50 px-6 py-5 lg:grid-cols-2">
+      <div>
+        <p className="text-[12px] font-bold text-gray-400">학생이 쓴 활동 {acts.length}개</p>
+        {IV_TERMS.filter((k) => byTerm[k]).map((k) => (
+          <div key={k} className="mt-3">
+            <p className="text-[12px] font-extrabold text-sm-navy">{k}</p>
+            <ul className="mt-1 space-y-1.5">
+              {byTerm[k].map((a, i) => {
+                const len = String(a.content ?? "").trim().length;
+                const short = len < IV_SHORT;
+                return (
+                  <li key={i} className={`rounded-lg bg-white px-3 py-2 text-[13px] leading-relaxed ring-1 ${short ? "ring-red-200" : "ring-gray-200"}`}>
+                    <span className="mr-1.5 rounded bg-violet-50 px-1.5 py-0.5 text-[11px] font-bold text-violet-700">
+                      {IV_KIND[a.kind] ?? a.kind}
+                      {a.subject ? ` · ${a.subject}` : ""}
+                    </span>
+                    {a.title && <b className="mr-1 text-sm-navy">{a.title} ·</b>}
+                    {a.content}
+                    {short && <span className="ml-1.5 text-[11px] font-bold text-red-500">짧음 {len}자</span>}
+                    {a.link && <span className="mt-1 block text-[12px] leading-relaxed text-gray-400">학과와 닿는 지점: {a.link}</span>}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+      <div>
+        <p className="text-[12px] font-bold text-gray-400">
+          뽑힌 질문 {ivQCount(r)}개{guestView ? " · 비회원 화면엔 앞 2개만 보였어요" : ""}
+        </p>
+        {groups.map((g) => (
+          <div key={g.title} className="mt-3">
+            <p className="text-[12px] font-extrabold text-sm-navy">{g.title}</p>
+            <ol className="mt-1 space-y-1.5">
+              {(g.questions ?? []).map((q) => {
+                n += 1;
+                const hidden = guestView && n > 2;
+                return (
+                  <li key={q} className="flex gap-2 text-[13.5px] leading-relaxed">
+                    <span className="w-5 shrink-0 font-extrabold text-sm-orange">{n}</span>
+                    <span className={hidden ? "text-gray-400" : "text-gray-800"}>
+                      {q}
+                      <em className="ml-1.5 not-italic text-[11px] text-gray-400">{q.length}자{hidden ? " · 흐림" : ""}</em>
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+        ))}
+        {!groups.length && <p className="mt-2 text-[13px] text-gray-400">질문 없음</p>}
+      </div>
+    </div>
+  );
+}
+
+function InterviewTab({ series, rows }) {
+  const [filter, setFilter] = useState("all"); // all | preview | full | guest
+  const [shortOnly, setShortOnly] = useState(false);
+  const [open, setOpen] = useState(null);
+  const [page, setPage] = useState(1);
+  useEffect(() => {
+    setPage(1);
+    setOpen(null);
+  }, [filter, shortOnly, rows]);
+
+  if (!series || !rows) return <Loading />;
   if (series.error) return <Failed msg={series.error} />;
+  if (rows.error) return <Failed msg={`기록 목록 — ${rows.error} (admin_interview_queries.sql 실행했는지 확인)`} />;
+
   const iv = series.interview ?? {};
+  const real = rows.filter((r) => !r.is_admin); // 숫자는 관리자 빼고
+  const pre = real.filter((r) => r.preview);
+  const full = real.filter((r) => !r.preview);
+  const people = (list) => new Set(list.map(ivWho)).size;
+  const preGuest = pre.filter((r) => !r.is_member).length;
+  const claimed = pre.filter(ivClaimed).length;
+  const freePeople = people(pre);
+  const fullPeople = people(full);
+  const avgActs = full.length ? (full.reduce((a, r) => a + ivActs(r).length, 0) / full.length).toFixed(1) : null;
+  const shortRecs = real.filter((r) => ivShortN(r) > 0).length;
+
+  // 결제 후 학기 분포 — 결제한 학생이 어느 학기까지 채우는지
+  const termRows = IV_TERMS.map((k) => ({
+    key: k,
+    n: full.reduce((a, r) => a + ivActs(r).filter((x) => `${x.grade} ${x.term}` === k).length, 0),
+  }));
+  const termTotal = termRows.reduce((a, x) => a + x.n, 0);
+  const top = (pick) =>
+    Object.entries(real.reduce((m, r) => ((m[pick(r)] = (m[pick(r)] ?? 0) + 1), m), {}))
+      .map(([key, n]) => ({ key, n }))
+      .sort((a, b) => b.n - a.n)
+      .slice(0, 10);
+
   const steps = [
     { label: "1. 화면 본 사람", v: iv.view_people, sub: "/interview 방문" },
-    { label: "2. 결제 창 연 사람", v: iv.pay_open_people, prev: iv.view_people, sub: "🔒 버튼을 누름" },
-    { label: "3. 입금했어요", v: iv.order_people, prev: iv.pay_open_people, sub: "주문 접수" },
-    { label: "4. 입금 승인", v: iv.approved_people, prev: iv.order_people },
-    { label: "5. 질문 뽑음", v: iv.run_people, prev: iv.approved_people },
-    { label: "6. PDF 받음", v: iv.pdf_people, prev: iv.run_people },
+    { label: "2. 무료 질문 뽑음", v: freePeople, prev: iv.view_people, sub: "5개 (회원 + 비회원)" },
+    { label: "3. 결제 창 연 사람", v: iv.pay_open_people, prev: freePeople, sub: "19,000원 버튼" },
+    { label: "4. 입금했어요", v: iv.order_people, prev: iv.pay_open_people, sub: `주문 접수 · 6곳 상품 ${num(iv.order_six)}건` },
+    { label: "5. 입금 승인", v: iv.approved_people, prev: iv.order_people },
+    { label: "6. 전체 질문 뽑음", v: fullPeople, prev: iv.approved_people, sub: "학기 탭 입력 후" },
+    { label: "7. PDF 받음", v: iv.pdf_people, prev: fullPeople },
   ];
   let worst = -1, worstRate = 101;
   steps.forEach((s, i) => {
@@ -877,10 +1030,20 @@ function InterviewTab({ series }) {
       worst = i;
     }
   });
+
+  // 목록 — 관리자 기록도 보인다 (테스트 확인용, '관리자' 표시)
+  let list = rows;
+  if (filter === "preview") list = list.filter((r) => r.preview);
+  if (filter === "full") list = list.filter((r) => !r.preview);
+  if (filter === "guest") list = list.filter((r) => !r.is_member);
+  if (shortOnly) list = list.filter((r) => ivShortN(r) > 0);
+  const pages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+  const pageRows = list.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
   return (
     <>
-      <p className="text-[12.5px] font-bold text-gray-500">결제까지 흐름 (사람 수 · %는 바로 앞 단계 대비 · 관리자 제외)</p>
-      <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-6">
+      <p className="text-[12.5px] font-bold text-gray-500">무료 질문 → 결제 흐름 (사람 수 · %는 바로 앞 단계 대비 · 관리자 제외)</p>
+      <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
         {steps.map((s, i) => (
           <Stat
             key={s.label}
@@ -893,22 +1056,134 @@ function InterviewTab({ series }) {
           />
         ))}
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <Stat label="무료 뽑기" value={`${pre.length}번`} sub={`회원 ${pre.length - preGuest} · 비회원 ${preGuest}`} />
+        <Stat label="비회원 → 가입해서 이어 봄" value={`${claimed}번`} rate={pctOf(claimed, preGuest + claimed)} sub="비회원으로 뽑은 기록 대비" />
+        <Stat label="전체 뽑기 (결제 후)" value={`${full.length}번`} sub={`${fullPeople}명`} />
+        <Stat label="결제 후 평균 활동" value={avgActs == null ? "-" : `${avgActs}개`} sub="= 평균 질문 수" />
+        <Stat label="짧은 활동이 있는 기록" value={`${shortRecs}건`} rate={pctOf(shortRecs, real.length)} sub={`${IV_SHORT}자 미만 활동 포함`} />
         <Stat label="결제한 전체 회원" value={`${num(iv.access_total)}명`} sub="기간과 상관없이 누적" />
-        <Stat label="질문 뽑기 횟수" value={`${num(iv.runs)}번`} />
-        <Stat label="1번에 고른 대학" value={iv.avg_targets == null ? "-" : `평균 ${iv.avg_targets}곳`} />
-        <Stat label="가이드 PDF 받음" value={`${num(iv.guide_people)}명`} />
       </div>
-      <div className="mt-3">
-        <RankList title="많이 뽑은 대학" rows={iv.top_univ} color={SERVICE.interview.color} />
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-3">
+        <RankList title="결제 후 채운 학기 (활동 수)" rows={termRows} total={termTotal} color={SERVICE.interview.color} />
+        <RankList title="많이 뽑은 대학" rows={top((r) => r.university)} total={real.length} color={SERVICE.interview.color} />
+        <RankList title="많이 뽑은 학과" rows={top((r) => r.department)} total={real.length} color={SERVICE.interview.color} />
       </div>
+
+      {/* 기록 목록 — 누르면 활동과 질문을 나란히 */}
+      <div className="mt-10 flex flex-wrap items-center gap-2">
+        <h2 className="text-lg font-extrabold text-sm-navy">뽑은 기록</h2>
+        <span className="text-[12.5px] text-gray-400">
+          {list.length.toLocaleString()}건 · 누르면 활동과 질문을 나란히 봐요
+        </span>
+        <div className="ml-auto flex gap-1.5">
+          {[
+            ["all", "전체"],
+            ["preview", "무료 5개"],
+            ["full", "결제 후"],
+            ["guest", "비회원"],
+          ].map(([v, l]) => (
+            <button
+              key={v}
+              onClick={() => setFilter(v)}
+              className={`rounded-lg border px-3 py-1.5 text-[12.5px] font-bold transition ${
+                filter === v ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-300 text-gray-600"
+              }`}
+            >
+              {l}
+            </button>
+          ))}
+          <button
+            onClick={() => setShortOnly((v) => !v)}
+            className={`rounded-lg border px-3 py-1.5 text-[12.5px] font-bold transition ${
+              shortOnly ? "border-red-400 bg-red-50 text-red-500" : "border-gray-300 text-gray-600"
+            }`}
+          >
+            짧은 활동만
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-3 overflow-x-auto rounded-xl border border-gray-200">
+        <table className="w-full min-w-[900px] text-left text-[13.5px]">
+          <thead className="border-b border-gray-200 bg-gray-50 text-[12.5px] font-bold text-gray-500">
+            <tr>
+              <th className="px-4 py-3">일시</th>
+              <th className="px-4 py-3">이용자</th>
+              <th className="px-4 py-3">대학 · 학과</th>
+              <th className="px-4 py-3">단계</th>
+              <th className="px-4 py-3 text-right">활동</th>
+              <th className="px-4 py-3 text-right">질문</th>
+              <th className="px-4 py-3">비고</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pageRows.map((r) => {
+              const isOpen = open === r.id;
+              const sn = ivShortN(r);
+              return (
+                <Fragment key={r.id}>
+                  <tr
+                    onClick={() => setOpen(isOpen ? null : r.id)}
+                    className={`cursor-pointer border-b border-gray-100 transition hover:bg-violet-50/40 ${isOpen ? "bg-violet-50/40" : ""}`}
+                  >
+                    <td className="whitespace-nowrap px-4 py-3 text-gray-500">{shortTime(r.created_at)}</td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      {r.is_member ? (
+                        <>
+                          <span className="font-bold text-sm-navy">{r.name ?? "회원"}</span>
+                          <span className="ml-1.5 text-[12px] text-gray-400">{r.email}</span>
+                          {r.is_admin && <span className="ml-1.5 rounded bg-gray-800 px-1.5 py-0.5 text-[11px] font-bold text-white">관리자</span>}
+                        </>
+                      ) : (
+                        <span className="rounded bg-gray-100 px-2 py-0.5 text-[11.5px] font-bold text-gray-500">비회원</span>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      {r.university} <span className="text-gray-500">{r.department}</span>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <span className={`rounded px-2 py-0.5 text-[11.5px] font-bold ${r.preview ? "bg-gray-100 text-gray-600" : "bg-violet-50 text-violet-700"}`}>
+                        {r.preview ? "무료 5개" : "결제 후"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">{ivActs(r).length}</td>
+                    <td className="px-4 py-3 text-right font-bold text-sm-navy">{ivQCount(r)}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-[12px]">
+                      {sn > 0 && <span className="mr-1.5 font-bold text-red-500">짧은 활동 {sn}개</span>}
+                      {ivClaimed(r) && <span className="text-gray-400">비회원 → 가입</span>}
+                    </td>
+                  </tr>
+                  {isOpen && (
+                    <tr className="border-b border-gray-100">
+                      <td colSpan={7} className="p-0">
+                        <InterviewDetail r={r} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+            {!list.length && (
+              <tr>
+                <td colSpan={7} className="px-4 py-16 text-center text-gray-400">
+                  기록이 없습니다.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <Pager page={page} pages={pages} onChange={setPage} />
     </>
   );
 }
 
 /* 상품별 매출 */
 function SalesTable({ sales }) {
-  const PRICE = { interview: 29000, ten: 29000, one: 3900 };
+  const PRICE = { interview: 19000, interview6: 24000, ten: 29000, one: 3900 };
   return (
     <div className="mt-3 overflow-x-auto rounded-xl border border-gray-200">
       <table className="w-full min-w-[640px] text-left text-[13px]">
@@ -1055,6 +1330,8 @@ export default function AdminTopics() {
   const [pendingOrders, setPendingOrders] = useState(0); // 입금 확인 대기
   const [series, setSeries] = useState(null); // 독서·지원동기·면접·매출 통계
   const [growth, setGrowth] = useState(null); // 추이·가입 경로·여러 서비스 사용·AI 비용
+  const [members, setMembers] = useState(null); // 전체 회원 수 (기간과 상관없이 누적)
+  const [ivRows, setIvRows] = useState(null); // 면접 예상질문 기록 (활동 + 질문)
   // 탭 — 주소 끝 ?tab=reading 처럼 두면 그 탭으로 열린다
   const [tab, setTabState] = useState(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
@@ -1086,7 +1363,7 @@ export default function AdminTopics() {
     setErr("");
     const args = { p_from: from || null, p_to: to || null };
 
-    const [list, stat, use, refs, fun, inf, ser, gro] = await Promise.all([
+    const [list, stat, use, refs, fun, inf, ser, gro, mem, ivq] = await Promise.all([
       fetchAllRows(args),
       supabase.rpc("admin_topic_stats", args),
       fetchAllRows(args, "admin_user_usage"),
@@ -1095,13 +1372,20 @@ export default function AdminTopics() {
       supabase.rpc("admin_inquiry_funnel", args),
       supabase.rpc("admin_series_stats", args),
       supabase.rpc("admin_growth_stats", args),
+      supabase.rpc("admin_member_total"),
+      fetchAllRows(args, "admin_interview_queries"),
     ]);
     setBusy(false);
+
+    if (ivq.error) console.warn("interview queries failed", ivq.error);
+    setIvRows(ivq.error ? { error: ivq.error.message ?? "불러오지 못했어요" } : ivq.data ?? []);
 
     if (ser.error) console.warn("series stats failed", ser.error);
     setSeries(ser.error ? { error: ser.error.message ?? "불러오지 못했어요" } : ser.data ?? {});
     if (gro.error) console.warn("growth stats failed", gro.error);
     setGrowth(gro.error ? { error: gro.error.message ?? "불러오지 못했어요" } : gro.data ?? {});
+    if (mem.error) console.warn("member total failed", mem.error);
+    setMembers(mem.error ? null : mem.data ?? null);
 
     if (inf.error) console.warn("inquiry funnel failed", inf.error);
     // 실패해도 칸은 보이게 하고 이유를 적는다 (숨기면 왜 안 보이는지 알 수 없어서)
@@ -1308,7 +1592,7 @@ export default function AdminTopics() {
       {/* ── 요약 탭 */}
       {tab === "sum" && (
         <div className="mt-6">
-          <SummaryTab series={series} growth={growth} topicStats={stats} funnel={funnel} pendingOrders={pendingOrders} />
+          <SummaryTab series={series} growth={growth} topicStats={stats} funnel={funnel} pendingOrders={pendingOrders} members={members} period={rangeLabel(from, to)} topicUsers={usage?.length} />
         </div>
       )}
       {tab === "reading" && (
@@ -1323,7 +1607,7 @@ export default function AdminTopics() {
       )}
       {tab === "interview" && (
         <div className="mt-6">
-          <InterviewTab series={series} />
+          <InterviewTab series={series} rows={ivRows} />
         </div>
       )}
       {tab === "inquiry" && <InquiryPanel f={inqFunnel} />}

@@ -4,7 +4,9 @@
 // 비밀값: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT (관리자 폰 푸시 알림)
 //
 // 요청 (로그인 필수)
-//   { product: "ten" | "interview", depositor, receipt?, inquiry_id? }
+//   { product: "ten" | "interview" | "interview6", depositor, receipt?, inquiry_id? }
+//   interview  = 생기부 예상질문 지원 대학 1곳 19,000원
+//   interview6 = 생기부 예상질문 수시 6곳 24,000원
 //
 // 금액을 바꾸면 화면(src/pages/inquiry/Paywall.jsx)과 DB 함수 grant_order 의 금액도 같이 바꿔야 한다
 
@@ -21,7 +23,8 @@ const json = (body: unknown, status = 200) =>
 
 const PRODUCTS: Record<string, { name: string; qty: number; amount: number }> = {
   ten: { name: "탐구 10건", qty: 10, amount: 29000 },
-  interview: { name: "생기부 예상질문", qty: 1, amount: 19000 },
+  interview: { name: "생기부 예상질문 1곳", qty: 1, amount: 19000 },
+  interview6: { name: "생기부 예상질문 6곳", qty: 1, amount: 24000 },
 };
 
 /*

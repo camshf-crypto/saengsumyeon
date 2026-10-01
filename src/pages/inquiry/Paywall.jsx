@@ -7,15 +7,20 @@ import { track } from "../../lib/track";
  * 결제 팝업 — 탐구 준비·결과 분석·보고서 화면, 그리고 생기부 예상질문(kind="interview") 화면이 같이 쓴다
  * ① 상품 고르기 → ② 계좌로 입금 (입금자명 자동) → ③ '입금했어요' → 관리자 승인 후 열림
  * 이용권이 남아 있으면 결제 없이 '이용권 1개로 열기'
- * 금액을 바꾸면 서버 함수 supabase/functions/order 의 금액도 같이 바꿔야 한다
+ * 생기부 예상질문은 두 상품 — interview(지원 대학 1곳 19,000원) / interview6(수시 6곳 24,000원)
+ * 금액·상품을 바꾸면 서버 함수 supabase/functions/order 의 금액·상품도 같이 바꿔야 한다
  */
 
 const BANK = { name: "국민은행", number: "649301-04-159726", holder: "세움러닝(김지윤)" };
-// 파는 상품 — 탐구 쪽은 10건, 예상질문 쪽은 예상질문 하나
+// 파는 상품 — 탐구 쪽은 10건, 예상질문 쪽은 1곳 / 6곳
 const PRODUCTS_BY_KIND = {
   inquiry: [{ k: "ten", label: "탐구 10건", price: 29000, sub: "1건당 2,900원 · 탐구보고서 10건" }],
-  interview: [{ k: "interview", label: "생기부 예상질문", price: 19000, sub: "" }],
+  interview: [
+    { k: "interview", label: "지원 대학 1곳", price: 19000, sub: "1곳의 면접 스타일로 생기부 예상 질문 · PDF" },
+    { k: "interview6", label: "수시 6곳 전부", price: 24000, sub: "대학마다 질문 따로 · 대학별 PDF", best: true, tag: "추천" },
+  ],
 };
+const INTERVIEW_PRODUCTS = ["interview", "interview6"];
 
 function Copy({ text, label }) {
   const [done, setDone] = useState(false);
@@ -34,7 +39,7 @@ export default function Paywall({ open, onClose, inquiryId, reason, onUnlocked, 
   const { user, profile } = useAuth();
   const PRODUCTS = PRODUCTS_BY_KIND[kind];
   const isInterview = kind === "interview";
-  const [product, setProduct] = useState(PRODUCTS[0].k);
+  const [product, setProduct] = useState(PRODUCTS.find((p) => p.best)?.k ?? PRODUCTS[0].k); // 추천 상품이 먼저 골라져 있다
   const [depositor, setDepositor] = useState("");
   const [receipt, setReceipt] = useState("");
   const [paid, setPaid] = useState(false); // '입금을 마쳤어요' 체크
@@ -78,7 +83,7 @@ export default function Paywall({ open, onClose, inquiryId, reason, onUnlocked, 
     track("paywall_view", reason);
     if (!isInterview) supabase.from("credits").select("balance").maybeSingle().then(({ data }) => setBalance(data?.balance ?? 0));
     let q = supabase.from("pay_orders").select("*").eq("status", "pending");
-    q = isInterview ? q.eq("product", "interview") : q.neq("product", "interview");
+    q = isInterview ? q.in("product", INTERVIEW_PRODUCTS) : q.not("product", "in", `(${INTERVIEW_PRODUCTS.join(",")})`);
     q.order("created_at", { ascending: false }).limit(1).then(({ data }) => setPending(data?.[0] ?? null));
   }, [open, user, reason]);
 
@@ -112,7 +117,8 @@ export default function Paywall({ open, onClose, inquiryId, reason, onUnlocked, 
 
   if (!open || checking) return null;
 
-  const price = PRODUCTS.find((p) => p.k === product).price;
+  const picked = PRODUCTS.find((p) => p.k === product) ?? PRODUCTS[0];
+  const price = picked.price;
   const eta = new Date().getHours() < 6 ? "오늘 오전 8시에" : "2시간 안에";
 
   // 이용권으로 바로 열기
@@ -130,7 +136,7 @@ export default function Paywall({ open, onClose, inquiryId, reason, onUnlocked, 
     setBusy(true);
     setErr("");
     const { data, error } = await supabase.functions.invoke("order", {
-      body: { product, depositor: depositor.trim(), receipt: receipt.trim() || null, inquiry_id: inquiryId ?? null },
+      body: { product: picked.k, depositor: depositor.trim(), receipt: receipt.trim() || null, inquiry_id: inquiryId ?? null },
     });
     setBusy(false);
     if (error || data?.error) {
@@ -138,8 +144,8 @@ export default function Paywall({ open, onClose, inquiryId, reason, onUnlocked, 
       try { m = m ?? (await error?.context?.json?.())?.error; } catch { /* 무시 */ }
       return setErr(m ?? "주문을 접수하지 못했어요. 잠시 후 다시 시도해 주세요.");
     }
-    track("order_submit", product);
-    setPending({ product, amount: price, depositor: depositor.trim(), created_at: new Date().toISOString(), eta: data.eta });
+    track("order_submit", picked.k);
+    setPending({ product: picked.k, amount: price, depositor: depositor.trim(), created_at: new Date().toISOString(), eta: data.eta });
   }
 
   return (
@@ -155,7 +161,9 @@ export default function Paywall({ open, onClose, inquiryId, reason, onUnlocked, 
             </p>
             <p className="mt-1 text-[13px] leading-relaxed text-gray-500">
               {isInterview ? (
-                <><b>생기부 정리 가이드 PDF</b>와 <b>생기부 예상 질문 · PDF 저장</b>이 열려요. </>
+                <>
+                  <b>생기부 정리 가이드 PDF</b>로 고1~고3 활동을 한 번에 넣고, <b>활동마다 예상 질문 · PDF 저장</b>까지 열려요.
+                </>
               ) : reason === "pdf" ? (
                 <>무료 체험으로 만든 보고서예요. <b>이용권 1개</b>로 이 보고서를 PDF로 저장할 수 있어요.</>
               ) : (
@@ -187,6 +195,12 @@ export default function Paywall({ open, onClose, inquiryId, reason, onUnlocked, 
             <p className="text-[16px] font-extrabold text-orange-800">입금 확인 중이에요</p>
             <p className="mt-2 text-[13.5px] leading-relaxed text-orange-900">
               {pending.depositor} · {Number(pending.amount).toLocaleString()}원
+              {isInterview && (
+                <>
+                  {" "}
+                  · {PRODUCTS.find((p) => p.k === pending.product)?.label ?? "생기부 예상질문"}
+                </>
+              )}
               <br />
               <b>{pending.eta ?? eta}</b> 확인하고 열어드려요.
             </p>
@@ -199,17 +213,22 @@ export default function Paywall({ open, onClose, inquiryId, reason, onUnlocked, 
             <div className="mt-5 space-y-5">
               {/* ① 상품 */}
               <div>
-                <p className="text-[13px] font-extrabold text-sm-navy">① {PRODUCTS.length > 1 ? "이용권 고르기" : "상품"}</p>
+                <p className="text-[13px] font-extrabold text-sm-navy">① {PRODUCTS.length > 1 ? (isInterview ? "상품 고르기" : "이용권 고르기") : "상품"}</p>
                 <div className={`mt-2 grid gap-2 ${PRODUCTS.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
                   {PRODUCTS.map((p) => (
                     <button key={p.k} onClick={() => setProduct(p.k)} className={`relative rounded-xl border-2 p-3 text-left ${product === p.k ? "border-sm-navy bg-indigo-50" : "border-gray-200"}`}>
-                      {p.best && <span className="absolute -top-2 right-2 rounded-full bg-sm-orange px-2 py-0.5 text-[10.5px] font-bold text-white">할인</span>}
+                      {p.best && <span className="absolute -top-2 right-2 rounded-full bg-sm-orange px-2 py-0.5 text-[10.5px] font-bold text-white">{p.tag ?? "할인"}</span>}
                       <p className="text-[14px] font-extrabold text-sm-navy">{p.label}</p>
                       <p className="text-[17px] font-black text-sm-navy">{p.price.toLocaleString()}원</p>
-                      <p className="text-[11.5px] text-gray-500">{p.sub}</p>
+                      <p className="text-[11.5px] leading-snug text-gray-500">{p.sub}</p>
                     </button>
                   ))}
                 </div>
+                {isInterview && (
+                  <p className="mt-2 text-[11.5px] leading-relaxed text-gray-500">
+                    1곳 상품은 처음 뽑은 대학으로 고정돼요. 수시 6곳을 모두 준비한다면 6곳 상품이 1곳당 4,000원이라 더 저렴해요.
+                  </p>
+                )}
               </div>
 
               {/* ② 입금 */}
