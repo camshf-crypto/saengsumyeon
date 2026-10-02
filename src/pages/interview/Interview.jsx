@@ -869,9 +869,7 @@ export default function Interview() {
                 </div>
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/55 px-4 text-center">
                   <p className="text-[16px] font-extrabold leading-relaxed text-sm-navy">
-                    회원가입하면 <b className="text-sm-orange">나머지 {result.locked ?? 3}개</b>도
-                    <br />
-                    바로 볼 수 있어요
+                    회원가입하면 바로 볼 수 있어요
                   </p>
                   <button onClick={() => goSignup("signup")} className="mt-3 rounded-xl bg-sm-orange px-6 py-3.5 text-[15px] font-extrabold text-white">
                     회원가입하고 나머지 보기
