@@ -2,9 +2,25 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/AuthContext";
 
+/* "YYYY-MM-DD"에서 n일 앞뒤 */
+function addDays(day, n) {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+/* 기록이 없는 날도 0으로 채워서 막대 자리가 비지 않게 */
+function fillDays(rows, from, to) {
+  if (!from || !to) return rows ?? [];
+  const by = Object.fromEntries((rows ?? []).map((r) => [r.day, r]));
+  const out = [];
+  for (let d = from; d <= to; d = addDays(d, 1)) out.push(by[d] ?? { day: d, topic: 0, reading: 0, motive: 0, interview: 0 });
+  return out;
+}
+
+/* 한국 날짜 "YYYY-MM-DD" — 브라우저 시간대와 상관없이 한국 기준 (offset일 전후) */
 function dayStr(offset = 0) {
-  const d = new Date();
-  d.setDate(d.getDate() + offset);
+  const d = new Date(Date.now() + 9 * 3600 * 1000);
+  d.setUTCDate(d.getUTCDate() + offset);
   return d.toISOString().slice(0, 10);
 }
 
@@ -598,47 +614,62 @@ function Failed({ msg }) {
   return <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-[13px] font-bold text-red-600">숫자를 불러오지 못했어요 · {msg}</p>;
 }
 
-/* 날짜별 추이 — 서비스별 선 그래프 (SVG) */
+/* 날짜별 추이 — 하루마다 탐구주제·독서·지원동기 막대 3개를 나란히 (SVG) */
 function TrendChart({ rows }) {
   if (!rows?.length) return <p className="py-10 text-center text-[13px] text-gray-400">이 기간에는 기록이 없어요.</p>;
-  const keys = ["topic", "reading", "motive", "interview"];
-  const W = 900, H = 220, L = 36, R = 10, T = 10, B = 26;
+  const keys = ["topic", "reading", "motive"];
+  const W = 900, H = 250, L = 40, R = 10, T = 20, B = 28;
+  const n = rows.length;
   const max = Math.max(1, ...rows.flatMap((d) => keys.map((k) => num(d[k]))));
-  const x = (i) => L + (rows.length === 1 ? (W - L - R) / 2 : (i * (W - L - R)) / (rows.length - 1));
+  const slot = (W - L - R) / n; // 하루 칸 너비
+  const bw = Math.max(3, Math.min(26, (slot * 0.8) / keys.length)); // 막대 하나 너비
   const y = (v) => T + (H - T - B) * (1 - v / max);
-  const every = Math.max(1, Math.ceil(rows.length / 10));
+  const every = Math.max(1, Math.ceil(n / 12)); // 날짜 글자는 최대 12개만
+  const showNum = bw >= 12; // 막대가 충분히 넓으면 위에 숫자
   return (
     <div className="overflow-x-auto">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full min-w-[640px]" role="img" aria-label="서비스별 날짜별 진단 수">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full min-w-[640px]" role="img" aria-label="날짜별 탐구주제·독서·지원동기 진단 수">
         {[0, 0.5, 1].map((t) => (
           <g key={t}>
             <line x1={L} x2={W - R} y1={y(max * t)} y2={y(max * t)} stroke="#F3F4F6" />
             <text x={L - 6} y={y(max * t) + 4} fontSize="11" textAnchor="end" fill="#9CA3AF">{Math.round(max * t)}</text>
           </g>
         ))}
-        {rows.map((d, i) =>
-          i % every === 0 ? (
-            <text key={d.day} x={x(i)} y={H - 6} fontSize="11" textAnchor="middle" fill="#9CA3AF">{d.day.slice(5)}</text>
-          ) : null
-        )}
-        {keys.map((k) => (
-          <g key={k}>
-            <polyline fill="none" stroke={SERVICE[k].color} strokeWidth="2.5" points={rows.map((d, i) => `${x(i)},${y(num(d[k]))}`).join(" ")} />
-            {rows.map((d, i) => (
-              <circle key={i} cx={x(i)} cy={y(num(d[k]))} r="3" fill={SERVICE[k].color}>
-                <title>{`${d.day} ${SERVICE[k].label} ${num(d[k])}건`}</title>
-              </circle>
-            ))}
-          </g>
-        ))}
+        {rows.map((d, i) => {
+          const x0 = L + slot * i + (slot - bw * keys.length) / 2;
+          return (
+            <g key={d.day}>
+              {keys.map((k, j) => {
+                const v = num(d[k]);
+                const top = y(v);
+                return (
+                  <g key={k}>
+                    <rect x={x0 + j * bw} y={top} width={Math.max(1, bw - 2)} height={Math.max(0, H - B - top)} rx="2" fill={SERVICE[k].color}>
+                      <title>{`${d.day} ${SERVICE[k].label} ${v}건`}</title>
+                    </rect>
+                    {showNum && v > 0 && (
+                      <text x={x0 + j * bw + (bw - 2) / 2} y={top - 4} fontSize="10.5" textAnchor="middle" fill={SERVICE[k].color} fontWeight="700">
+                        {v}
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
+              {i % every === 0 && (
+                <text x={L + slot * i + slot / 2} y={H - 8} fontSize="11" textAnchor="middle" fill="#9CA3AF">{d.day.slice(5)}</text>
+              )}
+            </g>
+          );
+        })}
       </svg>
       <div className="mt-2 flex flex-wrap gap-4 text-[12.5px]">
         {keys.map((k) => (
           <span key={k} className="flex items-center gap-1.5 text-gray-600">
-            <i className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: SERVICE[k].color }} />
+            <i className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: SERVICE[k].color }} />
             {SERVICE[k].label}
           </span>
         ))}
+        <span className="text-gray-400">막대에 마우스를 올리면 정확한 숫자가 보여요</span>
       </div>
     </div>
   );
@@ -702,7 +733,7 @@ function rangeLabel(from, to) {
 }
 
 /* 요약 탭 */
-function SummaryTab({ series, growth, topicStats, funnel, pendingOrders, members, period, topicUsers }) {
+function SummaryTab({ series, growth, topicStats, funnel, pendingOrders, members, period, topicUsers, trend, trendLabel }) {
   if (!series || !growth) return <Loading />;
   if (series.error || growth.error) return <Failed msg={series.error || growth.error} />;
   const r = series.reading ?? {}, m = series.motive ?? {}, iv = series.interview ?? {};
@@ -788,9 +819,11 @@ function SummaryTab({ series, growth, topicStats, funnel, pendingOrders, members
         <span className="text-gray-400"> (바로 가입 = 진단 결과의 가입 버튼을 거치지 않고 헤더 등에서 직접 가입)</span>
       </p>
 
-      <h2 className="mt-8 text-lg font-extrabold text-sm-navy">날짜별 진단 수</h2>
+      <h2 className="mt-8 text-lg font-extrabold text-sm-navy">
+        날짜별 진단 수 {trendLabel && <span className="ml-1 text-[13px] font-bold text-gray-400">{trendLabel}</span>}
+      </h2>
       <div className="mt-3 rounded-xl border border-gray-200 p-5">
-        <TrendChart rows={growth.trend} />
+        <TrendChart rows={trend ?? growth.trend} />
       </div>
 
       <h2 className="mt-8 text-lg font-extrabold text-sm-navy">AI 비용</h2>
@@ -1332,6 +1365,8 @@ export default function AdminTopics() {
   const [growth, setGrowth] = useState(null); // 추이·가입 경로·여러 서비스 사용·AI 비용
   const [members, setMembers] = useState(null); // 전체 회원 수 (기간과 상관없이 누적)
   const [ivRows, setIvRows] = useState(null); // 면접 예상질문 기록 (활동 + 질문)
+  const [trend, setTrend] = useState(null); // 날짜별 진단 수 — 기간이 7일보다 짧으면 최근 7일로 보여준다
+  const [trendLabel, setTrendLabel] = useState("");
   // 탭 — 주소 끝 ?tab=reading 처럼 두면 그 탭으로 열린다
   const [tab, setTabState] = useState(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
@@ -1358,12 +1393,19 @@ export default function AdminTopics() {
     return () => supabase.removeChannel(ch);
   }, [authLoading, user]);
 
+  const reqId = useRef(0); // 마지막으로 누른 조회 번호 — 늦게 끝난 예전 조회가 화면을 덮어쓰지 않게
   const load = useCallback(async () => {
+    const my = ++reqId.current;
     setBusy(true);
     setErr("");
     const args = { p_from: from || null, p_to: to || null };
+    // 날짜별 그래프 — 고른 기간이 7일보다 짧으면(오늘 등) 끝 날짜까지 최근 7일을 따로 불러온다
+    const end = to || dayStr(0);
+    const span = from && to ? Math.round((Date.parse(to) - Date.parse(from)) / 864e5) + 1 : Infinity;
+    const weekFrom = addDays(end, -6);
+    const week = span < 7;
 
-    const [list, stat, use, refs, fun, inf, ser, gro, mem, ivq] = await Promise.all([
+    const [list, stat, use, refs, fun, inf, ser, gro, mem, ivq, g7] = await Promise.all([
       fetchAllRows(args),
       supabase.rpc("admin_topic_stats", args),
       fetchAllRows(args, "admin_user_usage"),
@@ -1374,8 +1416,14 @@ export default function AdminTopics() {
       supabase.rpc("admin_growth_stats", args),
       supabase.rpc("admin_member_total"),
       fetchAllRows(args, "admin_interview_queries"),
+      week ? supabase.rpc("admin_growth_stats", { p_from: weekFrom, p_to: end }) : Promise.resolve(null),
     ]);
+    if (my !== reqId.current) return; // 그사이 다른 기간을 눌렀으면 이 결과는 버린다
     setBusy(false);
+
+    const trendRows = week ? (g7?.error ? [] : g7?.data?.trend ?? []) : gro.error ? [] : gro.data?.trend ?? [];
+    setTrend(week ? fillDays(trendRows, weekFrom, end) : fillDays(trendRows, from, to));
+    setTrendLabel(week ? `최근 7일 (${weekFrom.slice(5)} ~ ${end.slice(5)})` : "");
 
     if (ivq.error) console.warn("interview queries failed", ivq.error);
     setIvRows(ivq.error ? { error: ivq.error.message ?? "불러오지 못했어요" } : ivq.data ?? []);
@@ -1592,7 +1640,7 @@ export default function AdminTopics() {
       {/* ── 요약 탭 */}
       {tab === "sum" && (
         <div className="mt-6">
-          <SummaryTab series={series} growth={growth} topicStats={stats} funnel={funnel} pendingOrders={pendingOrders} members={members} period={rangeLabel(from, to)} topicUsers={usage?.length} />
+          <SummaryTab series={series} growth={growth} topicStats={stats} funnel={funnel} pendingOrders={pendingOrders} members={members} period={rangeLabel(from, to)} topicUsers={usage?.length} trend={trend} trendLabel={trendLabel} />
         </div>
       )}
       {tab === "reading" && (
