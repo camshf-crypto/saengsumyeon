@@ -22,6 +22,8 @@ import Interview from "./pages/interview/Interview";
 import InquiryPrepare from "./pages/inquiry/InquiryPrepare";
 import InquiryResult from "./pages/inquiry/InquiryResult";
 import InquiryReport from "./pages/inquiry/InquiryReport";
+import PositionReport from "./pages/ladder/PositionReport";
+import Mulgyeol from "./pages/mulgyeol/Mulgyeol";
 import { Terms, Privacy, Refund } from "./pages/legal/Legal";
 
 // 화면을 옮기면 항상 맨 위에서 시작한다
@@ -107,6 +109,12 @@ export default function App() {
             <Route path="/inquiry/:id/result" element={<InquiryResult />} />
             {/* 보고서 디자인 — 형식 고르기 · 디자인 고르기 · 편집 · PDF */}
             <Route path="/inquiry/:id/report" element={<InquiryReport />} />
+
+            {/* 대학 사다리 — 성적 입력 → 나의 위치 → 대학 사다리 → 한 칸 위로 (1단계: 내신만) */}
+            <Route path="/ladder" element={<PositionReport />} />
+
+            {/* 물결 — 나만 그래? 매일 밤 12시에 질문 5개가 열린다 */}
+            <Route path="/mulgyeol" element={<Mulgyeol />} />
 
             {/* 내 기록 — 권한은 화면 안에서 확인 */}
             <Route path="/my" element={<MyPage />} />

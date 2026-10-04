@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/AuthContext";
+import VisitorsPanel from "./VisitorsPanel";
 
 /* "YYYY-MM-DD"에서 n일 앞뒤 */
 function addDays(day, n) {
@@ -336,9 +337,8 @@ function UsagePanel({ usage, onPick }) {
                 <tr
                   key={u.user_key}
                   onClick={() => u.is_member && onPick(u.email)}
-                  className={`border-b border-gray-100 last:border-0 ${
-                    u.is_member ? "cursor-pointer hover:bg-orange-50/40" : ""
-                  }`}
+                  className={`border-b border-gray-100 last:border-0 ${u.is_member ? "cursor-pointer hover:bg-orange-50/40" : ""
+                    }`}
                 >
                   <td className="whitespace-nowrap px-4 py-2.5">
                     {u.is_member ? (
@@ -571,6 +571,7 @@ function ReferralPanel({ stats }) {
 /* ───────────── 흔한가 시리즈 새 탭 ───────────── */
 
 const TABS = [
+  { k: "visit", label: "방문", color: "#18224F" },
   { k: "sum", label: "요약", color: "#18224F" },
   { k: "topic", label: "탐구주제", color: "#EA580C" },
   { k: "reading", label: "독서", color: "#2F56D6" },
@@ -1121,18 +1122,16 @@ function InterviewTab({ series, rows }) {
             <button
               key={v}
               onClick={() => setFilter(v)}
-              className={`rounded-lg border px-3 py-1.5 text-[12.5px] font-bold transition ${
-                filter === v ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-300 text-gray-600"
-              }`}
+              className={`rounded-lg border px-3 py-1.5 text-[12.5px] font-bold transition ${filter === v ? "border-violet-500 bg-violet-50 text-violet-700" : "border-gray-300 text-gray-600"
+                }`}
             >
               {l}
             </button>
           ))}
           <button
             onClick={() => setShortOnly((v) => !v)}
-            className={`rounded-lg border px-3 py-1.5 text-[12.5px] font-bold transition ${
-              shortOnly ? "border-red-400 bg-red-50 text-red-500" : "border-gray-300 text-gray-600"
-            }`}
+            className={`rounded-lg border px-3 py-1.5 text-[12.5px] font-bold transition ${shortOnly ? "border-red-400 bg-red-50 text-red-500" : "border-gray-300 text-gray-600"
+              }`}
           >
             짧은 활동만
           </button>
@@ -1574,9 +1573,8 @@ export default function AdminTopics() {
         <h1 className="text-2xl font-extrabold tracking-tight text-sm-navy">관리자</h1>
         <a
           href="/admin/orders"
-          className={`ml-auto flex items-center gap-2 rounded-lg px-4 py-2 text-[13.5px] font-bold ${
-            pendingOrders ? "bg-sm-orange text-white" : "border border-gray-300 text-gray-600"
-          }`}
+          className={`ml-auto flex items-center gap-2 rounded-lg px-4 py-2 text-[13.5px] font-bold ${pendingOrders ? "bg-sm-orange text-white" : "border border-gray-300 text-gray-600"
+            }`}
         >
           입금 확인 {pendingOrders ? `대기 ${pendingOrders}건` : ""}
           <span aria-hidden="true">→</span>
@@ -1597,9 +1595,8 @@ export default function AdminTopics() {
                 setFrom(r.from());
                 setTo(r.to());
               }}
-              className={`rounded-lg border px-3.5 py-2 text-[13.5px] font-bold transition ${
-                on ? "border-sm-orange bg-orange-50 text-sm-orange" : "border-gray-300 text-gray-600"
-              }`}
+              className={`rounded-lg border px-3.5 py-2 text-[13.5px] font-bold transition ${on ? "border-sm-orange bg-orange-50 text-sm-orange" : "border-gray-300 text-gray-600"
+                }`}
             >
               {r.label}
             </button>
@@ -1636,6 +1633,13 @@ export default function AdminTopics() {
       </div>
 
       {err && <p className="mt-5 text-sm font-semibold text-red-500">{err}</p>}
+
+      {/* ── 방문 탭: 날짜별 들어온 사람·신규·재로그인, 날짜를 누르면 그날 사람 목록 */}
+      {tab === "visit" && (
+        <div className="mt-6">
+          <VisitorsPanel from={from} to={to} />
+        </div>
+      )}
 
       {/* ── 요약 탭 */}
       {tab === "sum" && (
@@ -1677,249 +1681,244 @@ export default function AdminTopics() {
 
       {/* ── 탐구주제 탭: 기존 내용 그대로 */}
       {tab === "topic" && (
-      <>
-      {/* 요약 */}
-      {stats && (
         <>
-          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {[
-              ["진단 건수", `${stats.total}건`],
-              ["비회원 진단", `${stats.anonymous}건`],
-              ["회원 진단", `${stats.members}건 · ${stats.people}명`],
-              ["평균 흔함 지수", stats.avg_score == null ? "-" : `${stats.avg_score}점`],
-            ].map(([l, v]) => (
-              <div key={l} className="rounded-xl border border-gray-200 p-5">
-                <p className="text-[12.5px] text-gray-500">{l}</p>
-                <p className="mt-1.5 text-lg font-extrabold text-sm-navy">{v}</p>
+          {/* 요약 */}
+          {stats && (
+            <>
+              <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {[
+                  ["진단 건수", `${stats.total}건`],
+                  ["비회원 진단", `${stats.anonymous}건`],
+                  ["회원 진단", `${stats.members}건 · ${stats.people}명`],
+                  ["평균 흔함 지수", stats.avg_score == null ? "-" : `${stats.avg_score}점`],
+                ].map(([l, v]) => (
+                  <div key={l} className="rounded-xl border border-gray-200 p-5">
+                    <p className="text-[12.5px] text-gray-500">{l}</p>
+                    <p className="mt-1.5 text-lg font-extrabold text-sm-navy">{v}</p>
+                  </div>
+                ))}
               </div>
-            ))}
+
+              <p className="mt-2.5 text-[12.5px] text-gray-400">
+                전체 {stats.total}건 중 회원이 남긴 것은 {stats.members}건 ({convRate}% 수준)
+              </p>
+
+              {/* 집계 */}
+              <div className="mt-6 grid gap-3 lg:grid-cols-2">
+                <RankList title="희망 학과" rows={stats.by_department} total={total} />
+                <RankList title="과목" rows={stats.by_subject} total={total} />
+                <RankList title="학년" rows={stats.by_grade} total={total} />
+                <RankList title="학기" rows={stats.by_term} total={total} />
+                <RankList title="흔함 지수 구간" rows={stats.score_band} total={total} />
+                <RankList title="날짜별" rows={stats.by_day} total={total} />
+                <RankList title="고른 방향 (방향 선택 기능 배포 후 기간으로 보세요)" rows={focusRows} total={rows.length} />
+
+                {/* 방향이 안 맞아서 '다시 받기' 안내가 뜬 비율 — 10~20%가 적당 */}
+                <div className="rounded-xl border border-gray-200 p-5">
+                  <p className="text-[13px] font-bold text-sm-navy">방향이 안 맞음 (다시 받기 안내가 뜬 비율)</p>
+                  <ul className="mt-3.5 space-y-2 text-[13px]">
+                    {[
+                      ["career", "진로 연결 → 과목 깊이 파기 권함"],
+                      ["subject", "과목 깊이 파기 → 진로 연결 권함"],
+                    ].map(([k, l]) => {
+                      const { n, weak } = fitStats[k];
+                      const r = n ? Math.round((weak / n) * 100) : null;
+                      const warn = r != null && (r >= 30 || r < 5);
+                      return (
+                        <li key={k} className="flex items-center justify-between">
+                          <span className="text-gray-600">{l}</span>
+                          <span>
+                            <b className={warn ? "text-red-500" : "text-sm-navy"}>{r == null ? "-" : `${r}%`}</b>
+                            <em className="ml-1.5 not-italic text-[11px] text-gray-400">
+                              {weak}/{n}
+                            </em>
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <p className="mt-3 text-[11.5px] text-gray-400">
+                    10~20%가 적당해요. 30% 이상이면 기준이 너무 느슨하고, 5% 미만이면 너무 엄격해요.
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* 사용자별 이용 — 회원을 누르면 아래 목록을 그 사람으로 거른다 */}
+          <UsagePanel usage={usage} onPick={(email) => email && setQ(email)} />
+
+
+          {/* 목록 */}
+          <div ref={listTop} className="mt-10 flex flex-wrap items-center gap-2 scroll-mt-4">
+            <h2 className="text-lg font-extrabold text-sm-navy">전체 목록</h2>
+            <span className="text-[12.5px] text-gray-400">
+              {shown.length.toLocaleString()}건 · {page}/{pages}쪽
+            </span>
+            <div className="flex gap-1.5">
+              {[
+                ["all", "전체"],
+                ["member", "회원"],
+                ["anon", "비회원"],
+              ].map(([v, l]) => (
+                <button
+                  key={v}
+                  onClick={() => setOnly(v)}
+                  className={`rounded-lg border px-3 py-1.5 text-[12.5px] font-bold transition ${only === v
+                      ? "border-sm-orange bg-orange-50 text-sm-orange"
+                      : "border-gray-300 text-gray-600"
+                    }`}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex gap-1.5">
+              {[
+                ["all", "모든 방향"],
+                ["career", "진로 연결"],
+                ["subject", "과목 깊이 파기"],
+              ].map(([v, l]) => (
+                <button
+                  key={v}
+                  onClick={() => setFocusOnly(v)}
+                  className={`rounded-lg border px-3 py-1.5 text-[12.5px] font-bold transition ${focusOnly === v
+                      ? "border-sm-navy bg-sm-navy text-white"
+                      : "border-gray-300 text-gray-600"
+                    }`}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setWeakOnly((v) => !v)}
+              className={`rounded-lg border px-3 py-1.5 text-[12.5px] font-bold transition ${weakOnly ? "border-red-400 bg-red-50 text-red-500" : "border-gray-300 text-gray-600"
+                }`}
+            >
+              방향 안 맞음만
+            </button>
+
+            <input
+              className={`${field} ml-auto w-56`}
+              placeholder="이름 · 학과 · 주제 · 제안 검색"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+            <button
+              onClick={downloadCsv}
+              disabled={!shown.length}
+              className="rounded-lg border border-gray-300 px-3.5 py-2 text-[13.5px] font-bold text-gray-600 disabled:opacity-40"
+            >
+              엑셀 내보내기
+            </button>
           </div>
 
-          <p className="mt-2.5 text-[12.5px] text-gray-400">
-            전체 {stats.total}건 중 회원이 남긴 것은 {stats.members}건 ({convRate}% 수준)
-          </p>
-
-          {/* 집계 */}
-          <div className="mt-6 grid gap-3 lg:grid-cols-2">
-            <RankList title="희망 학과" rows={stats.by_department} total={total} />
-            <RankList title="과목" rows={stats.by_subject} total={total} />
-            <RankList title="학년" rows={stats.by_grade} total={total} />
-            <RankList title="학기" rows={stats.by_term} total={total} />
-            <RankList title="흔함 지수 구간" rows={stats.score_band} total={total} />
-            <RankList title="날짜별" rows={stats.by_day} total={total} />
-            <RankList title="고른 방향 (방향 선택 기능 배포 후 기간으로 보세요)" rows={focusRows} total={rows.length} />
-
-            {/* 방향이 안 맞아서 '다시 받기' 안내가 뜬 비율 — 10~20%가 적당 */}
-            <div className="rounded-xl border border-gray-200 p-5">
-              <p className="text-[13px] font-bold text-sm-navy">방향이 안 맞음 (다시 받기 안내가 뜬 비율)</p>
-              <ul className="mt-3.5 space-y-2 text-[13px]">
-                {[
-                  ["career", "진로 연결 → 과목 깊이 파기 권함"],
-                  ["subject", "과목 깊이 파기 → 진로 연결 권함"],
-                ].map(([k, l]) => {
-                  const { n, weak } = fitStats[k];
-                  const r = n ? Math.round((weak / n) * 100) : null;
-                  const warn = r != null && (r >= 30 || r < 5);
+          <div className="mt-3 overflow-x-auto rounded-xl border border-gray-200">
+            <table className="w-full min-w-[1280px] text-left text-[13.5px]">
+              <thead className="border-b border-gray-200 bg-gray-50 text-[12.5px] font-bold text-gray-500">
+                <tr>
+                  <th className="px-4 py-3">일시</th>
+                  <th className="px-4 py-3">회원</th>
+                  <th className="px-4 py-3">학과</th>
+                  <th className="px-4 py-3">학년</th>
+                  <th className="px-4 py-3">과목</th>
+                  <th className="px-4 py-3">방향</th>
+                  <th className="px-4 py-3">학생 입력 주제</th>
+                  <th className="px-4 py-3 text-right">지수</th>
+                  <th className="px-4 py-3">AI 제안 주제</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageRows.map((r, i) => {
+                  const key = r.id ?? `${page}-${i}`;
+                  const isOpen = open === key;
+                  const sug = r.result?.suggestion?.topic;
                   return (
-                    <li key={k} className="flex items-center justify-between">
-                      <span className="text-gray-600">{l}</span>
-                      <span>
-                        <b className={warn ? "text-red-500" : "text-sm-navy"}>{r == null ? "-" : `${r}%`}</b>
-                        <em className="ml-1.5 not-italic text-[11px] text-gray-400">
-                          {weak}/{n}
-                        </em>
-                      </span>
-                    </li>
+                    <Fragment key={key}>
+                      <tr
+                        onClick={() => setOpen(isOpen ? null : key)}
+                        className={`cursor-pointer border-b border-gray-100 transition hover:bg-orange-50/40 ${isOpen ? "bg-orange-50/40" : ""
+                          }`}
+                      >
+                        <td className="whitespace-nowrap px-4 py-3 text-gray-500">
+                          {new Date(r.created_at).toLocaleString("ko-KR", {
+                            month: "2-digit",
+                            day: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3">
+                          {r.is_member ? (
+                            <>
+                              <span className="font-bold text-sm-navy">{r.name ?? "회원"}</span>
+                              <span className="ml-1.5 text-[12px] text-gray-400">{r.email}</span>
+                            </>
+                          ) : (
+                            <span className="rounded bg-gray-100 px-2 py-0.5 text-[11.5px] font-bold text-gray-500">
+                              비회원
+                            </span>
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3">{r.department}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-gray-500">
+                          {r.grade}
+                          {r.term ? ` ${r.term}` : ""}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-gray-500">{r.subject}</td>
+                        <td className="whitespace-nowrap px-4 py-3">
+                          <span
+                            className={`rounded px-2 py-0.5 text-[11.5px] font-bold ${r.focus === "subject" ? "bg-blue-50 text-blue-600" : "bg-orange-50 text-sm-orange"
+                              }`}
+                          >
+                            {FOCUS_LABEL[r.focus] ?? FOCUS_LABEL.career}
+                          </span>
+                          {r.result?.fit === "weak" && (
+                            <span className="ml-1 rounded bg-red-50 px-1.5 py-0.5 text-[11px] font-bold text-red-500">
+                              안 맞음
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">{r.topic}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-right">
+                          {r.score == null ? (
+                            <span className="text-gray-300">-</span>
+                          ) : (
+                            <b className={r.score >= 65 ? "text-sm-orange" : "text-sm-navy"}>{r.score}</b>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-sm-navy">
+                          {sug ? sug : <span className="text-gray-300">-</span>}
+                        </td>
+                      </tr>
+
+                      {isOpen && (
+                        <tr className="border-b border-gray-100">
+                          <td colSpan={9} className="p-0">
+                            <AiDetail r={r} />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   );
                 })}
-              </ul>
-              <p className="mt-3 text-[11.5px] text-gray-400">
-                10~20%가 적당해요. 30% 이상이면 기준이 너무 느슨하고, 5% 미만이면 너무 엄격해요.
-              </p>
-            </div>
-          </div>
-        </>
-      )}
 
-      {/* 사용자별 이용 — 회원을 누르면 아래 목록을 그 사람으로 거른다 */}
-      <UsagePanel usage={usage} onPick={(email) => email && setQ(email)} />
-
-
-      {/* 목록 */}
-      <div ref={listTop} className="mt-10 flex flex-wrap items-center gap-2 scroll-mt-4">
-        <h2 className="text-lg font-extrabold text-sm-navy">전체 목록</h2>
-        <span className="text-[12.5px] text-gray-400">
-          {shown.length.toLocaleString()}건 · {page}/{pages}쪽
-        </span>
-        <div className="flex gap-1.5">
-          {[
-            ["all", "전체"],
-            ["member", "회원"],
-            ["anon", "비회원"],
-          ].map(([v, l]) => (
-            <button
-              key={v}
-              onClick={() => setOnly(v)}
-              className={`rounded-lg border px-3 py-1.5 text-[12.5px] font-bold transition ${
-                only === v
-                  ? "border-sm-orange bg-orange-50 text-sm-orange"
-                  : "border-gray-300 text-gray-600"
-              }`}
-            >
-              {l}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex gap-1.5">
-          {[
-            ["all", "모든 방향"],
-            ["career", "진로 연결"],
-            ["subject", "과목 깊이 파기"],
-          ].map(([v, l]) => (
-            <button
-              key={v}
-              onClick={() => setFocusOnly(v)}
-              className={`rounded-lg border px-3 py-1.5 text-[12.5px] font-bold transition ${
-                focusOnly === v
-                  ? "border-sm-navy bg-sm-navy text-white"
-                  : "border-gray-300 text-gray-600"
-              }`}
-            >
-              {l}
-            </button>
-          ))}
-        </div>
-
-        <button
-          onClick={() => setWeakOnly((v) => !v)}
-          className={`rounded-lg border px-3 py-1.5 text-[12.5px] font-bold transition ${
-            weakOnly ? "border-red-400 bg-red-50 text-red-500" : "border-gray-300 text-gray-600"
-          }`}
-        >
-          방향 안 맞음만
-        </button>
-
-        <input
-          className={`${field} ml-auto w-56`}
-          placeholder="이름 · 학과 · 주제 · 제안 검색"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
-        <button
-          onClick={downloadCsv}
-          disabled={!shown.length}
-          className="rounded-lg border border-gray-300 px-3.5 py-2 text-[13.5px] font-bold text-gray-600 disabled:opacity-40"
-        >
-          엑셀 내보내기
-        </button>
-      </div>
-
-      <div className="mt-3 overflow-x-auto rounded-xl border border-gray-200">
-        <table className="w-full min-w-[1280px] text-left text-[13.5px]">
-          <thead className="border-b border-gray-200 bg-gray-50 text-[12.5px] font-bold text-gray-500">
-            <tr>
-              <th className="px-4 py-3">일시</th>
-              <th className="px-4 py-3">회원</th>
-              <th className="px-4 py-3">학과</th>
-              <th className="px-4 py-3">학년</th>
-              <th className="px-4 py-3">과목</th>
-              <th className="px-4 py-3">방향</th>
-              <th className="px-4 py-3">학생 입력 주제</th>
-              <th className="px-4 py-3 text-right">지수</th>
-              <th className="px-4 py-3">AI 제안 주제</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pageRows.map((r, i) => {
-              const key = r.id ?? `${page}-${i}`;
-              const isOpen = open === key;
-              const sug = r.result?.suggestion?.topic;
-              return (
-                <Fragment key={key}>
-                  <tr
-                    onClick={() => setOpen(isOpen ? null : key)}
-                    className={`cursor-pointer border-b border-gray-100 transition hover:bg-orange-50/40 ${
-                      isOpen ? "bg-orange-50/40" : ""
-                    }`}
-                  >
-                    <td className="whitespace-nowrap px-4 py-3 text-gray-500">
-                      {new Date(r.created_at).toLocaleString("ko-KR", {
-                        month: "2-digit",
-                        day: "2-digit",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3">
-                      {r.is_member ? (
-                        <>
-                          <span className="font-bold text-sm-navy">{r.name ?? "회원"}</span>
-                          <span className="ml-1.5 text-[12px] text-gray-400">{r.email}</span>
-                        </>
-                      ) : (
-                        <span className="rounded bg-gray-100 px-2 py-0.5 text-[11.5px] font-bold text-gray-500">
-                          비회원
-                        </span>
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3">{r.department}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-gray-500">
-                      {r.grade}
-                      {r.term ? ` ${r.term}` : ""}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-gray-500">{r.subject}</td>
-                    <td className="whitespace-nowrap px-4 py-3">
-                      <span
-                        className={`rounded px-2 py-0.5 text-[11.5px] font-bold ${
-                          r.focus === "subject" ? "bg-blue-50 text-blue-600" : "bg-orange-50 text-sm-orange"
-                        }`}
-                      >
-                        {FOCUS_LABEL[r.focus] ?? FOCUS_LABEL.career}
-                      </span>
-                      {r.result?.fit === "weak" && (
-                        <span className="ml-1 rounded bg-red-50 px-1.5 py-0.5 text-[11px] font-bold text-red-500">
-                          안 맞음
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">{r.topic}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-right">
-                      {r.score == null ? (
-                        <span className="text-gray-300">-</span>
-                      ) : (
-                        <b className={r.score >= 65 ? "text-sm-orange" : "text-sm-navy"}>{r.score}</b>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-sm-navy">
-                      {sug ? sug : <span className="text-gray-300">-</span>}
+                {!shown.length && !busy && (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-16 text-center text-gray-400">
+                      기록이 없습니다.
                     </td>
                   </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
 
-                  {isOpen && (
-                    <tr className="border-b border-gray-100">
-                      <td colSpan={9} className="p-0">
-                        <AiDetail r={r} />
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              );
-            })}
-
-            {!shown.length && !busy && (
-              <tr>
-                <td colSpan={9} className="px-4 py-16 text-center text-gray-400">
-                  기록이 없습니다.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      <Pager page={page} pages={pages} onChange={goPage} />
-      </>
+          <Pager page={page} pages={pages} onChange={goPage} />
+        </>
       )}
     </div>
   );
