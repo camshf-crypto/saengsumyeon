@@ -8,36 +8,10 @@ import NicknameEditor, {
   fetchNickname,
   needsNickname,
 } from "../../components/NicknameEditor";
-const DISPLAY_BASES = [27, 81, 63, 39, 43];
-
-// 각 질문의 "현재 실제 응답 수"를 최초 1회 기준점으로 저장한다.
-// 따라서 화면은 DISPLAY_BASES 숫자에서 시작하고,
-// 이후 새 응답이 늘어난 만큼만 +1 된다.
-const DISPLAY_BASELINE_KEY = "mulgyeol_display_baselines_v1";
-
-const readDisplayBaselines = () => {
-  try {
-    const raw = localStorage.getItem(DISPLAY_BASELINE_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-};
-
-const saveDisplayBaselines = (value) => {
-  try {
-    localStorage.setItem(DISPLAY_BASELINE_KEY, JSON.stringify(value));
-  } catch {
-    // localStorage를 사용할 수 없는 환경에서는 화면 표시만 계속한다.
-  }
-};
-
-const shownCount = (displayBase, actualTotal, actualBaseline) =>
-  Math.max(0, num(displayBase) + Math.max(0, num(actualTotal) - num(actualBaseline)));
 const GRADE_KEY = "sm_grade";
 const GRADES = ["고1", "고2", "고3"];
 const BLUE = "#1A5E9A";
-const SAND = "#B98A4E";
+const SAND = "#EA580C";
 const WIDTH = "mx-auto max-w-xl px-4 sm:px-5";
 const CHAR = {
   mulggo: {
@@ -143,7 +117,7 @@ function GradeAsk({ onPick, onClose }) {
     </div>
   );
 }
-function Result({ q, grade, onChange, displayBase = 0, actualBaseline = 0 }) {
+function Result({ q, grade, onChange }) {
   const r = q.result ?? {};
   const total = num(r.total);
   const same = q.my_answer === "yes" ? num(r.yes) : num(r.no);
@@ -205,7 +179,7 @@ function Result({ q, grade, onChange, displayBase = 0, actualBaseline = 0 }) {
         </p>
       )}
       <div className="mt-2 flex items-center justify-between text-[12px] text-gray-400">
-        <span>{shownCount(displayBase, total, actualBaseline).toLocaleString()}명 참여</span>
+        <span>{num(q.display_count).toLocaleString()}명 참여</span>
         <button
           type="button"
           onClick={onChange}
@@ -225,6 +199,8 @@ function Comments({ q, grade, user, onCount }) {
   const [err, setErr] = useState("");
   const [nick, setNick] = useState(null);
   const [askNick, setAskNick] = useState(false);
+  const [replyTo, setReplyTo] = useState(null);
+  const [replyBody, setReplyBody] = useState("");
   useEffect(() => {
     if (!user) {
       setNick(null);
@@ -235,18 +211,14 @@ function Comments({ q, grade, user, onCount }) {
       .then((data) => {
         if (alive) setNick(data);
       })
-      .catch((error) => {
-        console.warn("nickname failed", error);
-      });
+      .catch((error) => console.warn("nickname failed", error));
     return () => {
       alive = false;
     };
   }, [user]);
   const load = useCallback(() => {
     return supabase
-      .rpc("mulgyeol_comments_list", {
-        p_question_id: q.id,
-      })
+      .rpc("mulgyeol_comments_list", { p_question_id: q.id })
       .then(({ data, error }) => {
         if (error) {
           console.warn("comments failed", error);
@@ -263,8 +235,9 @@ function Comments({ q, grade, user, onCount }) {
   useEffect(() => {
     load();
   }, [load]);
-  const post = async () => {
-    const text = body.trim();
+  const post = async (parentId = null) => {
+    const isReply = parentId !== null;
+    const text = (isReply ? replyBody : body).trim();
     if (!text || busy) return;
     setBusy(true);
     setErr("");
@@ -273,31 +246,41 @@ function Comments({ q, grade, user, onCount }) {
         p_question_id: q.id,
         p_body: text,
         p_grade: grade || null,
+        p_parent_id: parentId,
       });
       if (error) {
         setErr(error.message || "댓글을 남기지 못했어요");
         return;
       }
-      setBody("");
+      if (isReply) {
+        setReplyBody("");
+        setReplyTo(null);
+      } else {
+        setBody("");
+      }
       onCount(1);
-      load();
+      await load();
     } catch (e) {
       setErr(e?.message || "댓글을 남기지 못했어요");
     } finally {
       setBusy(false);
     }
   };
-  const send = () => {
-    if (!body.trim() || busy) return;
+  const send = (parentId = null) => {
+    const text = (parentId !== null ? replyBody : body).trim();
+    if (!text || busy) return;
+    if (!user) {
+      nav("/login");
+      return;
+    }
     if (needsNickname(nick)) {
       setAskNick(true);
       return;
     }
-    post();
+    post(parentId);
   };
   const remove = async (id) => {
-    const ok = window.confirm("이 댓글을 지울까?");
-    if (!ok) return;
+    if (!window.confirm("이 댓글을 지울까?")) return;
     const { error } = await supabase.rpc("mulgyeol_comment_delete", {
       p_comment_id: id,
     });
@@ -305,7 +288,6 @@ function Comments({ q, grade, user, onCount }) {
       window.alert(error.message || "댓글을 지우지 못했어");
       return;
     }
-    onCount(-1);
     load();
   };
   const report = async (id) => {
@@ -313,10 +295,7 @@ function Comments({ q, grade, user, onCount }) {
       nav("/login");
       return;
     }
-    const ok = window.confirm(
-      "이 댓글을 신고할까? 신고가 쌓이면 자동으로 가려져."
-    );
-    if (!ok) return;
+    if (!window.confirm("이 댓글을 신고할까? 신고가 쌓이면 자동으로 가려져.")) return;
     const { error } = await supabase.rpc("mulgyeol_comment_report", {
       p_comment_id: id,
     });
@@ -326,99 +305,119 @@ function Comments({ q, grade, user, onCount }) {
     }
     window.alert("신고했어. 고마워!");
   };
-  const students = (list ?? []).filter((c) => !c.author);
+  const comments = list ?? [];
+  const roots = comments.filter((c) => !c.parent_id);
+  const repliesOf = (id) => comments.filter((c) => Number(c.parent_id) === Number(id));
+  const displayName = (c) => {
+    if (c.author) return CHAR[c.author]?.name ?? c.author;
+    return c.nickname || "고등학생";
+  };
+  const Meta = ({ c, reply = false }) => (
+    <div className="flex min-w-0 items-center gap-1.5 text-[12px]">
+      <span className="max-w-[120px] truncate font-bold text-[#10262F]">{displayName(c)}</span>
+      {!c.author && c.grade && <span className="text-gray-500">· {c.grade}</span>}
+      <span className="text-gray-400">· {ago(c.created_at)}</span>
+      <span className="ml-auto flex shrink-0 items-center gap-2">
+        {!reply && (
+          <button
+            type="button"
+            onClick={() => {
+              setReplyTo((v) => (v === c.id ? null : c.id));
+              setReplyBody("");
+            }}
+            className="font-medium text-[#1A5E9A]"
+          >
+            댓글
+          </button>
+        )}
+        {c.mine ? (
+          <button type="button" onClick={() => remove(c.id)} className="text-gray-400 hover:text-red-500">
+            지우기
+          </button>
+        ) : !c.author ? (
+          <button type="button" onClick={() => report(c.id)} className="text-gray-300 hover:text-gray-500">
+            신고
+          </button>
+        ) : null}
+      </span>
+    </div>
+  );
   return (
     <div className="mt-3 border-t border-[#E1EAEE] pt-3">
-      {!list && (
-        <p className="py-3 text-[13px] text-gray-400">댓글을 불러오는 중…</p>
-      )}
-      <ul className="space-y-2.5">
-        {(list ?? []).map((c) => {
-          if (c.author) {
-            const character = CHAR[c.author];
-            return (
-              <li
-                key={c.id}
-                className="flex gap-2.5 rounded-xl p-3"
-                style={{
-                  background: character?.soft ?? "#F3F7F9",
-                }}
-              >
-                {character && <Avatar who={c.author} />}
-                <div className="min-w-0">
-                  <p
-                    className="text-[12px] font-bold"
-                    style={{
-                      color: character?.bg ?? "#33505C",
-                    }}
-                  >
-                    {character?.name ?? c.author}
-                  </p>
-                  <p
-                    className="mt-0.5 text-[14px] leading-relaxed"
-                    style={{
-                      color: character?.text ?? "#10262F",
-                    }}
-                  >
-                    {c.body}
-                  </p>
-                </div>
-              </li>
-            );
-          }
+      {!list && <p className="py-3 text-[13px] text-gray-400">댓글을 불러오는 중…</p>}
+      <ul className="divide-y divide-[#E7ECEF]">
+        {roots.map((c) => {
+          const replies = repliesOf(c.id);
           return (
-            <li
-              key={c.id}
-              className="rounded-xl border border-[#E1EAEE] bg-white p-3"
-            >
-              <div className="flex items-center gap-1.5 text-[12px]">
-                <span className="font-bold text-[#10262F]">
-                  {c.nickname || "고등학생"}
-                </span>
-                {c.grade && <span className="text-gray-500">· {c.grade}</span>}
-                {c.answer && (
-                  <span
-                    className={
-                      c.answer === "yes"
-                        ? "font-bold text-[#1A5E9A]"
-                        : "text-gray-500"
-                    }
-                  >
-                    · {c.answer === "yes" ? "나도 그래" : "난 아닌데"}
-                  </span>
-                )}
-                <span className="text-gray-400">· {ago(c.created_at)}</span>
-                <span className="ml-auto">
-                  {c.mine ? (
+            <li key={c.id} className="py-4 first:pt-1 last:pb-1">
+              <Meta c={c} />
+              <p className="mt-1 whitespace-pre-line text-[14px] leading-relaxed text-[#10262F]">{c.body}</p>
+              {replies.length > 0 && (
+                <ul className="mt-3 ml-5 divide-y divide-[#EEF2F4] border-l border-[#DCE5EA] pl-4">
+                  {replies.map((r) => (
+                    <li key={r.id} className="py-3 first:pt-1 last:pb-0">
+                      <Meta c={r} reply />
+                      <p className="mt-1 whitespace-pre-line text-[13.5px] leading-relaxed text-[#10262F]">
+                        {r.body}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {replyTo === c.id && (
+                <div className="mt-3 ml-5 border-l border-[#DCE5EA] pl-4">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-[12px] font-bold text-[#33505C]">
+                      {displayName(c)}에게 댓글
+                    </span>
                     <button
                       type="button"
-                      onClick={() => remove(c.id)}
-                      className="text-gray-400 hover:text-red-500"
+                      onClick={() => {
+                        setReplyTo(null);
+                        setReplyBody("");
+                      }}
+                      className="text-[12px] text-gray-400"
                     >
-                      지우기
+                      취소
                     </button>
+                  </div>
+                  {user ? (
+                    <div className="flex gap-2">
+                      <textarea
+                        value={replyBody}
+                        onChange={(e) => setReplyBody(e.target.value.slice(0, 300))}
+                        rows={2}
+                        autoFocus
+                        placeholder="댓글을 남겨봐"
+                        className="min-h-[46px] flex-1 resize-none rounded-xl border border-[#D3DFE5] bg-white px-3 py-2.5 text-[14px] outline-none focus:border-[#1A5E9A]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => send(c.id)}
+                        disabled={!replyBody.trim() || busy}
+                        className="shrink-0 rounded-xl px-4 text-[13px] font-bold text-white disabled:opacity-40"
+                        style={{ background: BLUE }}
+                      >
+                        {busy ? "…" : "댓글"}
+                      </button>
+                    </div>
                   ) : (
                     <button
                       type="button"
-                      onClick={() => report(c.id)}
-                      className="text-gray-300 hover:text-gray-500"
+                      onClick={() => nav("/login")}
+                      className="h-10 w-full rounded-xl border border-[#1A5E9A] bg-white text-[13px] font-bold text-[#1A5E9A]"
                     >
-                      신고
+                      로그인하고 댓글 남기기
                     </button>
                   )}
-                </span>
-              </div>
-              <p className="mt-1 whitespace-pre-line text-[14px] leading-relaxed text-[#10262F]">
-                {c.body}
-              </p>
+                </div>
+              )}
             </li>
           );
         })}
       </ul>
-      {list && !students.length && (
-        <p className="mt-3 text-center text-[13px] text-gray-400">
-          아직 학생 댓글이 없어. 첫 물방울을 남겨봐!
-        </p>
+      {list && !roots.length && (
+        <p className="mt-3 text-center text-[13px] text-gray-400">아직 댓글이 없어. 첫 물방울을 남겨봐!</p>
       )}
       {user ? (
         <div className="mt-3">
@@ -427,9 +426,7 @@ function Comments({ q, grade, user, onCount }) {
               key={nick?.nickname || "nickname"}
               compact
               onChange={() => {
-                getNick()
-                  .then(setNick)
-                  .catch(() => {});
+                getNick().then(setNick).catch(() => {});
                 load();
               }}
             />
@@ -437,16 +434,14 @@ function Comments({ q, grade, user, onCount }) {
           <div className="flex gap-2">
             <textarea
               value={body}
-              onChange={(e) => {
-                setBody(e.target.value.slice(0, 300));
-              }}
+              onChange={(e) => setBody(e.target.value.slice(0, 300))}
               rows={2}
               placeholder="너는 어때? 한 줄이면 충분해"
               className="min-h-[48px] flex-1 resize-none rounded-xl border border-[#D3DFE5] bg-[#F7FAFB] px-3 py-2.5 text-[14px] outline-none focus:border-[#1A5E9A]"
             />
             <button
               type="button"
-              onClick={send}
+              onClick={() => send(null)}
               disabled={!body.trim() || busy}
               className="shrink-0 rounded-xl px-4 text-[14px] font-bold text-white disabled:opacity-40"
               style={{ background: BLUE }}
@@ -454,22 +449,13 @@ function Comments({ q, grade, user, onCount }) {
               {busy ? "…" : "남기기"}
             </button>
           </div>
-          <p className="mt-1.5 text-[11.5px] text-gray-400">
-            닉네임과 학년만 보여. 학교 이름·전화번호·SNS 아이디는 자동으로
-            가려져.
-          </p>
-          {err && (
-            <p className="mt-1 text-[12.5px] font-bold text-red-500">{err}</p>
-          )}
+          {err && <p className="mt-1 text-[12.5px] font-bold text-red-500">{err}</p>}
           {askNick && (
             <NicknameModal
-              onClose={() => {
-                setAskNick(false);
-              }}
+              onClose={() => setAskNick(false)}
               onDone={(d) => {
                 setNick(d);
                 setAskNick(false);
-                post();
               }}
             />
           )}
@@ -486,7 +472,7 @@ function Comments({ q, grade, user, onCount }) {
     </div>
   );
 }
-function Card({ q, grade, user, onAnswer, onCount, displayBase = 0, actualBaseline = 0 }) {
+function Card({ q, grade, user, onAnswer, onCount }) {
   const [open, setOpen] = useState(false);
   const [changing, setChanging] = useState(false);
   const answered = Boolean(q.my_answer) && !changing;
@@ -517,8 +503,6 @@ function Card({ q, grade, user, onAnswer, onCount, displayBase = 0, actualBaseli
             onChange={() => {
               setChanging(true);
             }}
-            displayBase={displayBase}
-            actualBaseline={actualBaseline}
           />
         ) : (
           <>
@@ -540,7 +524,7 @@ function Card({ q, grade, user, onAnswer, onCount, displayBase = 0, actualBaseli
               </button>
             </div>
             <p className="mt-1.5 text-center text-[12px] text-gray-400">
-              {shownCount(displayBase, q.total, actualBaseline).toLocaleString()}
+              {num(q.display_count).toLocaleString()}
               명이 답했어 · 누르면 결과가 보여
             </p>
           </>
@@ -588,7 +572,6 @@ export default function Mulgyeol() {
   const [grade, setGrade] = useState(readGrade);
   const [asking, setAsking] = useState(null);
   const [showOld, setShowOld] = useState(10);
-  const [displayBaselines, setDisplayBaselines] = useState(readDisplayBaselines);
   const clientId = useMemo(() => getClientId(), []);
   useEffect(() => {
     const g = user?.user_metadata?.grade;
@@ -625,6 +608,22 @@ export default function Mulgyeol() {
       load();
     }
   }, [authLoading, user, load]);
+  // 한국 시간 밤 12시가 지나면 피드를 다시 불러와 새 질문을 자동으로 보여준다.
+  useEffect(() => {
+    if (authLoading) return;
+    const now = new Date();
+    const kstNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+    const nextMidnight = new Date(kstNow);
+    nextMidnight.setHours(24, 0, 2, 0);
+    const delay = Math.max(1000, nextMidnight.getTime() - kstNow.getTime());
+    const timer = setTimeout(() => load(), delay);
+    return () => clearTimeout(timer);
+  }, [authLoading, load]);
+  // 방문 기록 — 들어올 때 한 번 (하루에 한 사람 1줄, 다시 오면 횟수만 늘어난다)
+  useEffect(() => {
+    if (authLoading) return;
+    supabase.rpc("mulgyeol_log_visit", { p_client_id: clientId }).then(({ error }) => error && console.warn("visit log failed", error));
+  }, [authLoading, user, clientId]);
   const patch = (id, fn) => {
     setFeed((current) => {
       if (!current) return current;
@@ -637,7 +636,8 @@ export default function Mulgyeol() {
     });
   };
   const sendAnswer = async (q, value, g) => {
-    let res;
+    const isFirstAnswer = !q.my_answer;
+    let res;
     try {
       const { data, error } = await supabase.rpc("mulgyeol_answer", {
         p_question_id: q.id,
@@ -658,12 +658,27 @@ export default function Mulgyeol() {
       window.alert("답을 저장하지 못했어");
       return false;
     }
-    patch(q.id, (x) => ({
-      ...x,
-      my_answer: res.my_answer ?? value,
-      result: res,
-      total: num(res.total),
-    }));
+    const nextDisplayCount = num(q.display_count) + (isFirstAnswer ? 1 : 0);
+    setFeed((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        questions: (current.questions ?? []).map((x) =>
+          x.id === q.id
+            ? {
+                ...x,
+                my_answer: res.my_answer ?? value,
+                result: res,
+                total: num(res.total),
+                display_count: nextDisplayCount,
+              }
+            : x
+        ),
+        trending: (current.trending ?? []).map((t) =>
+          t.id === q.id ? { ...t, display_count: nextDisplayCount } : t
+        ),
+      };
+    });
     return true;
   };
   const answer = async (q, value) => {
@@ -690,43 +705,18 @@ export default function Mulgyeol() {
     }
   };
   const questions = feed?.questions ?? [];
-  const today = questions.filter((q) => q.is_today);
-
-  useEffect(() => {
-    if (!today.length) return;
-
-    setDisplayBaselines((current) => {
-      const next = { ...current };
-      let changed = false;
-
-      today.slice(0, 5).forEach((q) => {
-        if (next[q.id] === undefined) {
-          next[q.id] = num(q.total);
-          changed = true;
-        }
-      });
-
-      if (changed) saveDisplayBaselines(next);
-      return changed ? next : current;
-    });
-  }, [feed]);
-  const old = questions.filter((q) => !q.is_today);
   const trending = feed?.trending ?? [];
-
-  // "지금 뜨는 물결"도 아래 질문 카드와 같은 표시 참여 숫자를 사용한다.
-  const getDisplayCountForQuestion = (item) => {
-    const todayIndex = today.findIndex((q) => q.id === item.id);
-
-    if (todayIndex < 0) {
-      return num(item.total);
-    }
-
-    const question = today[todayIndex];
-    const displayBase = DISPLAY_BASES[todayIndex] ?? 0;
-    const actualBaseline = displayBaselines[question.id] ?? num(question.total);
-
-    return shownCount(displayBase, question.total, actualBaseline);
-  };
+  const todayRaw = questions.filter((q) => q.is_today);
+  const todayById = new Map(todayRaw.map((q) => [String(q.id), q]));
+  const today = [
+    ...trending
+      .map((t) => todayById.get(String(t.id)))
+      .filter(Boolean),
+    ...todayRaw.filter(
+      (q) => !trending.some((t) => String(t.id) === String(q.id))
+    ),
+  ];
+  const old = questions.filter((q) => !q.is_today);
   const jump = (id) => {
     document.getElementById(`q-${id}`)?.scrollIntoView({
       behavior: "smooth",
@@ -774,41 +764,8 @@ export default function Mulgyeol() {
         )}
         {feed && (
           <>
-            {trending.length > 0 && (
-              <section className="mt-6">
-                <h2 className="text-[17px] font-extrabold">지금 뜨는 물결</h2>
-                <div className="mt-2.5 overflow-hidden rounded-2xl border border-[#E1EAEE] bg-white">
-                  {trending.map((t, i) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => jump(t.id)}
-                      className="flex w-full items-center gap-3 border-b border-[#EDF2F4] px-4 py-3 text-left last:border-0 hover:bg-[#F7FAFB]"
-                    >
-                      <span
-                        className="w-4 text-[15px] font-extrabold"
-                        style={{ color: BLUE }}
-                      >
-                        {i + 1}
-                      </span>
-                      <span className="flex-1 text-[14px] font-medium">
-                        {t.title}
-                      </span>
-                      <span className="shrink-0 text-[12px] text-gray-500">
-                        {getDisplayCountForQuestion(t).toLocaleString()}명 참여
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </section>
-            )}
             <section className="mt-7">
               <h2 className="text-[17px] font-extrabold">물꼬가 물어봤어요</h2>
-              {feed.today && (
-                <p className="mt-0.5 text-[12.5px] text-gray-500">
-                  {md(feed.today)} 질문
-                </p>
-              )}
               <div className="mt-3 space-y-3">
                 {today.map((q, i) => (
                   <div key={q.id} id={`q-${q.id}`} className="scroll-mt-4">
@@ -818,39 +775,22 @@ export default function Mulgyeol() {
                       user={user}
                       onAnswer={answer}
                       onCount={bumpComments}
-                      displayBase={DISPLAY_BASES[i] ?? 0}
-                        actualBaseline={displayBaselines[q.id] ?? num(q.total)}
                     />
                   </div>
                 ))}
-                {!today.length && (
-                  <p className="rounded-2xl bg-white p-6 text-center text-[14px] text-gray-400">
-                    오늘 질문은 곧 열려!
-                  </p>
-                )}
               </div>
             </section>
             {old.length > 0 && (
               <section className="mt-9">
-                <h2 className="text-[17px] font-extrabold">지난 물결</h2>
-                <p className="mt-0.5 text-[12.5px] text-gray-500">
-                  지난 질문도 지금 답할 수 있어
-                </p>
                 <div className="mt-3 space-y-3">
-                  {old.slice(0, showOld).map((q, i, arr) => (
+                  {old.slice(0, showOld).map((q) => (
                     <div key={q.id} id={`q-${q.id}`} className="scroll-mt-4">
-                      {(i === 0 || arr[i - 1].open_date !== q.open_date) && (
-                        <p className="mb-2 mt-4 text-[12.5px] font-bold text-gray-500">
-                          {md(q.open_date)}
-                        </p>
-                      )}
                       <Card
                         q={q}
                         grade={grade}
                         user={user}
                         onAnswer={answer}
                         onCount={bumpComments}
-                        displayBase={0}
                       />
                     </div>
                   ))}

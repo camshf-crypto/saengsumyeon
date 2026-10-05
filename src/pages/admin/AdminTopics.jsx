@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/AuthContext";
 import VisitorsPanel from "./VisitorsPanel";
+import MulgyeolPanel from "./MulgyeolPanel";
 
 /* "YYYY-MM-DD"에서 n일 앞뒤 */
 function addDays(day, n) {
@@ -572,6 +573,7 @@ function ReferralPanel({ stats }) {
 
 const TABS = [
   { k: "visit", label: "방문", color: "#18224F" },
+  { k: "mulgyeol", label: "나만 그래?", color: "#1A5E9A" },
   { k: "sum", label: "요약", color: "#18224F" },
   { k: "topic", label: "탐구주제", color: "#EA580C" },
   { k: "reading", label: "독서", color: "#2F56D6" },
@@ -1638,6 +1640,13 @@ export default function AdminTopics() {
       {tab === "visit" && (
         <div className="mt-6">
           <VisitorsPanel from={from} to={to} />
+        </div>
+      )}
+
+      {/* ── 나만 그래? 탭: 들어온 사람 → 누른 사람 → 댓글, 반응 좋은 질문, 신고 댓글 */}
+      {tab === "mulgyeol" && (
+        <div className="mt-6">
+          <MulgyeolPanel from={from} to={to} />
         </div>
       )}
 
