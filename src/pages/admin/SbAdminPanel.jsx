@@ -106,6 +106,216 @@ function parseLines(text) {
 }
 const toText = (lines) => lines.map((l) => [l.label, l.body, l.insight].filter((x, i) => i < 2 || x).join(" | ")).join("\n");
 
+/* ───── 퍼즐 숫자 ───── */
+const pctOf = (a, b) => (num(b) ? Math.round((num(a) / num(b)) * 100) : null);
+const mdShort = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+
+function Stat({ label, value, sub, rate, color }) {
+  return (
+    <div className="rounded-xl border border-gray-200 p-4">
+      <p className="text-[12px] text-gray-500">{label}</p>
+      <p className="mt-1.5 text-lg font-extrabold" style={{ color: color ?? "#18224F" }}>
+        {value}
+        {rate != null && <span className="ml-1.5 text-[12.5px] font-bold text-sm-orange">{rate}%</span>}
+      </p>
+      {sub && <p className="mt-0.5 text-[11.5px] leading-snug text-gray-400">{sub}</p>}
+    </div>
+  );
+}
+
+function Rank({ title, rows, unit, empty }) {
+  const max = Math.max(1, ...(rows ?? []).map((r) => num(r.people)));
+  return (
+    <div className="rounded-xl border border-gray-200 p-5">
+      <p className="text-[13px] font-bold text-sm-navy">{title}</p>
+      {!rows?.length ? (
+        <p className="mt-3 text-[12.5px] text-gray-400">{empty}</p>
+      ) : (
+        <ul className="mt-3.5 space-y-2">
+          {rows.map((r) => (
+            <li key={r.label} className="flex items-center gap-2.5 text-[13px]">
+              <span className="w-36 shrink-0 truncate text-gray-600" title={r.label}>{r.label}</span>
+              <span className="h-[7px] flex-1 overflow-hidden rounded-full bg-gray-100">
+                <span className="block h-full rounded-full bg-sm-orange" style={{ width: `${(num(r.people) / max) * 100}%` }} />
+              </span>
+              <span className="w-24 shrink-0 text-right">
+                <b className="text-sm-navy">{num(r.people)}명</b>
+                <em className="ml-1 not-italic text-[11px] text-gray-400">{num(r.pieces ?? r.times)}{unit}</em>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function SbStats() {
+  const [days, setDays] = useState(14);
+  const [st, setSt] = useState(null);
+  const [err, setErr] = useState("");
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    setSt(null);
+    supabase.rpc("admin_sb_stats", { p_days: days }).then(({ data, error }) => {
+      if (error) return setErr(error.message);
+      setErr("");
+      setSt(data);
+    });
+  }, [days, tick]);
+
+  // 숫자 처음부터 (학생 조각·기록은 그대로)
+  async function resetStats() {
+    if (!window.confirm("어드민 숫자를 지금부터 다시 셀까요?\n학생들 조각·연 조각·출석 기록은 그대로 남아요.")) return;
+    const { error } = await supabase.rpc("admin_sb_stats_reset");
+    if (error) return setErr(error.message);
+    setTick((n) => n + 1);
+  }
+  const fromTxt = st?.from && !String(st.from).startsWith("-")
+    ? new Date(st.from).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
+    : null;
+
+  if (err) return <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-[13px] font-bold text-red-600">숫자를 불러오지 못했어요 · {err} (sb_14_stats.sql · sb_15_stats_reset.sql을 실행했는지 확인)</p>;
+  if (!st) return <p className="py-10 text-center text-sm text-gray-400">숫자를 불러오는 중…</p>;
+
+  const t = st.total ?? {};
+  const rows = st.days ?? [];
+  const today = rows[0] ?? {};
+  const cohorts = st.cohorts ?? [];
+  const sk = st.streak ?? {};
+  // 처음 온 사람이 다음 날 다시 온 비율 (다음 날이 지난 사람만)
+  const ready = cohorts.filter((c) => c.d1_ready);
+  const backN = ready.reduce((a, c) => a + num(c.d1), 0);
+  const backOf = ready.reduce((a, c) => a + num(c.size), 0);
+  const cell = (ok, n, size) => (ok ? <>{n}<em className="ml-1 not-italic text-[11px] text-gray-400">{pctOf(n, size)}%</em></> : <span className="text-gray-300">-</span>);
+
+  return (
+    <section className="mt-4">
+      <div className="flex items-center justify-between">
+        <p className="text-[12.5px] font-bold text-gray-500">
+          퍼즐 숫자
+          {fromTxt && <span className="ml-2 font-medium text-gray-400">{fromTxt}부터 센 숫자</span>}
+        </p>
+        <div className="flex gap-1">
+          <button onClick={resetStats} className="mr-2 rounded-lg border border-gray-300 px-2.5 py-1 text-[12px] font-bold text-gray-500 hover:border-red-300 hover:text-red-500">
+            숫자 처음부터
+          </button>
+          {[7, 14, 30].map((d) => (
+            <button key={d} onClick={() => setDays(d)} className={`rounded-lg border px-2.5 py-1 text-[12px] font-bold ${days === d ? "border-sm-navy bg-sm-navy text-white" : "border-gray-300 text-gray-600"}`}>
+              {d}일
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat label="퍼즐 들어온 사람" value={`${num(t.visitors)}명`} sub={`오늘 ${num(today.visitors)}명 · 처음 ${num(today.new)}명`} />
+        <Stat label="조각 받은 사람" value={`${num(t.earners)}명`} rate={pctOf(t.earners, t.visitors)} sub="퍼즐 들어온 사람 중 미션으로 조각 받은 사람" />
+        <Stat label="조각 연 사람" value={`${num(t.openers)}명`} rate={pctOf(t.openers, t.visitors)} sub={`연 조각 ${num(t.pieces)}개 · 들어온 사람 중`} />
+        <Stat label="다 깬 판" value={`${num(t.completed)}판`} sub="= PDF 받을 수 있게 된 수" />
+      </div>
+
+      <p className="mt-4 text-[12.5px] font-bold text-gray-500">다음 행동</p>
+      <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat label="오늘 미션 → 퍼즐 와봄" value={`${num(today.earners_in)}명`} rate={pctOf(today.earners_in, today.earners)} sub={`오늘 미션 참여 ${num(today.earners)}명 중`} color="#EA580C" />
+        <Stat label="미션 한 사람 → 퍼즐 와봄" value={`${num(t.earners)}명`} rate={pctOf(t.earners, t.mission_all)} sub={`미션으로 조각 받은 ${num(t.mission_all)}명 중 · 나머지는 조각만 쌓임`} />
+        <Stat label="처음 온 다음 날 다시 옴" value={`${backN}명`} rate={pctOf(backN, backOf)} sub={`다음 날이 지난 ${backOf}명 중`} />
+        <Stat label="오늘 나간 조각 / 연 조각" value={`${num(today.given)}개 · ${num(today.pieces)}개`} sub="쌓이기만 하면 퍼즐로 못 데려온 것" />
+      </div>
+
+      {/* 7일 연속 출석 */}
+      <p className="mt-4 text-[12.5px] font-bold text-gray-500">7일 연속 출석 (달성하면 +2조각)</p>
+      <div className="mt-2 grid gap-3 lg:grid-cols-[1fr_2fr]">
+        <div className="grid grid-cols-2 gap-3">
+          <Stat label="오늘 출석" value={`${num(sk.attenders_today)}명`} sub={`출석한 적 있는 사람 ${num(sk.ever)}명`} />
+          <Stat label="연속 이어가는 중" value={`${num(sk.alive)}명`} rate={pctOf(sk.alive, sk.ever)} sub="어제·오늘 출석해서 안 끊긴 사람" />
+          <Stat label="7일 달성 (누적)" value={`${num(sk.achieved)}명`} color="#EA580C" />
+          <Stat label={`7일 달성 · 최근 ${days}일`} value={`${num(sk.achieved_recent)}명`} />
+        </div>
+        <div className="rounded-xl border border-gray-200 p-5">
+          <p className="text-[13px] font-bold text-sm-navy">지금 며칠째 이어가는지</p>
+          <p className="text-[11.5px] text-gray-400">7일 넘게 이어가는 사람은 7일 칸에 같이 세요. 어느 날에서 많이 끊기는지 보세요.</p>
+          <div className="mt-3 flex h-32 items-end gap-2">
+            {(sk.buckets ?? []).map((b) => {
+              const max = Math.max(1, ...(sk.buckets ?? []).map((x) => num(x.people)));
+              return (
+                <div key={b.days} className="flex flex-1 flex-col items-center gap-1">
+                  <span className="text-[11.5px] font-bold text-sm-navy">{num(b.people)}</span>
+                  <span className={`w-full rounded-t-md ${b.days === 7 ? "bg-sm-orange" : "bg-orange-200"}`} style={{ height: `${Math.max(2, (num(b.people) / max) * 88)}px` }} />
+                  <span className="text-[11px] text-gray-500">{b.days === 7 ? "7일+" : `${b.days}일`}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* 날짜별 */}
+      <div className="mt-3 overflow-x-auto rounded-xl border border-gray-200">
+        <table className="w-full min-w-[640px] text-[12.5px]">
+          <thead className="bg-gray-50 text-gray-500">
+            <tr>
+              {["날짜", "미션 참여", "→ 퍼즐 와봄", "퍼즐 방문", "처음 온 사람", "조각 연 사람", "연 조각", "다 깬 판", "나간 조각"].map((h) => (
+                <th key={h} className="px-3 py-2 text-right font-bold first:text-left">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((d) => (
+              <tr key={d.day} className="border-t border-gray-100 text-right text-sm-navy">
+                <td className="px-3 py-2 text-left font-bold">{mdShort(d.day)}</td>
+                <td className="px-3 py-2">{num(d.earners)}</td>
+                <td className="px-3 py-2 font-bold text-[#C2410C]">{num(d.earners_in)}{pctOf(d.earners_in, d.earners) != null && <em className="ml-1 not-italic text-[11px] text-gray-400">{pctOf(d.earners_in, d.earners)}%</em>}</td>
+                <td className="px-3 py-2">{num(d.visitors)}</td>
+                <td className="px-3 py-2">{num(d.new)}</td>
+                <td className="px-3 py-2">{num(d.openers)}</td>
+                <td className="px-3 py-2">{num(d.pieces)}</td>
+                <td className="px-3 py-2">{num(d.completed)}</td>
+                <td className="px-3 py-2 text-gray-500">{num(d.given)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* 다시 오는지 */}
+      <div className="mt-3 overflow-x-auto rounded-xl border border-gray-200">
+        <p className="px-4 pt-3 text-[13px] font-bold text-sm-navy">처음 온 날 기준 · 다시 오는지</p>
+        <p className="px-4 text-[11.5px] text-gray-400">그날 처음 들어온 사람 중 다음 날 · 3일 안 · 7일 안에 다시 들어온 사람. 아직 그날이 안 됐으면 -</p>
+        {!cohorts.length ? (
+          <p className="px-4 py-4 text-[12.5px] text-gray-400">아직 기록이 없어요. 방문 기록은 sb_14_stats.sql을 실행한 날부터 쌓여요.</p>
+        ) : (
+          <table className="mt-2 w-full min-w-[480px] text-[12.5px]">
+            <thead className="bg-gray-50 text-gray-500">
+              <tr>
+                {["처음 온 날", "인원", "다음 날", "3일 안", "7일 안"].map((h) => (
+                  <th key={h} className="px-3 py-2 text-right font-bold first:text-left">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {cohorts.map((c) => (
+                <tr key={c.day} className="border-t border-gray-100 text-right text-sm-navy">
+                  <td className="px-3 py-2 text-left font-bold">{mdShort(c.day)}</td>
+                  <td className="px-3 py-2">{num(c.size)}명</td>
+                  <td className="px-3 py-2">{cell(c.d1_ready, num(c.d1), num(c.size))}</td>
+                  <td className="px-3 py-2">{cell(c.d3_ready, num(c.d3), num(c.size))}</td>
+                  <td className="px-3 py-2">{cell(c.d7_ready, num(c.d7), num(c.size))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <Rank title="많이 여는 생기부 TOP 10" rows={st.top_records} unit="조각" empty="아직 조각을 연 사람이 없어요." />
+        <Rank title={`조각 받는 미션 · 최근 ${days}일`} rows={st.top_missions} unit="번" empty="아직 기록이 없어요." />
+      </div>
+    </section>
+  );
+}
+
 export default function SbAdminPanel() {
   const [ov, setOv] = useState(null);
   const [err, setErr] = useState("");
@@ -284,6 +494,9 @@ export default function SbAdminPanel() {
   return (
     <div>
       <h2 className="text-lg font-extrabold text-sm-navy">합격 생기부</h2>
+      <SbStats />
+
+      <h3 className="mt-8 border-t border-gray-200 pt-6 text-[15px] font-extrabold text-sm-navy">생기부 관리</h3>
       <p className="mt-1 text-[12.5px] text-gray-400">계열 × 학교 단계마다 재구성한 생기부 하나. 공개한 생기부의 공개한 판만 학생에게 보여요.</p>
 
       {/* 계열 · 단계 고르기 */}
