@@ -5,6 +5,7 @@ import { supabase } from "./lib/supabase";
 import { getClientId } from "./lib/clientId";
 import { saveRefCode } from "./lib/referral";
 import Header from "./components/Header";
+import SbNotice from "./components/SbNotice";
 import Footer from "./components/Footer";
 
 import Landing from "./pages/landing/Landing";
@@ -24,6 +25,7 @@ import InquiryResult from "./pages/inquiry/InquiryResult";
 import InquiryReport from "./pages/inquiry/InquiryReport";
 import PositionReport from "./pages/ladder/PositionReport";
 import Mulgyeol from "./pages/mulgyeol/Mulgyeol";
+import Sb from "./pages/sb/Sb";
 import { Terms, Privacy, Refund } from "./pages/legal/Legal";
 
 // 화면을 옮기면 항상 맨 위에서 시작한다
@@ -89,6 +91,7 @@ export default function App() {
       <BrowserRouter>
         <ScrollToTop />
         <RefCapture />
+        <SbNotice />
         <Layout>
           <Routes>
             {/* 진단 흐름: 주제 입력 → 결과(일부 공개) → 가입 → 결과 전체 */}
@@ -115,6 +118,7 @@ export default function App() {
 
             {/* 물결 — 나만 그래? 매일 밤 12시에 질문 5개가 열린다 */}
             <Route path="/mulgyeol" element={<Mulgyeol />} />
+            <Route path="/sb" element={<Sb />} />
 
             {/* 내 기록 — 권한은 화면 안에서 확인 */}
             <Route path="/my" element={<MyPage />} />

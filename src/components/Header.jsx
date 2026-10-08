@@ -36,6 +36,7 @@ const REPORT_MENU = "기억에 남는 탐구보고서";
  */
 const MENU = [
   { to: "/mulgyeol", label: "나만 그래?", badge: "고등생활" }, // 커뮤니티 — 매일 밤 12시에 새 질문
+  { to: "/sb", label: "합격 생기부 퍼즐" }, // 조각을 모아 합격 생기부를 한 칸씩 연다
   {
     label: "흔한가",
     children: [
@@ -44,7 +45,7 @@ const MENU = [
       { to: "/motive", label: "지원동기 흔한가" },
     ],
   },
-  { to: "/interview", label: "면접 예상 질문" },
+  { to: "/interview", label: "생기부 질문" },
   { to: "/inquiry", label: REPORT_MENU },
   // 대학 사다리(/ladder)는 개발이 끝나면 다시 넣는다 — 주소로는 계속 들어갈 수 있다
   // { to: "/ladder", label: "대학 사다리" },

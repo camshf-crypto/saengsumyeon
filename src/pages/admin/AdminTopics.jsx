@@ -3,6 +3,7 @@ import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/AuthContext";
 import VisitorsPanel from "./VisitorsPanel";
 import MulgyeolPanel from "./MulgyeolPanel";
+import SbAdminPanel from "./SbAdminPanel";
 
 /* "YYYY-MM-DD"에서 n일 앞뒤 */
 function addDays(day, n) {
@@ -574,6 +575,7 @@ function ReferralPanel({ stats }) {
 const TABS = [
   { k: "visit", label: "방문", color: "#18224F" },
   { k: "mulgyeol", label: "나만 그래?", color: "#1A5E9A" },
+  { k: "sb", label: "합격 생기부", color: "#EA580C" },
   { k: "sum", label: "요약", color: "#18224F" },
   { k: "topic", label: "탐구주제", color: "#EA580C" },
   { k: "reading", label: "독서", color: "#2F56D6" },
@@ -1647,6 +1649,13 @@ export default function AdminTopics() {
       {tab === "mulgyeol" && (
         <div className="mt-6">
           <MulgyeolPanel from={from} to={to} />
+        </div>
+      )}
+
+      {/* ── 합격 생기부 탭: 생기부 넣기 · 공개 */}
+      {tab === "sb" && (
+        <div className="mt-6">
+          <SbAdminPanel />
         </div>
       )}
 

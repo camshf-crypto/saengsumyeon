@@ -8,3 +8,42 @@ html {
 body {
   font-family: "Pretendard", system-ui, sans-serif;
 }
+
+/* ── 생기부 퍼즐 ── */
+.record-puzzle {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.record-puzzle__img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.record-puzzle__mask {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--cols), 1fr);
+  grid-template-rows: repeat(var(--rows), 1fr);
+}
+
+.record-puzzle__piece {
+  background: #2b3f6b;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  transition: opacity 0.55s ease;
+}
+
+.record-puzzle__piece:nth-child(even) {
+  background: #35497a;
+}
+
+.record-puzzle__piece.is-open {
+  opacity: 0;
+}
