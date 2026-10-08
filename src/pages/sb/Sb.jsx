@@ -161,6 +161,17 @@ export default function Sb() {
     if (!authLoading) loadMe();
   }, [authLoading, loadMe]);
 
+  // 화면을 다시 볼 때(다른 탭·앱에 갔다 오기, 하루 지나서 다시 열기) 오늘 미션을 새로 불러온다
+  useEffect(() => {
+    const again = () => document.visibilityState === "visible" && loadMe();
+    window.addEventListener("focus", again);
+    document.addEventListener("visibilitychange", again);
+    return () => {
+      window.removeEventListener("focus", again);
+      document.removeEventListener("visibilitychange", again);
+    };
+  }, [loadMe]);
+
   useEffect(() => {
     supabase.rpc("sb_tracks_list").then(({ data }) => setTracks(data ?? []));
   }, []);
@@ -416,10 +427,7 @@ export default function Sb() {
             }}
             className="flex h-28 flex-col justify-between rounded-2xl border border-gray-200 bg-white p-4 text-left"
           >
-            <span>
-              <span className="block text-[17px] font-black text-sm-navy">{t.name}</span>
-              {t.descr && <span className="mt-0.5 block text-[11px] leading-snug text-gray-400">{t.descr}</span>}
-            </span>
+            <span className="block text-[17px] font-black text-sm-navy">{t.name}</span>
             <span className={`text-[11.5px] font-bold ${num(t.live) ? "text-[#C2410C]" : "text-gray-400"}`}>{num(t.live) ? `생기부 ${t.live}개 열림` : "곧 열려요"}</span>
           </button>
         ))}
@@ -549,7 +557,10 @@ export default function Sb() {
                         return (
                           <button
                             key={`p${n}`}
-                            onClick={() => setSheet(n)}
+                            onClick={() => {
+                              setSheet(n);
+                              loadMe();
+                            }}
                             aria-label={`${areaInfo.label} 조각`}
                             className="absolute p-0 transition-transform hover:-translate-y-0.5"
                             style={{ left: j * cw, top: i * ch, width: cw, height: ch }}
@@ -612,7 +623,10 @@ export default function Sb() {
                   return (
                     <button
                       key={`p${n}`}
-                      onClick={() => setSheet(n)}
+                      onClick={() => {
+                        setSheet(n);
+                        loadMe();
+                      }}
                       aria-label={`${r.label} 조각`}
                       className="absolute p-0 transition-transform hover:-translate-y-0.5"
                       style={{ left: k * w, top: r.y, width: w, height: r.h }}
@@ -772,8 +786,12 @@ export default function Sb() {
     <>
       <div className="fixed inset-0 z-40 bg-black/55" />
       <section className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-xl rounded-t-3xl bg-white px-5 pb-7 pt-6">
-        <p className="text-[18px] font-black text-sm-navy">새 학년이 시작됐어! 지금 몇 학년이야?</p>
-        <p className="mt-1 text-[13px] text-gray-500">학년이 올라가면 같은 학교의 다음 학년 판이 열려.</p>
+        <p className="text-[18px] font-black text-sm-navy">
+          {me?.grade_ask === "missing" ? "지금 몇 학년이야?" : "새 학년이 시작됐어! 지금 몇 학년이야?"}
+        </p>
+        <p className="mt-1 text-[13px] text-gray-500">
+          {me?.grade_ask === "missing" ? "학년에 맞춰 1학년부터 지금 학년까지 판이 열려." : "학년이 올라가면 같은 학교의 다음 학년 판이 열려."}
+        </p>
         <div className="mt-4 grid grid-cols-3 gap-2">
           {[1, 2, 3].map((g) => (
             <button
