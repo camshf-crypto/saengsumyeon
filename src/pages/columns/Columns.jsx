@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { checkLevel } from "../../components/LevelUp";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
@@ -7,7 +8,7 @@ import Comments from "../../components/Comments";
 /*
  * 입시 칼럼
  *   /columns      목록 — 다음 칼럼 예고 + 공개된 칼럼
- *   /columns/:id  읽기 — 본문 · 체크리스트(회원만) · 끝까지 읽기(+2점) · 관련 서비스 버튼 · 댓글
+ *   /columns/:id  읽기 — 본문 · 체크리스트(회원만) · 끝까지 읽기 · 관련 서비스 버튼 · 댓글
  * 본문 쓰는 법 (관리자 화면): 빈 줄 = 문단 나누기, "## " = 소제목, "> " = 강조 문장
  */
 
@@ -82,7 +83,7 @@ export function ColumnList() {
     <div className="min-h-screen bg-[#F4F5F7]">
       <div className="mx-auto max-w-3xl px-4 pb-16 pt-6 sm:px-6 sm:pt-10">
         <h1 className="text-[24px] font-bold tracking-tight text-sm-navy">입시 칼럼</h1>
-        <p className="mt-1 text-[13.5px] text-gray-500">매주 화 · 목 오후 5시 · 3분이면 읽어요</p>
+        <p className="mt-1 text-[13.5px] text-gray-500">매주 목요일 오후 5시 · 3분이면 읽어요</p>
 
         {next && (
           <div className="relative mt-5 overflow-hidden rounded-2xl bg-sm-navy px-6 py-6 text-white">
@@ -189,9 +190,8 @@ export function ColumnRead() {
       const { data } = await supabase.rpc("col_read", { p_id: c.id });
       setRead(true);
       if (data?.first) {
-        const { data: chk } = await supabase.rpc("lv_check");
-        if (chk?.level_up) toast(`끝까지 읽었어요 · Lv.${chk.info.level}이 됐어요`);
-        else toast("끝까지 읽었어요 · +2점");
+        toast("끝까지 읽었어요");
+        checkLevel();
       }
     });
     ob.observe(endRef.current);

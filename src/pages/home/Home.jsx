@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
+import { getClientId } from "../../lib/clientId";
 import Avatar from "../../components/Avatar";
+import { checkLevel } from "../../components/LevelUp";
 
 /*
  * 생수면 메인 (/)
@@ -37,8 +39,8 @@ const TILES = [
   { key: "interview", title: "생기부 예상질문", sub: "대학별 면접 기준", icon: "mic", badge: "5개 무료" },
   { key: "mg", title: "나만 그래?", sub: "매일 5문항", icon: "poll" },
   { key: "puzzle", title: "합격 생기부 퍼즐", sub: "대학별 합격 사례", icon: "puzzle" },
-  { key: "columns", title: "입시 칼럼", sub: "화 · 목 오후 5시", icon: "news", badge: "NEW" },
-  { key: "note", title: "내 생기부 노트", sub: "학년별 활동 기록", icon: "note", badge: "기록 +3점" },
+  { key: "columns", title: "입시 칼럼", sub: "매주 목요일 오후 5시", icon: "news", badge: "NEW" },
+  { key: "note", title: "내 생기부 노트", sub: "다 적으면 AI 입시 진단", icon: "note", badge: "AI 진단" },
   { key: "board", title: "자유게시판", sub: "질문 · 고민 · 수다", icon: "chat" },
   { key: "ladder", title: "대학 사다리", sub: "내 성적 위치", icon: "ladder", badge: "준비 중", muted: true },
 ];
@@ -79,7 +81,7 @@ function LvTag({ author }) {
   return (
     <span className="inline-flex h-[18px] items-center gap-1 rounded border border-gray-200 px-1.5 text-[11px] font-bold text-gray-700">
       <i className="h-1.5 w-1.5 rounded-full" style={{ background: author.color }} />
-      Lv.{author.level}
+      {author.stage ?? `Lv.${author.level}`}
     </span>
   );
 }
@@ -114,56 +116,6 @@ function ago(iso) {
   return `${Math.floor(s / 86400)}일 전`;
 }
 
-/* ───────── 레벨업 팝업 ───────── */
-
-function LevelUpPopup({ data, onClose }) {
-  if (!data) return null;
-  const { info, level_up, prev_level, rewards = [] } = data;
-  const pieces = rewards.reduce((a, r) => a + (r.pieces || 0), 0);
-  const coupons = rewards.filter((r) => r.coupon);
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0B0F1F]/55 px-5" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center" onClick={(e) => e.stopPropagation()}>
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl text-2xl font-extrabold text-white" style={{ background: info.color }}>
-          {info.level}
-        </div>
-        <h3 className="mt-4 text-[20px] font-bold tracking-tight text-sm-navy">
-          {level_up ? `Lv.${info.level} ${info.stage}이 됐어요` : `지금 Lv.${info.level} ${info.stage}이에요`}
-        </h3>
-        <p className="mt-1 text-[13px] text-gray-500">
-          {level_up && prev_level ? `Lv.${prev_level}에서 올라왔어요 · ` : ""}
-          {info.max ? "최고 레벨이에요" : `다음 레벨까지 ${info.need}점`}
-        </p>
-        {(pieces > 0 || coupons.length > 0) && (
-          <div className="mt-5 grid gap-2 text-left">
-            {pieces > 0 && (
-              <div className="flex items-center gap-3 rounded-xl border border-gray-200 px-4 py-3 text-[14px]">
-                <Icon name="puzzle" className="h-5 w-5 text-sm-navy" />
-                <div>
-                  <b className="text-sm-navy">합격 생기부 조각 +{pieces}</b>
-                  <small className="block text-[12px] text-gray-500">퍼즐에서 바로 쓸 수 있어요</small>
-                </div>
-              </div>
-            )}
-            {coupons.map((c) => (
-              <div key={c.stage_no} className="flex items-center gap-3 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-[14px]">
-                <Icon name="note" className="h-5 w-5 text-sm-orange" />
-                <div>
-                  <b className="text-sm-navy">{c.stage} 달성 쿠폰 {c.coupon.toLocaleString()}원</b>
-                  <small className="block text-[12px] text-gray-500">1년 안에 예상질문 결제할 때 쓸 수 있어요</small>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-        <button onClick={onClose} className="mt-5 h-12 w-full rounded-xl bg-sm-navy text-[15px] font-bold text-white">
-          확인
-        </button>
-      </div>
-    </div>
-  );
-}
-
 /* ───────── 메인 ───────── */
 
 export default function Home() {
@@ -179,9 +131,10 @@ export default function Home() {
   const [qs, setQs] = useState([]);
   const [lv, setLv] = useState(null);
   const [today, setToday] = useState(null);
-  const [popup, setPopup] = useState(null);
   const [nick, setNick] = useState("");
   const [seriesOpen, setSeriesOpen] = useState(false);
+  const [toastMsg, setToastMsg] = useState("");
+  const [answering, setAnswering] = useState(false);
   const [photo, setPhoto] = useState(null);
 
   const countdown = useCountdown(next?.publish_at);
@@ -207,14 +160,11 @@ export default function Home() {
     let alive = true;
     (async () => {
       await supabase.rpc("sb_checkin");
-      const { data: chk } = await supabase.rpc("lv_check");
+      const chk = await checkLevel(); // 레벨이 올랐으면 공통 팝업이 뜬다
       const { data: t } = await supabase.rpc("lv_today");
       const { data: p } = await supabase.rpc("my_profile");
       if (!alive) return;
-      if (chk) {
-        setLv(chk.info);
-        if (chk.level_up || (chk.rewards || []).length) setPopup(chk);
-      }
+      if (chk) setLv(chk.info);
       setToday(t);
       setNick(p?.nickname || "");
       setPhoto(p?.avatar_url || null);
@@ -237,6 +187,43 @@ export default function Home() {
     ];
   }, [today]);
   const todoDone = todo.filter((t) => t.done).length;
+
+  function toast(m) {
+    setToastMsg(m);
+    setTimeout(() => setToastMsg(""), 1800);
+  }
+
+  // 오늘의 나만 그래? — 회원은 여기서 바로 답한다, 비회원은 가입으로
+  async function answerQ(q, value) {
+    if (!user) return nav(PATHS.signup);
+    if (answering) return;
+    setAnswering(true);
+    let grade = user.user_metadata?.grade || null;
+    try {
+      grade = localStorage.getItem("sm_grade") || grade;
+    } catch {
+      /* 저장소를 못 쓰면 가입 정보 학년 */
+    }
+    const { error } = await supabase.rpc("mulgyeol_answer", {
+      p_question_id: q.id,
+      p_answer: value,
+      p_client_id: getClientId(),
+      p_grade: grade,
+    });
+    setAnswering(false);
+    if (error) return toast(error.message || "답을 저장하지 못했어요");
+    const [{ data: st }, chk, { data: t }] = await Promise.all([
+      supabase.rpc("mg_stats"),
+      checkLevel(),
+      supabase.rpc("lv_today"),
+    ]);
+    setQs(st || []);
+    if (t) setToday(t);
+    if (chk) {
+      setLv(chk.info);
+      if (!chk.level_up && !(chk.rewards || []).length) toast("+1점");
+    }
+  }
 
   function goTile(t) {
     if (t.menu) return setSeriesOpen((v) => !v);
@@ -329,14 +316,25 @@ export default function Home() {
           {firstQ.minority && <p className="mt-1.5 text-[12.5px] font-semibold text-indigo-600">소수 의견이에요 · 이유를 댓글로 남겨 보세요</p>}
         </div>
       ) : (
-        <div className="flex gap-2">
-          <button onClick={() => nav(PATHS.mg)} className="h-12 flex-1 rounded-[10px] border border-gray-200 text-[14.5px] font-semibold text-gray-700 hover:border-sm-navy hover:text-sm-navy">
-            나도 그래
-          </button>
-          <button onClick={() => nav(PATHS.mg)} className="h-12 flex-1 rounded-[10px] border border-gray-200 text-[14.5px] font-semibold text-gray-700 hover:border-sm-navy hover:text-sm-navy">
-            난 아닌데
-          </button>
-        </div>
+        <>
+          <div className="flex gap-2">
+            <button
+              onClick={() => answerQ(firstQ, "yes")}
+              disabled={answering}
+              className="h-12 flex-1 rounded-[10px] border border-gray-200 text-[14.5px] font-semibold text-gray-700 hover:border-sm-navy hover:text-sm-navy disabled:opacity-50"
+            >
+              나도 그래
+            </button>
+            <button
+              onClick={() => answerQ(firstQ, "no")}
+              disabled={answering}
+              className="h-12 flex-1 rounded-[10px] border border-gray-200 text-[14.5px] font-semibold text-gray-700 hover:border-sm-navy hover:text-sm-navy disabled:opacity-50"
+            >
+              난 아닌데
+            </button>
+          </div>
+          {!user && <p className="mt-2 text-center text-[12px] text-gray-500">가입하면 바로 답하고 결과를 볼 수 있어요</p>}
+        </>
       )}
       <div className="mt-4 flex items-center gap-2.5">
         <div className="flex flex-1 gap-1">
@@ -426,7 +424,7 @@ export default function Home() {
           {/* 칼럼 배너 */}
           <Link
             to={next ? PATHS.columns : PATHS.columns}
-            className="relative mt-6 flex min-h-[132px] flex-col justify-center overflow-hidden rounded-2xl bg-sm-navy px-6 py-6 text-white sm:flex-row sm:items-center sm:px-8"
+            className="relative mt-6 flex min-h-[132px] flex-col justify-center sm:justify-start overflow-hidden rounded-2xl bg-sm-navy px-6 py-6 text-white sm:flex-row sm:items-center sm:px-8"
           >
             <div className="relative">
               <small className="inline-flex items-center gap-1.5 text-[12px] font-bold text-orange-300">
@@ -438,7 +436,7 @@ export default function Home() {
                 )}
               </small>
               <b className="mt-2 block text-[19px] font-bold tracking-tight sm:text-[22px]">
-                {next ? next.title : "매주 화 · 목 오후 5시, 3분 입시 칼럼"}
+                {next ? next.title : "매주 목요일 오후 5시, 3분 입시 칼럼"}
               </b>
               <span className="mt-1.5 block text-[13px] text-slate-300">
                 {next ? `${whenLabel(next.publish_at)} 공개 · 3분 분량` : "지난 칼럼 보러 가기"}
@@ -573,7 +571,11 @@ export default function Home() {
         </aside>
       </div>
 
-      <LevelUpPopup data={popup} onClose={() => setPopup(null)} />
+      {toastMsg && (
+        <div className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 rounded-[10px] bg-sm-navy/95 px-4 py-2.5 text-[13.5px] font-semibold text-white md:bottom-8">
+          {toastMsg}
+        </div>
+      )}
     </div>
   );
 }

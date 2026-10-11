@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { checkLevel } from "./LevelUp";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
 import { supabase } from "../lib/supabase";
@@ -23,7 +24,7 @@ export function LvTag({ author }) {
   return (
     <span className="inline-flex h-[18px] items-center gap-1 rounded border border-gray-200 px-1.5 text-[11px] font-bold text-gray-700">
       <i className="h-1.5 w-1.5 rounded-full" style={{ background: author.color }} />
-      Lv.{author.level}
+      {author.stage ?? `Lv.${author.level}`}
     </span>
   );
 }
@@ -59,7 +60,7 @@ export default function Comments({ kind, target, toast, onCount }) {
       return false;
     }
     toast?.(v.length >= 10 ? "댓글 등록 · +2점" : "댓글 등록 (10자 넘으면 +2점)");
-    supabase.rpc("lv_check");
+    checkLevel();
     load();
     return true;
   }

@@ -3,13 +3,14 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import Comments, { LvTag } from "../../components/Comments";
+import { checkLevel } from "../../components/LevelUp";
 import Avatar from "../../components/Avatar";
 
 /*
  * 자유게시판
  *   /board      목록 — 말머리(질문·고민·수다) · 최신/인기 · 글쓰기(Lv.3부터)
  *   /board/:id  글 — 나도 그래 · 내 글 지우기 · 댓글
- * 글 3점(하루 6점), 나도 그래 받기 2점(하루 10점). 연락처·링크는 서버에서 막는다
+ * 글 3점(하루 1개), 나도 그래 받기 2점(하루 6점). 연락처·링크는 서버에서 막는다
  */
 
 const TAGS = ["질문", "고민", "수다"];
@@ -212,7 +213,7 @@ export function BoardList() {
           onClose={() => setWriting(false)}
           onDone={(id) => {
             setWriting(false);
-            supabase.rpc("lv_check");
+            checkLevel();
             nav(`/board/${id}`);
           }}
         />

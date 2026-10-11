@@ -3,24 +3,9 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import Avatar from "../../components/Avatar";
-import { NicknameModal } from "../../components/NicknameEditor";
-
-// 고른 사진을 가운데 정사각형으로 잘라 256×256 webp 로 줄인다
-function shrink(file) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const side = Math.min(img.width, img.height);
-      const c = document.createElement("canvas");
-      c.width = c.height = 256;
-      c.getContext("2d").drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, 256, 256);
-      c.toBlob((b) => (b ? resolve(b) : reject(new Error("사진을 읽지 못했어요"))), "image/webp", 0.85);
-      URL.revokeObjectURL(img.src);
-    };
-    img.onerror = () => reject(new Error("사진 파일만 올릴 수 있어요"));
-    img.src = URL.createObjectURL(file);
-  });
-}
+import MyTabs from "../../components/MyTabs";
+import { checkLevel } from "../../components/LevelUp";
+import { NicknameModal, uploadAvatar, AVATAR_EVENT } from "../../components/NicknameEditor";
 
 /*
  * 내 레벨 (/my/level)
@@ -52,11 +37,9 @@ const BADGE_ICON = {
 const POINTS = [
   ["출석", "2점", "하루 1번"],
   ["나만 그래? 응답", "1점", "하루 5점"],
-  ["댓글 (10자 이상)", "2점", "하루 10점"],
-  ["내 생기부 노트 기록", "3점", "하루 9점"],
-  ["입시 칼럼 끝까지 읽기", "2점", "하루 4점"],
-  ["자유게시판 글", "3점", "하루 6점"],
-  ["내 글 · 댓글이 '나도 그래' 받기", "2점", "하루 10점"],
+  ["댓글 (10자 이상)", "2점", "하루 6점"],
+  ["자유게시판 글", "3점", "하루 1개"],
+  ["내 글 · 댓글이 '나도 그래' 받기", "2점", "하루 6점"],
 ];
 
 function dateTime(iso) {
@@ -91,7 +74,7 @@ export default function Level() {
 
   useEffect(() => {
     if (!uid) return;
-    supabase.rpc("lv_check").then(({ data }) => data && setLv(data.info));
+    checkLevel().then((data) => data && setLv(data.info));
     supabase.rpc("lv_today").then(({ data }) => setToday(data));
     supabase.rpc("my_coupons").then(({ data }) => setCoupons(data || []));
     supabase.rpc("my_profile").then(({ data }) => {
@@ -102,20 +85,20 @@ export default function Level() {
     supabase.rpc("my_badges").then(({ data }) => setBadges(data || []));
   }, [uid]);
 
+  // 닉네임 팝업에서 사진을 바꿔도 카드에 바로 반영
+  useEffect(() => {
+    const onAvatar = (e) => setAvatar(e.detail || null);
+    window.addEventListener(AVATAR_EVENT, onAvatar);
+    return () => window.removeEventListener(AVATAR_EVENT, onAvatar);
+  }, []);
+
   async function pickPhoto(e) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
     setUpMsg("올리는 중…");
     try {
-      const blob = await shrink(file);
-      const path = `${uid}/avatar.webp`;
-      const { error: upErr } = await supabase.storage.from("avatars").upload(path, blob, { upsert: true, contentType: "image/webp" });
-      if (upErr) throw upErr;
-      const url = `${supabase.storage.from("avatars").getPublicUrl(path).data.publicUrl}?v=${Date.now()}`;
-      const { error } = await supabase.rpc("sm_set_avatar", { p_url: url });
-      if (error) throw error;
-      setAvatar(url);
+      setAvatar(await uploadAvatar(uid, file));
       setUpMsg("");
     } catch (err) {
       setUpMsg(err.message || "사진을 올리지 못했어요");
@@ -125,6 +108,7 @@ export default function Level() {
   async function clearPhoto() {
     await supabase.rpc("sm_set_avatar", { p_url: null });
     setAvatar(null);
+    window.dispatchEvent(new CustomEvent(AVATAR_EVENT, { detail: null }));
   }
 
   async function apply(ev) {
@@ -151,16 +135,14 @@ export default function Level() {
     ? [
         ["출석", today.att ? 1 : 0, 1, "+2"],
         ["나만 그래? 응답", Math.min(today.answers, 5), 5, "+1씩"],
-        ["댓글 (10자 이상)", Math.min(today.comments, 5), 5, "+2씩"],
-        ["내 생기부 노트 기록", Math.min(today.records, 3), 3, "+3씩"],
-        ["칼럼 끝까지 읽기", Math.min(today.reads, 2), 2, "+2씩"],
+        ["댓글 (10자 이상)", Math.min(today.comments, 3), 3, "+2씩"],
       ]
     : [];
 
   return (
     <div className="min-h-screen bg-[#F4F5F7]">
-      <div className="mx-auto max-w-3xl px-4 pb-20 pt-6 sm:px-6 sm:pt-10">
-        <h1 className="text-[24px] font-bold tracking-tight text-sm-navy">내 레벨</h1>
+      <div className="mx-auto max-w-2xl px-4 pb-20 pt-6 sm:px-5 sm:pt-10">
+        <MyTabs />
 
         {/* 레벨 카드 */}
         <div className="mt-4 rounded-2xl bg-sm-navy p-5 text-white">

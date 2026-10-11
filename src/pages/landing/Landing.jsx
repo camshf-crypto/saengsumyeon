@@ -1,5 +1,7 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useAuth } from "../../lib/AuthContext";
+import { supabase } from "../../lib/supabase";
 import "./landing.css";
 import { SUBJECT_HINTS } from "./subjects"; // 과목 추천 목록 (직접 입력도 가능)
 
@@ -89,14 +91,32 @@ function SuggestList({ items, onPick }) {
 
 export default function Landing() {
   const nav = useNavigate();
+  const [params] = useSearchParams();
+  const { user } = useAuth();
 
   const [department, setDepartment] = useState("");
   const [grade, setGrade] = useState("");
   const [term, setTerm] = useState("");
   const [subject, setSubject] = useState("");
-  const [topic, setTopic] = useState("");
+  // 메인 검색창에서 적은 주제(?q=)를 그대로 받아 온다
+  const [topic, setTopic] = useState(() => (params.get("q") || "").slice(0, 200));
   const [direction, setDirection] = useState(""); // 제안 방향: career(진로 연결) | subject(과목 깊이 파기) — 처음엔 선택 없음
   const [focus, setFocus] = useState(null); // "dept" | "subject" | null
+
+  // 로그인했으면 가입 학년 · 희망 학과를 미리 채운다 (비어 있을 때만)
+  useEffect(() => {
+    if (!user) return;
+    supabase.rpc("sm_get_my").then(({ data }) => {
+      if (!data) return;
+      if (data.grade && GRADES.includes(data.grade)) setGrade((g) => g || data.grade);
+      if (data.department) setDepartment((d) => d || data.department);
+    });
+  }, [user?.id]);
+
+  // 메인에서 주제를 들고 왔으면 남은 칸(학과)부터 바로 적게
+  useEffect(() => {
+    if (params.get("q")) document.querySelector('input[aria-label="희망 학과"]')?.focus();
+  }, []);
 
   const tooLong = topic.trim().length > TOPIC_MAX;
 

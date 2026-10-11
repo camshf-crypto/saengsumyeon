@@ -21,8 +21,13 @@ const until = (t) => {
 const ADJ = ["푸른", "맑은", "잔잔한", "반짝", "시원한", "작은", "깊은", "졸린", "신난", "느긋한"];
 const NOUN = ["물방울", "파도", "물결", "조약돌", "바다", "시냇물", "물개", "모래알", "소라", "윤슬"];
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
-const suggest = () =>
-  Array.from({ length: 3 }, () => `${pick(ADJ)}${pick(NOUN)}${100 + Math.floor(Math.random() * 900)}`);
+const suggest = () => {
+    // 숫자는 붙여도 안 붙여도 된다 — 추천은 숫자 없는 것 2개 + 숫자 붙은 것 1개
+    const out = new Set();
+    while (out.size < 2) out.add(`${pick(ADJ)}${pick(NOUN)}`);
+    out.add(`${pick(ADJ)}${pick(NOUN)}${100 + Math.floor(Math.random() * 900)}`);
+    return [...out];
+  };
 
 /* 내 닉네임 상태 — { nickname, is_auto, can_change_at } · 아직 없으면 nickname이 null */
 export async function fetchNickname() {
@@ -43,12 +48,63 @@ export function announceNickname(nickname) {
 /* 아직 직접 정한 닉네임이 없으면 true */
 export const needsNickname = (info) => !info?.nickname || info.is_auto;
 
-/* 처음 댓글을 쓸 때 뜨는 팝업 */
+/* 프로필 사진이 바뀌면 헤더 등 다른 화면에 알린다 */
+export const AVATAR_EVENT = "sm:avatar";
+
+// 고른 사진을 가운데 정사각형으로 잘라 256×256 webp 로 줄인다
+function shrink(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const side = Math.min(img.width, img.height);
+      const c = document.createElement("canvas");
+      c.width = c.height = 256;
+      c.getContext("2d").drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, 256, 256);
+      c.toBlob((b) => (b ? resolve(b) : reject(new Error("사진을 읽지 못했어요"))), "image/webp", 0.85);
+      URL.revokeObjectURL(img.src);
+    };
+    img.onerror = () => reject(new Error("사진 파일만 올릴 수 있어요"));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+/* 프로필 사진 올리기 — 팝업과 내 레벨 화면이 같이 쓴다. 성공하면 사진 주소를 돌려준다 */
+export async function uploadAvatar(uid, file) {
+  const blob = await shrink(file);
+  const path = `${uid}/avatar.webp`;
+  const { error: upErr } = await supabase.storage.from("avatars").upload(path, blob, { upsert: true, contentType: "image/webp" });
+  if (upErr) throw upErr;
+  const url = `${supabase.storage.from("avatars").getPublicUrl(path).data.publicUrl}?v=${Date.now()}`;
+  const { error } = await supabase.rpc("sm_set_avatar", { p_url: url });
+  if (error) throw error;
+  window.dispatchEvent(new CustomEvent(AVATAR_EVENT, { detail: url }));
+  return url;
+}
+
+/* 닉네임 + 프로필 사진 정하기 팝업 (처음 댓글을 쓸 때 · 내 레벨에서 정하기) */
 export function NicknameModal({ onDone, onClose }) {
+  const { user } = useAuth();
   const [value, setValue] = useState("");
   const [ideas, setIdeas] = useState(suggest);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [photo, setPhoto] = useState(null); // 보여줄 사진 (지금 사진 또는 새로 고른 사진 미리보기)
+  const [file, setFile] = useState(null); // 새로 고른 사진 — 닉네임을 저장한 뒤 올린다
+  const [upMsg, setUpMsg] = useState("");
+
+  useEffect(() => {
+    supabase.rpc("my_profile").then(({ data }) => setPhoto(data?.avatar_url || null));
+  }, []);
+
+  function pickPhoto(e) {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    if (!f.type.startsWith("image/")) return setUpMsg("사진 파일만 올릴 수 있어");
+    setFile(f);
+    setPhoto(URL.createObjectURL(f));
+    setUpMsg("");
+  }
 
   async function save() {
     const v = value.trim();
@@ -56,19 +112,50 @@ export function NicknameModal({ onDone, onClose }) {
     setBusy(true);
     setErr("");
     const { data, error } = await supabase.rpc("mulgyeol_set_nickname", { p_nickname: v });
-    setBusy(false);
-    if (error) return setErr(error.message || "정하지 못했어. 다시 해줘");
+    if (error) {
+      setBusy(false);
+      return setErr(error.message || "정하지 못했어. 다시 해줘");
+    }
     announceNickname(data.nickname);
+    if (file && user) {
+      try {
+        await uploadAvatar(user.id, file);
+      } catch {
+        /* 사진은 내 레벨에서 다시 올리면 된다 */
+      }
+    }
+    setBusy(false);
     onDone(data);
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={onClose}>
       <div className="w-full max-w-md rounded-t-2xl bg-white p-6 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
-        <p className="text-[17px] font-extrabold text-[#10262F]">닉네임을 정해줘</p>
+        <p className="text-[17px] font-extrabold text-[#10262F]">프로필을 만들어줘</p>
         <p className="mt-1.5 text-[13.5px] leading-relaxed text-gray-500">
-          댓글에 이름 대신 보이는 이름이야. 같은 닉네임은 한 명만 쓸 수 있어.
+          글과 댓글에 이름 대신 보이는 사진과 닉네임이야.
         </p>
+
+        {/* 프로필 사진 — 고르면 미리 보여주고, 닉네임을 정할 때 같이 올라간다 (안 골라도 된다) */}
+        <div className="mt-4 flex items-center gap-4">
+          <label className="relative flex h-[72px] w-[72px] flex-none cursor-pointer items-center justify-center overflow-hidden rounded-full bg-gray-100 ring-1 ring-[#D3DFE5]">
+            {photo ? (
+              <img src={photo} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 4-6 8-6s8 2 8 6" /></svg>
+            )}
+            <span className="absolute bottom-0 right-0 flex h-6 w-6 items-center justify-center rounded-full bg-[#1A5E9A] text-white ring-2 ring-white">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+            </span>
+            <input type="file" accept="image/*" onChange={pickPhoto} className="hidden" />
+          </label>
+          <div className="min-w-0">
+            <p className="text-[14px] font-bold text-[#10262F]">프로필 사진 {photo ? "바꾸기" : "넣기"}</p>
+            <p className={`mt-0.5 text-[12.5px] ${upMsg ? "font-bold text-red-500" : "text-gray-400"}`}>
+              {upMsg || "좋아하는 캐릭터·그림도 돼 · 안 넣어도 돼"}
+            </p>
+          </div>
+        </div>
 
         <input
           value={value}
@@ -82,7 +169,7 @@ export function NicknameModal({ onDone, onClose }) {
           className="mt-4 h-12 w-full rounded-xl border border-[#D3DFE5] px-4 text-[15px] outline-none focus:border-[#1A5E9A]"
         />
         <p className={`mt-1.5 text-[12.5px] ${err ? "font-bold text-red-500" : "text-gray-400"}`}>
-          {err || "한글·영어·숫자 2~10자 · 정하면 7일 동안 못 바꿔"}
+          {err || "2~10자 · 숫자는 넣어도 안 넣어도 돼 · 정하면 7일 동안 못 바꿔"}
         </p>
 
         <div className="mt-3 flex flex-wrap items-center gap-1.5">

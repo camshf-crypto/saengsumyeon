@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { track } from "../../lib/track";
-import { announceNickname } from "../../components/NicknameEditor";
+import { announceNickname, uploadAvatar } from "../../components/NicknameEditor";
 
 const GRADES = ["고1", "고2", "고3"];
 
@@ -11,8 +11,32 @@ const NICK_RULE = /^[가-힣A-Za-z0-9]{2,10}$/;
 const ADJ = ["푸른", "맑은", "잔잔한", "반짝", "시원한", "작은", "깊은", "졸린", "신난", "느긋한"];
 const NOUN = ["물방울", "파도", "물결", "조약돌", "바다", "시냇물", "물개", "모래알", "소라", "윤슬"];
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
-const suggest = () =>
-  Array.from({ length: 3 }, () => `${pick(ADJ)}${pick(NOUN)}${100 + Math.floor(Math.random() * 900)}`);
+const suggest = () => {
+    // 숫자는 붙여도 안 붙여도 된다 — 추천은 숫자 없는 것 2개 + 숫자 붙은 것 1개
+    const out = new Set();
+    while (out.size < 2) out.add(`${pick(ADJ)}${pick(NOUN)}`);
+    out.add(`${pick(ADJ)}${pick(NOUN)}${100 + Math.floor(Math.random() * 900)}`);
+    return [...out];
+  };
+
+// 체크박스 — 색 채우지 않고 흰 네모에 V 표시만
+function Check({ checked, onChange }) {
+  return (
+    <span className="relative inline-flex h-[18px] w-[18px] flex-none items-center justify-center">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        className="absolute inset-0 m-0 cursor-pointer appearance-none rounded border border-gray-400 bg-white"
+      />
+      {checked && (
+        <svg className="pointer-events-none relative" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#111827" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M5 12l5 5L20 7" />
+        </svg>
+      )}
+    </span>
+  );
+}
 
 // 구글·카카오 로그인 뒤 처음 온 사람에게 이름·닉네임·학년·약관 동의를 받는 화면
 // 로그인 안 한 채로 들어오면 로그인 화면으로 보낸다
@@ -21,6 +45,10 @@ export default function Signup() {
   const { state } = useLocation(); // 결과 화면에서 넘어온 진단 정보
 
   const [email, setEmail] = useState("");
+  const [uid, setUid] = useState(null);
+  const [photo, setPhoto] = useState(null); // 고른 사진 미리보기
+  const [file, setFile] = useState(null); // 고른 사진 — 닉네임을 저장한 뒤 올린다
+  const [photoMsg, setPhotoMsg] = useState("");
   const [f, setF] = useState({ name: "", nickname: "", grade: state?.grade ?? "고3" });
   const [agree, setAgree] = useState({ terms: false, privacy: false, marketing: false });
   const [err, setErr] = useState("");
@@ -57,6 +85,7 @@ export default function Signup() {
       }
 
       setEmail(user.email ?? "");
+      setUid(user.id);
       setF((prev) => ({ ...prev, name: meta.full_name || meta.name || "" }));
       setReady(true);
     });
@@ -86,6 +115,16 @@ export default function Signup() {
     return () => clearTimeout(t);
   }, [f.nickname]);
 
+  function pickPhoto(e) {
+    const picked = e.target.files?.[0];
+    e.target.value = "";
+    if (!picked) return;
+    if (!picked.type.startsWith("image/")) return setPhotoMsg("사진 파일만 올릴 수 있어요");
+    setFile(picked);
+    setPhoto(URL.createObjectURL(picked));
+    setPhotoMsg("");
+  }
+
   const allChecked = agree.terms && agree.privacy && agree.marketing;
 
   function toggleAll() {
@@ -113,6 +152,15 @@ export default function Signup() {
     }
 
     announceNickname(nickname);
+
+    // 프로필 사진 (골랐을 때만) — 실패해도 가입은 계속한다 (내 레벨에서 다시 올리면 된다)
+    if (file && uid) {
+      try {
+        await uploadAvatar(uid, file);
+      } catch {
+        /* 넘어간다 */
+      }
+    }
 
     // 2) 이름·학년·약관
     const { error } = await supabase.auth.updateUser({
@@ -151,7 +199,7 @@ export default function Signup() {
     <div className="mx-auto max-w-md px-5 py-14">
       <h1 className="text-2xl font-extrabold tracking-tight text-sm-navy">가입 마무리</h1>
       <p className="mt-2 text-sm text-gray-500">
-        닉네임과 학년, 약관 동의만 확인하면 진단 결과 전체를 볼 수 있습니다.
+        프로필과 학년, 약관 동의만 확인하면 진단 결과 전체를 볼 수 있습니다.
       </p>
 
       {/* 결과 화면에서 넘어온 주제를 다시 보여준다 */}
@@ -164,7 +212,28 @@ export default function Signup() {
         </div>
       )}
 
-      <div className="mt-6 space-y-3">
+      {/* 프로필 사진 — 안 골라도 된다 */}
+      <div className="mt-6 flex items-center gap-4">
+        <label className="relative flex h-[72px] w-[72px] flex-none cursor-pointer items-center justify-center overflow-hidden rounded-full bg-gray-100 ring-1 ring-gray-300">
+          {photo ? (
+            <img src={photo} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 4-6 8-6s8 2 8 6" /></svg>
+          )}
+          <span className="absolute bottom-0 right-0 flex h-6 w-6 items-center justify-center rounded-full bg-sm-orange text-white ring-2 ring-white">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+          </span>
+          <input type="file" accept="image/*" onChange={pickPhoto} className="hidden" />
+        </label>
+        <div className="min-w-0">
+          <p className="text-[14px] font-bold text-sm-navy">프로필 사진 {photo ? "바꾸기" : "넣기"} <span className="font-medium text-gray-400">(선택)</span></p>
+          <p className={`mt-0.5 text-[12.5px] ${photoMsg ? "font-bold text-red-500" : "text-gray-400"}`}>
+            {photoMsg || "좋아하는 캐릭터·그림도 돼요 · 글과 댓글에 보여요"}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-5 space-y-3">
         {/* 로그인 계정 이메일은 보여주기만 한다 */}
         <input className={`${input} bg-gray-50 text-gray-500`} value={email} readOnly />
         <input
@@ -183,7 +252,7 @@ export default function Signup() {
             onChange={(e) => setF({ ...f, nickname: e.target.value.slice(0, 10) })}
           />
           <p className={`mt-1.5 text-[12.5px] ${nickColor} ${nick.status === "ok" || nick.status === "bad" ? "font-bold" : ""}`}>
-            {nick.msg || "한글·영어·숫자 2~10자 · 같은 닉네임은 한 명만 쓸 수 있어요"}
+            {nick.msg || "2~10자 · 숫자는 넣어도 되고 안 넣어도 돼요 · 같은 닉네임은 한 명만"}
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             <span className="text-[12px] text-gray-400">이건 어때요?</span>
@@ -224,22 +293,22 @@ export default function Signup() {
       {/* 약관 */}
       <div className="mt-7 rounded-xl border border-gray-200 p-4">
         <label className="flex cursor-pointer items-center gap-2 font-bold text-sm-navy">
-          <input type="checkbox" checked={allChecked} onChange={toggleAll} className="h-4 w-4 accent-orange-500" />
+          <Check checked={allChecked} onChange={toggleAll} />
           전체 동의
         </label>
         <div className="mt-3 space-y-2 border-t border-gray-100 pt-3 text-[13px] text-gray-600">
           <label className="flex cursor-pointer items-center gap-2">
-            <input type="checkbox" checked={agree.terms} onChange={() => setAgree({ ...agree, terms: !agree.terms })} className="h-4 w-4 accent-orange-500" />
+            <Check checked={agree.terms} onChange={() => setAgree({ ...agree, terms: !agree.terms })} />
             <span>[필수] 이용약관 동의</span>
             <Link to="/terms" target="_blank" className="ml-auto text-gray-400 underline">보기</Link>
           </label>
           <label className="flex cursor-pointer items-center gap-2">
-            <input type="checkbox" checked={agree.privacy} onChange={() => setAgree({ ...agree, privacy: !agree.privacy })} className="h-4 w-4 accent-orange-500" />
+            <Check checked={agree.privacy} onChange={() => setAgree({ ...agree, privacy: !agree.privacy })} />
             <span>[필수] 개인정보 수집·이용 동의</span>
             <Link to="/privacy" target="_blank" className="ml-auto text-gray-400 underline">보기</Link>
           </label>
           <label className="flex cursor-pointer items-center gap-2">
-            <input type="checkbox" checked={agree.marketing} onChange={() => setAgree({ ...agree, marketing: !agree.marketing })} className="h-4 w-4 accent-orange-500" />
+            <Check checked={agree.marketing} onChange={() => setAgree({ ...agree, marketing: !agree.marketing })} />
             <span>[선택] 마케팅 정보 수신 동의</span>
           </label>
         </div>

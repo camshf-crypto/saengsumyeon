@@ -4,12 +4,14 @@ import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/AuthContext";
 import { refLink } from "../../lib/referral";
 import { printPdf } from "../interview/Interview";
-import NicknameEditor, { fetchNickname, NICK_EVENT } from "../../components/NicknameEditor";
+import NicknameEditor, { fetchNickname, NICK_EVENT, uploadAvatar, AVATAR_EVENT } from "../../components/NicknameEditor";
+import Avatar from "../../components/Avatar";
+import MyTabs from "../../components/MyTabs";
 
 /*
  * 마이페이지 — /my
- * 위: 내 정보 · 남은 횟수 · 이용권/결제 · 친구 초대 · 다음에 해볼 것
- * 아래: 내 기록 탭 — 탐구주제 · 독서 · 지원동기 · 면접 · 탐구보고서 · 나만 그래?
+ * 위: 프로필(사진 · 레벨) · 나의 생수면(조각 · 쿠폰 · 뱃지 · 노트) · 내 정보 · 남은 횟수 · 이용권/결제 · 친구 초대 · 다음에 해볼 것
+ * 아래: 내 기록 탭 — 탐구주제 · 독서 · 지원동기 · 면접 · 탐구보고서 · 나만 그래? · 내 글 · 내 댓글
  * 맨 아래: 약관 · 로그아웃 · 회원 탈퇴(이유를 묻고 신청 → 관리자가 처리)
  * 주소 끝에 ?tab=reading 처럼 붙이면 그 탭으로 열린다
  */
@@ -21,6 +23,8 @@ const TABS = [
   { k: "interview", label: "면접", color: "#18224F", go: "/interview", empty: "아직 뽑은 예상 질문이 없어요." },
   { k: "inquiry", label: "탐구보고서", color: "#C2410C", go: "/inquiry", empty: "아직 시작한 탐구가 없어요." },
   { k: "mulgyeol", label: "나만 그래?", color: "#1A5E9A", go: "/mulgyeol", empty: "아직 답한 질문이 없어요." },
+  { k: "posts", label: "내 글", color: "#18224F", go: "/board", empty: "아직 쓴 글이 없어요." },
+  { k: "comments", label: "내 댓글", color: "#18224F", go: "/mulgyeol", empty: "아직 남긴 댓글이 없어요." },
 ];
 const PRODUCT = { interview: "면접 예상질문 1곳", interview6: "면접 예상질문 6곳", ten: "탐구보고서 10건", one: "탐구보고서 1건" };
 const ORDER_STATUS = { pending: "입금 확인 중", approved: "결제 완료", rejected: "취소됨", cancelled: "취소됨", refunded: "환불됨" };
@@ -178,6 +182,11 @@ export default function MyPage() {
   const [openId, setOpenId] = useState(null);
   const [copied, setCopied] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [lv, setLv] = useState(null); // 내 레벨
+  const [mine, setMine] = useState(null); // 나의 생수면 숫자 (my_summary)
+  const [photo, setPhoto] = useState(null);
+  const [my, setMy] = useState(null); // 학년 · 희망 학과
+  const [photoMsg, setPhotoMsg] = useState("");
 
   // 한눈에 보기 + 닉네임
   useEffect(() => {
@@ -187,10 +196,34 @@ export default function MyPage() {
       setSum(error ? { error: true } : d);
     });
     fetchNickname().then((d) => setNick(d?.is_auto ? null : d?.nickname ?? null));
+    supabase.rpc("lv_me").then(({ data: d }) => setLv(d || null));
+    supabase.rpc("my_summary").then(({ data: d }) => setMine(d || null));
+    supabase.rpc("my_profile").then(({ data: d }) => setPhoto(d?.avatar_url || null));
+    supabase.rpc("sm_get_my").then(({ data: d }) => setMy(d || null));
     const onNick = (e) => setNick(e.detail || null);
+    const onAvatar = (e) => setPhoto(e.detail || null);
     window.addEventListener(NICK_EVENT, onNick);
-    return () => window.removeEventListener(NICK_EVENT, onNick);
+    window.addEventListener(AVATAR_EVENT, onAvatar);
+    return () => {
+      window.removeEventListener(NICK_EVENT, onNick);
+      window.removeEventListener(AVATAR_EVENT, onAvatar);
+    };
   }, [authLoading, user]);
+
+  // 프로필 사진 바꾸기 (닉네임이 있어야 저장된다)
+  async function pickPhoto(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!nick) return setPhotoMsg("닉네임을 먼저 정해 주세요");
+    setPhotoMsg("올리는 중…");
+    try {
+      setPhoto(await uploadAvatar(user.id, file));
+      setPhotoMsg("");
+    } catch (er) {
+      setPhotoMsg(er.message || "사진을 올리지 못했어요");
+    }
+  }
 
   // 탭을 처음 열 때 그 탭 기록만 불러온다
   useEffect(() => {
@@ -209,6 +242,8 @@ export default function MyPage() {
         ? supabase.from("interview_queries").select("id, targets, university, department, result, created_at").order("created_at", { ascending: false }).limit(50)
         : tab === "inquiry"
         ? supabase.rpc("mypage_inquiries")
+        : tab === "posts" || tab === "comments"
+        ? supabase.rpc("my_activity", { p_kind: tab, p_limit: 50 })
         : supabase.rpc("mypage_mulgyeol");
     load.then(({ data: rows, error }) => {
       if (!alive) return;
@@ -301,17 +336,79 @@ export default function MyPage() {
   const toggle = (id) => setOpenId(openId === id ? null : id);
   const meta = user.user_metadata ?? {};
   const provider = user.app_metadata?.provider;
-  const counts = sum?.counts ?? {};
+  const counts = { ...(sum?.counts ?? {}), ...(mine ? { posts: mine.posts, comments: mine.comments } : {}) };
+  // 나의 생수면 — 누르면 그 화면으로
+  const tiles = mine
+    ? [
+        { name: "조각", value: `${num(mine.pieces)}개`, go: "/sb" },
+        { name: "할인 쿠폰", value: `${num(mine.coupons)}장`, go: "/my/level" },
+        { name: "뱃지", value: `${num(mine.badges)}/${num(mine.badges_total)}`, go: "/my/level" },
+        { name: "생기부 노트", value: `${num(mine.notes)}개`, go: "/my/note" },
+        { name: "나만 그래? 응답", value: `${num(mine.answers)}개`, go: "/mulgyeol" },
+        { name: "받은 나도 그래", value: `${num(mine.likes)}개`, go: "/my?tab=posts" },
+      ]
+    : [];
   const orders = sum?.orders ?? [];
   const ref = sum?.referral ?? {};
 
   return (
-    <div className="min-h-screen bg-[#F6F7F9]">
-      <div className="mx-auto max-w-2xl space-y-3.5 px-4 py-8 sm:px-5 sm:py-12">
-        <div className="px-1">
-          <p className="text-sm font-bold text-sm-orange">마이페이지</p>
-          <h1 className="mt-1.5 text-2xl font-extrabold tracking-tight text-sm-navy">{nick || profile?.name || "회원"}님</h1>
-        </div>
+    <div className="min-h-screen bg-[#F4F5F7]">
+      <div className="mx-auto max-w-2xl space-y-3.5 px-4 pb-20 pt-6 sm:px-5 sm:pt-10">
+        <MyTabs />
+
+        {/* 프로필 — 사진 · 닉네임 · 레벨 */}
+        <section className="rounded-2xl border border-gray-200 bg-white p-5">
+          <div className="flex items-center gap-4">
+            <label className="relative flex-none cursor-pointer" title="프로필 사진 바꾸기">
+              <Avatar src={photo} nick={nick || profile?.name} color={lv?.color} size={64} round />
+              <span className="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-sm-navy text-white ring-2 ring-white">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+              </span>
+              <input type="file" accept="image/*" onChange={pickPhoto} className="hidden" />
+            </label>
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-[21px] font-extrabold tracking-tight text-sm-navy">{nick || profile?.name || "회원"}</h1>
+              <p className="mt-0.5 text-[12.5px] text-gray-500">
+                {[my?.grade || meta.grade, my?.department].filter(Boolean).join(" · ") || "학년 · 희망 학과"}
+              </p>
+              {photoMsg && <p className="mt-0.5 text-[12px] font-bold text-red-500">{photoMsg}</p>}
+            </div>
+          </div>
+          {lv && (
+            <Link to="/my/level" className="mt-4 block rounded-xl bg-gray-50 p-3.5">
+              <div className="flex items-center gap-2">
+                <i className="h-2 w-2 rounded-full" style={{ background: lv.color }} />
+                <b className="text-[14px] text-sm-navy">
+                  {lv.stage} · Lv.{lv.level}
+                </b>
+                <span className="ml-auto text-[12px] text-gray-500">{lv.max ? "최고 레벨" : `다음 레벨까지 ${lv.need}점`}</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
+              </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-200">
+                <div className="h-full rounded-full" style={{ width: `${lv.pct}%`, background: lv.color }} />
+              </div>
+            </Link>
+          )}
+        </section>
+
+        {/* 나의 생수면 */}
+        {tiles.length > 0 && (
+          <Card title="나의 생수면">
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {tiles.map((t) => (
+                <Link key={t.name} to={t.go} className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 transition hover:border-gray-300">
+                  <p className="text-[11.5px] text-gray-500">{t.name}</p>
+                  <p className="mt-0.5 text-[17px] font-black text-sm-navy">{t.value}</p>
+                </Link>
+              ))}
+            </div>
+            {num(mine.events) > 0 && (
+              <Link to="/my/level" className="mt-2 block rounded-xl bg-orange-50 px-3 py-2.5 text-[13px] font-bold text-[#C2410C]">
+                입시설명회 신청 {num(mine.events)}건 · 일정 보기
+              </Link>
+            )}
+          </Card>
+        )}
 
         {/* 탈퇴 신청 중 */}
         {sum?.withdraw && (
@@ -702,7 +799,7 @@ export default function MyPage() {
                       <div className="mt-1.5 flex items-center justify-between">
                         <span className="text-[11.5px] text-gray-400">
                           {day(c.created_at)}
-                          {c.hidden && <b className="ml-1.5 text-red-500">신고가 쌓여 가려졌어요</b>}
+                          {c.hidden && <b className="ml-1.5 text-red-500">관리자가 가렸어요</b>}
                         </span>
                         <button onClick={() => deleteComment(c.id)} className="px-1 py-1 text-[12px] text-gray-400 hover:text-red-500">
                           지우기
@@ -713,6 +810,36 @@ export default function MyPage() {
                 </div>
               </div>
             )}
+            {/* 내 글 */}
+            {!busy && tab === "posts" &&
+              rows.map((p) => (
+                <Link key={p.id} to={`/board/${p.id}`} className="block rounded-xl border border-gray-200 p-4">
+                  <p className="text-[11.5px] font-bold text-gray-500">
+                    {p.tag} · {day(p.created_at)}
+                    {p.hidden && <b className="ml-1.5 text-red-500">관리자가 가렸어요</b>}
+                  </p>
+                  <p className="mt-1 text-[14.5px] font-bold leading-relaxed text-sm-navy">{p.title}</p>
+                  <p className="mt-1 text-[12px] text-gray-500">
+                    나도 그래 {num(p.likes)} · 댓글 {num(p.comments)}
+                  </p>
+                </Link>
+              ))}
+
+            {/* 내 댓글 — 자유게시판 · 입시 칼럼 · 나만 그래? */}
+            {!busy && tab === "comments" &&
+              rows.map((c) => (
+                <Link key={c.id} to={c.link} className="block rounded-xl border border-gray-200 p-4">
+                  <p className="truncate text-[11.5px] text-gray-500">
+                    <b className="text-sm-navy">{c.place}</b>
+                    {c.title ? ` · ${c.title}` : ""}
+                  </p>
+                  <p className="mt-1 whitespace-pre-line text-[14px] leading-relaxed text-gray-800">{c.body}</p>
+                  <p className="mt-1 text-[11.5px] text-gray-400">
+                    {day(c.created_at)}
+                    {c.hidden && <b className="ml-1.5 text-red-500">관리자가 가렸어요</b>}
+                  </p>
+                </Link>
+              ))}
           </div>
         </Card>
 

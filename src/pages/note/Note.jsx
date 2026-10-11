@@ -9,7 +9,6 @@ import { supabase } from "../../lib/supabase";
  * 고1을 다 채우면 (교과 세특 10과목 + 자율 · 동아리 · 진로 = 13칸) AI 입시 방향 진단이 열린다
  * 세특 과목 수: 고1 10 · 고2 10 · 고3 6 (고3은 1학기까지만 반영)
  * 독서는 대입에 반영되지 않아 선택 (적으면 진단에 참고만)
- * 저장할 때마다 레벨 +3점 (하루 9점까지)
  */
 
 const GRADES = ["고1", "고2", "고3"];
@@ -117,13 +116,12 @@ export default function Note() {
     setBusy(false);
     if (error) return setErr(error.message);
     setF((x) => ({ ...x, subject: x.kind === "subject" ? "" : x.subject, content: "", author: "" }));
-    flash(data?.points ? `저장했어요 · +3점 (오늘 ${Math.min(data.today, 3) * 3}/9)` : "저장했어요 · 오늘 기록 점수는 다 받았어요");
+    flash(data?.piece > 0 ? "저장했어요 · 조각 +1" : "저장했어요");
     load();
-    supabase.rpc("lv_check");
   }
 
   async function remove(a) {
-    if (!window.confirm("이 활동을 지울까요? 지우면 이 활동으로 받은 점수도 빠져요.")) return;
+    if (!window.confirm("이 활동을 지울까요?")) return;
     await supabase.rpc("note_delete", { p_id: a.id });
     load();
   }
@@ -189,7 +187,7 @@ export default function Note() {
           <button disabled className="mt-4 h-11 w-full rounded-[10px] bg-white/10 text-[14px] font-bold text-slate-300">
             {unlock.complete ? "AI 진단 받기 (곧 열려요)" : `${unlock.total - unlock.done}칸만 더 채우면 진단이 열려요`}
           </button>
-          <p className="mt-3 text-[11.5px] text-slate-400">고2 · 고3 활동까지 적을수록 진단이 더 정확해져요 · 저장할 때마다 레벨 +3점</p>
+          <p className="mt-3 text-[11.5px] text-slate-400">고2 · 고3 활동까지 적을수록 진단이 더 정확해져요</p>
         </div>
 
         {/* 학년(가입 정보) · 희망 학과 */}
@@ -298,7 +296,7 @@ export default function Note() {
           {f.kind === "book" && <p className="text-[11.5px] text-gray-400">독서는 대입에 직접 반영되지 않지만, 진단할 때 관심 분야를 보는 데 참고해요.</p>}
           {err && <p className="text-[13px] font-semibold text-red-600">{err}</p>}
           <button disabled={busy} className="h-12 rounded-[10px] bg-sm-navy text-[15px] font-bold text-white disabled:opacity-50">
-            {busy ? "저장 중…" : "활동 저장 · +3점"}
+            {busy ? "저장 중…" : "활동 저장"}
           </button>
           <p className="text-[11.5px] leading-relaxed text-gray-400">생기부 문장을 그대로 옮기지 말고, 내가 한 일을 내 말로 한 줄 요약해 적어 주세요.</p>
         </form>

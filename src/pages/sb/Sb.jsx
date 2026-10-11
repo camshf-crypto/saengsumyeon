@@ -20,6 +20,7 @@ const MISSION_GO = {
   mg5: "/mulgyeol", mgc: "/mulgyeol", first_comment: "/mulgyeol",
   topic: "/topic", read: "/reading", motive: "/motive", iv: "/interview",
   nick: "/my", friend: "/my", wonder: null, quiz: null, plan: null,
+  post: "/board", note: "/my/note", // 자유게시판 글 쓰기 · 생기부 노트 활동 적기
 };
 const GRP = { day: "오늘", week: "이번 주", once: "한 번만", free: "언제든" };
 const HALF = { att: true, mg5: true }; // 반 개씩 — 둘 다 하면 조각 1개
@@ -132,6 +133,7 @@ export default function Sb() {
   const [busy, setBusy] = useState(false);
   const [gradeAsk, setGradeAsk] = useState(false);
   const [streak, setStreak] = useState(0); // 오늘까지 며칠 연속 출석했는지
+  const [half, setHalf] = useState(0); // 모아 둔 반쪽 (0 또는 1)
   const [progress, setProgress] = useState([]); // 이어서 깨기 (내가 열던 생기부)
   const paperRef = useRef(null);
   const [paperW, setPaperW] = useState(0); // 화면 폭에 맞춘 생기부 종이 너비
@@ -150,6 +152,7 @@ export default function Sb() {
     if (!user) return setMe(null);
     const { data: ck } = await supabase.rpc("sb_checkin");
     setStreak(num(ck?.streak));
+    supabase.rpc("sb_half").then(({ data: h }) => setHalf(num(h)));
     const { data, error } = await supabase.rpc("sb_me");
     if (error) return console.warn("sb_me failed", error);
     setMe(data);
@@ -236,6 +239,7 @@ export default function Sb() {
 
   const myGrade = num(me?.grade) || 1;
   const balance = num(me?.balance);
+  const shown = balance + half * 0.5; // 화면에 보이는 조각 수 (반쪽 포함, 예: 4.5)
   const cost = num(board?.tier?.cost) || 1;
   const size = num(board?.board?.size);
   const opened = useMemo(() => new Set(board?.opened ?? []), [board]);
@@ -290,7 +294,7 @@ export default function Sb() {
   const coin = user ? (
     <span className="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-orange-50 px-3 text-[13.5px] font-black text-[#C2410C]">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"><path d="M12 3l7 4v10l-7 4-7-4V7z" /></svg>
-      조각 {balance}
+      조각 {shown}
     </span>
   ) : (
     <Link to="/login" className="shrink-0 rounded-full bg-sm-orange px-3.5 py-2 text-[13px] font-bold text-white">로그인하고 조각 받기</Link>
@@ -657,6 +661,9 @@ export default function Sb() {
   const groups = ["day", "week", "once", "free"]
     .map((g) => ({ g, items: missions.filter((m) => m.grp === g) }))
     .filter((x) => x.items.length);
+  // 오늘 받은 조각 — 출석·오늘 질문 5개 중 하나만 했으면 0.5 를 더해 보여준다 (둘 다 하면 1개로 들어온다)
+  const halfDone = missions.filter((m) => HALF[m.id] && m.done).length;
+  const todayGot = num(me?.today?.got) + (halfDone === 1 ? 0.5 : 0);
   const sheetLine = sheet !== null ? lay.rows.find((r) => sheet >= r.first && sheet < r.first + r.count) : null;
 
   const sheetView = sheet !== null && (
@@ -679,23 +686,25 @@ export default function Sb() {
           <>
             {balance >= cost ? (
               <button onClick={open} disabled={busy} className="mt-3 h-12 w-full rounded-2xl bg-sm-orange text-[15px] font-black text-white disabled:opacity-50">
-                {busy ? "여는 중…" : `조각 ${cost}개로 열기 · ${balance}개 있어`}
+                {busy ? "여는 중…" : `조각 ${cost}개로 열기 · ${shown}개 있어`}
               </button>
             ) : (
-              <p className="mt-3 rounded-2xl bg-red-50 px-4 py-3 text-[13.5px] font-bold text-red-600">조각이 없어. 아래 미션으로 받을 수 있어</p>
+              <p className="mt-3 rounded-2xl bg-red-50 px-4 py-3 text-[13.5px] font-bold text-red-600">
+                {shown > 0 ? `조각이 ${shown}개야. 1개가 되면 열 수 있어` : "조각이 없어. 아래 미션으로 받을 수 있어"}
+              </p>
             )}
 
             <p className="mt-4 text-[13.5px] font-black text-sm-navy">
               조각 받기
               <span className="ml-1.5 font-medium text-gray-500">
-                오늘 {num(me?.today?.got)}/{num(me?.today?.cap)} · 이번 주 {num(me?.week?.got)}/{num(me?.week?.cap)}
+                오늘 {todayGot}/{num(me?.today?.cap)} · 이번 주 {num(me?.week?.got)}/{num(me?.week?.cap)}
               </span>
             </p>
             {groups.map(({ g, items }) => (
               <div key={g} className="mt-2">
                 <p className="text-[12px] font-bold text-gray-500">
                   {GRP[g]}
-                  {g === "day" && <span className="ml-1.5 font-medium text-gray-400">출석 + 오늘 질문 5개를 둘 다 하면 조각 1개</span>}
+                  {g === "day" && <span className="ml-1.5 font-medium text-gray-400">0.5짜리 2개가 모이면 조각 1개 (다른 날 것도 합쳐져)</span>}
                 </p>
                 <div className="mt-1 overflow-hidden rounded-xl border border-gray-200">
                   {items.map((m, i) => {

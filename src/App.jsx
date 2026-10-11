@@ -7,6 +7,7 @@ import { saveRefCode } from "./lib/referral";
 import Header from "./components/Header";
 import SbNotice from "./components/SbNotice";
 import Footer from "./components/Footer";
+import LevelUpHost from "./components/LevelUp";
 
 import Landing from "./pages/landing/Landing";
 import Result from "./pages/landing/Result";
@@ -32,6 +33,7 @@ import Note from "./pages/note/Note";
 import { BoardList, BoardPost } from "./pages/board/Board";
 import Level from "./pages/level/Level";
 import AdminColumns from "./pages/admin/AdminColumns";
+import AdminCommunity from "./pages/admin/AdminCommunity";
 import { Terms, Privacy, Refund } from "./pages/legal/Legal";
 
 // 화면을 옮기면 항상 맨 위에서 시작한다
@@ -80,13 +82,20 @@ function Layout({ children }) {
   // 앱처럼 쓰는 화면은 공통 머리·꼬리 없이
   const workspace = pathname.startsWith("/inquiry/") || pathname.startsWith("/admin/orders");
 
-  if (workspace) return <main className="min-h-screen">{children}</main>;
+  if (workspace)
+    return (
+      <main className="min-h-screen">
+        {children}
+        <LevelUpHost />
+      </main>
+    );
 
   return (
     <div className="flex min-h-screen flex-col bg-white">
       <Header />
       <main className="flex-1">{children}</main>
       <Footer />
+      <LevelUpHost />
     </div>
   );
 }
@@ -150,6 +159,8 @@ export default function App() {
             <Route path="/admin/orders" element={<AdminOrders />} />
             {/* 입시 칼럼 쓰기 · 예약 공개 */}
             <Route path="/admin/columns" element={<AdminColumns />} />
+            {/* 설명회 만들기 · 신청 명단 · 글 숨기기 · 정지 */}
+            <Route path="/admin/community" element={<AdminCommunity />} />
 
             {/* 약관 */}
             <Route path="/terms" element={<Terms />} />

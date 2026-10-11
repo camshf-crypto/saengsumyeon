@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { checkLevel } from "../../components/LevelUp";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/AuthContext";
@@ -279,7 +280,7 @@ function Comments({ q, grade, user, onCount, toast }) {
       onCount(1);
       window.dispatchEvent(new Event(SB_CHECK)); // 댓글 조각 알림
       if (text.length >= 10) toast?.("댓글 +2점");
-      supabase.rpc("lv_check").then(({ data: chk }) => chk?.level_up && toast?.(`Lv.${chk.info.level} ${chk.info.stage}이 됐어!`));
+      checkLevel();
       await load();
     } catch (e) {
       setErr(e?.message || "댓글을 남기지 못했어요");
@@ -349,7 +350,7 @@ function Comments({ q, grade, user, onCount, toast }) {
       {!c.author && likeOf(c).author?.level && (
         <span className="inline-flex h-[17px] items-center gap-1 rounded border border-[#D3DFE5] px-1 text-[10.5px] font-bold text-[#33505C]">
           <i className="h-1.5 w-1.5 rounded-full" style={{ background: likeOf(c).author.color }} />
-          Lv.{likeOf(c).author.level}
+          {likeOf(c).author.stage ?? `Lv.${likeOf(c).author.level}`}
         </span>
       )}
       <span className="max-w-[120px] truncate font-bold text-[#10262F]">{displayName(c)}</span>
@@ -571,7 +572,9 @@ function Card({ q, grade, user, onAnswer, onCount, dept, toast }) {
               </button>
             </div>
             <p className="mt-1.5 text-center text-[12px] text-gray-400">
-              {countOf(q) >= SHOW_COUNT_FROM
+              {!user
+                ? "로그인하면 바로 답하고 결과를 볼 수 있어"
+                : countOf(q) >= SHOW_COUNT_FROM
                 ? `${countOf(q).toLocaleString()}명이 답했어 · 누르면 결과가 보여`
                 : "누르면 다른 고등학생들 결과가 보여"}
             </p>
@@ -616,6 +619,7 @@ function Card({ q, grade, user, onAnswer, onCount, dept, toast }) {
 }
 export default function Mulgyeol() {
   const { user, loading: authLoading } = useAuth();
+  const nav = useNavigate();
   const [feed, setFeed] = useState(null);
   const [err, setErr] = useState("");
   const [grade, setGrade] = useState(readGrade);
@@ -745,14 +749,18 @@ export default function Mulgyeol() {
     window.dispatchEvent(new Event(SB_CHECK)); // 오늘 질문 5개를 다 답했으면 조각 알림
     if (user) {
       loadDept();
-      supabase.rpc("lv_check").then(({ data: chk }) => {
-        if (chk?.level_up) toast(`Lv.${chk.info.level} ${chk.info.stage}이 됐어!`);
-        else if (!q.my_answer) toast("+1점");
+      checkLevel().then((chk) => {
+        if (!chk?.level_up && !q.my_answer) toast("+1점");
       });
     }
     return true;
   };
   const answer = async (q, value) => {
+    // 나만 그래?는 회원만 답할 수 있다
+    if (!user) {
+      nav("/login");
+      return false;
+    }
     if (!grade) {
       setAsking({
         q,
