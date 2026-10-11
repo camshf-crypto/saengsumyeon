@@ -26,6 +26,12 @@ import InquiryReport from "./pages/inquiry/InquiryReport";
 import PositionReport from "./pages/ladder/PositionReport";
 import Mulgyeol from "./pages/mulgyeol/Mulgyeol";
 import Sb from "./pages/sb/Sb";
+import Home from "./pages/home/Home";
+import { ColumnList, ColumnRead } from "./pages/columns/Columns";
+import Note from "./pages/note/Note";
+import { BoardList, BoardPost } from "./pages/board/Board";
+import Level from "./pages/level/Level";
+import AdminColumns from "./pages/admin/AdminColumns";
 import { Terms, Privacy, Refund } from "./pages/legal/Legal";
 
 // 화면을 옮기면 항상 맨 위에서 시작한다
@@ -94,9 +100,9 @@ export default function App() {
         <SbNotice />
         <Layout>
           <Routes>
-            {/* 진단 흐름: 주제 입력 → 결과(일부 공개) → 가입 → 결과 전체 */}
-            <Route path="/" element={<Landing />} />
-            {/* 탐구주제 흔한가 — 메인(/)과 같은 화면. 흔한가 시리즈 주소를 맞추려고 따로 둔다 (예전 링크 /는 그대로 동작) */}
+            {/* 메인 — 검색창(탐구주제 흔한가 입구) · 칼럼 배너 · 메뉴 8칸 · 지금 많이 보는 글 · 내 레벨 */}
+            <Route path="/" element={<Home />} />
+            {/* 탐구주제 흔한가 — 메인 검색창에서 넘어온다 (?q=주제) */}
             <Route path="/topic" element={<Landing />} />
             {/* 결과는 로그인 없이도 보여야 한다. 잠금은 화면 안에서 처리 */}
             <Route path="/result" element={<Result />} />
@@ -120,7 +126,17 @@ export default function App() {
             <Route path="/mulgyeol" element={<Mulgyeol />} />
             <Route path="/sb" element={<Sb />} />
 
-            {/* 내 기록 — 권한은 화면 안에서 확인 */}
+            {/* 입시 칼럼 — 화 · 목 오후 5시 공개 */}
+            <Route path="/columns" element={<ColumnList />} />
+            <Route path="/columns/:id" element={<ColumnRead />} />
+
+            {/* 자유게시판 — 글쓰기는 Lv.3부터 */}
+            <Route path="/board" element={<BoardList />} />
+            <Route path="/board/:id" element={<BoardPost />} />
+
+            {/* 내 기록 — 권한은 화면 안에서 확인. /my/… 가 /my 보다 먼저 */}
+            <Route path="/my/note" element={<Note />} />
+            <Route path="/my/level" element={<Level />} />
             <Route path="/my" element={<MyPage />} />
 
             {/* 인증 — 구글 로그인 후 /auth/callback으로 돌아온다 */}
@@ -132,6 +148,8 @@ export default function App() {
             <Route path="/admin" element={<AdminTopics />} />
             {/* 입금 확인 — 아이폰 홈 화면 앱으로 쓰고 새 주문은 푸시 알림 */}
             <Route path="/admin/orders" element={<AdminOrders />} />
+            {/* 입시 칼럼 쓰기 · 예약 공개 */}
+            <Route path="/admin/columns" element={<AdminColumns />} />
 
             {/* 약관 */}
             <Route path="/terms" element={<Terms />} />

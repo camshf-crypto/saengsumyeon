@@ -4,9 +4,7 @@
 // 비밀값: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT (관리자 폰 푸시 알림)
 //
 // 요청 (로그인 필수)
-//   { product: "ten" | "interview" | "interview6", depositor, receipt?, inquiry_id? }
-//   interview  = 생기부 예상질문 지원 대학 1곳 19,000원
-//   interview6 = 생기부 예상질문 수시 6곳 24,000원
+//   { product: "ten" | "interview", depositor, receipt?, inquiry_id?, pieces?, coupon_id? }
 //
 // 금액을 바꾸면 화면(src/pages/inquiry/Paywall.jsx)과 DB 함수 grant_order 의 금액도 같이 바꿔야 한다
 
@@ -23,8 +21,7 @@ const json = (body: unknown, status = 200) =>
 
 const PRODUCTS: Record<string, { name: string; qty: number; amount: number }> = {
   ten: { name: "탐구 10건", qty: 10, amount: 29000 },
-  interview: { name: "생기부 예상질문 1곳", qty: 1, amount: 19000 },
-  interview6: { name: "생기부 예상질문 6곳", qty: 1, amount: 24000 },
+  interview: { name: "생기부 예상질문", qty: 1, amount: 19000 },
 };
 
 /*
@@ -83,11 +80,18 @@ Deno.serve(async (req) => {
       p_depositor: depositor,
       p_receipt: body.receipt ? String(body.receipt) : null,
       p_inquiry: body.inquiry_id ?? null,
+      // 조각 할인(1개 50원, 25%까지) · 쿠폰 — 금액은 서버가 다시 계산한다
+      p_pieces: Math.max(0, Math.floor(Number(body.pieces ?? 0)) || 0),
+      p_coupon: body.coupon_id ?? null,
     });
     if (error) {
       console.error("grant_order failed", error?.message, error?.details, error?.hint);
       return json({ error: "주문을 저장하지 못했어요. 잠시 후 다시 시도해 주세요." }, 500);
     }
+
+    // 할인 반영된 실제 입금 금액
+    const { data: ord } = await admin.from("pay_orders").select("amount, discount").eq("id", orderId).single();
+    const pay = ord?.amount ?? p.amount;
 
     // 확인 예정 시각 — 밤 12시~아침 6시는 오전 8시, 그 외에는 2시간 안
     const hour = Number(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul", hour: "numeric", hour12: false })) % 24;
@@ -96,11 +100,11 @@ Deno.serve(async (req) => {
     // 알림은 실패해도 주문 접수에 영향 없게
     await notifyAdmins(admin, {
       title: "💰 입금 확인 요청",
-      body: `${depositor} · ${p.name} ${p.amount.toLocaleString()}원${body.receipt ? " · 현금영수증" : ""}`,
+      body: `${depositor} · ${p.name} ${pay.toLocaleString()}원${ord?.discount ? ` (할인 ${ord.discount.toLocaleString()}원)` : ""}${body.receipt ? " · 현금영수증" : ""}`,
       url: "/admin/orders",
     }).catch((e) => console.error("notify failed", String(e)));
 
-    return json({ order_id: orderId, status: "pending", eta });
+    return json({ order_id: orderId, status: "pending", eta, amount: pay });
   } catch (e) {
     console.error("unhandled", e);
     return json({ error: "서버 오류가 발생했습니다." }, 500);

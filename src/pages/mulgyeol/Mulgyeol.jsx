@@ -9,6 +9,7 @@ import NicknameEditor, {
   needsNickname,
 } from "../../components/NicknameEditor";
 import { SB_CHECK } from "../../components/SbNotice";
+import UserAvatar from "../../components/Avatar";
 const SHOW_COUNT_FROM = 1; // 1명부터 실제 숫자를 그대로 보여준다
 const GRADE_KEY = "sm_grade";
 const GRADES = ["고1", "고2", "고3"];
@@ -121,7 +122,7 @@ function GradeAsk({ onPick, onClose }) {
     </div>
   );
 }
-function Result({ q, grade, onChange }) {
+function Result({ q, grade, onChange, dept }) {
   const r = q.result ?? {};
   const total = num(r.total);
   const same = q.my_answer === "yes" ? num(r.yes) : num(r.no);
@@ -174,6 +175,12 @@ function Result({ q, grade, onChange }) {
         <span style={{ color: BLUE }}>나도 그래 {yesPct}%</span>
         <span style={{ color: SAND }}>난 아닌데 {100 - yesPct}%</span>
       </div>
+      {dept?.pct != null && (
+        <p className="mt-2 text-[12.5px] text-gray-600">
+          {dept.name} 지망생 중에서는{" "}
+          <b style={{ color: BLUE }}>{dept.pct}%</b>가 나도 그래
+        </p>
+      )}
       {gradeResults.length > 1 && (
         <p className="mt-2 text-[12.5px] text-gray-500">
           {gradeResults
@@ -195,9 +202,10 @@ function Result({ q, grade, onChange }) {
     </div>
   );
 }
-function Comments({ q, grade, user, onCount }) {
+function Comments({ q, grade, user, onCount, toast }) {
   const nav = useNavigate();
   const [list, setList] = useState(null);
+  const [likes, setLikes] = useState({}); // 댓글 id → { likes, liked, author(레벨) }
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -230,6 +238,12 @@ function Comments({ q, grade, user, onCount }) {
           return;
         }
         setList(Array.isArray(data) ? data : []);
+        // 나도 그래 수 · 내가 눌렀는지 · 쓴 사람 레벨
+        supabase.rpc("mg_comment_likes", { p_question: String(q.id) }).then(({ data: lk }) => {
+          const m = {};
+          (lk || []).forEach((x) => (m[String(x.id)] = x));
+          setLikes(m);
+        });
       })
       .catch((error) => {
         console.warn("comments failed", error);
@@ -264,6 +278,8 @@ function Comments({ q, grade, user, onCount }) {
       }
       onCount(1);
       window.dispatchEvent(new Event(SB_CHECK)); // 댓글 조각 알림
+      if (text.length >= 10) toast?.("댓글 +2점");
+      supabase.rpc("lv_check").then(({ data: chk }) => chk?.level_up && toast?.(`Lv.${chk.info.level} ${chk.info.stage}이 됐어!`));
       await load();
     } catch (e) {
       setErr(e?.message || "댓글을 남기지 못했어요");
@@ -295,23 +311,30 @@ function Comments({ q, grade, user, onCount }) {
     }
     load();
   };
-  const report = async (id) => {
+  const like = async (id) => {
     if (!user) {
       nav("/login");
       return;
     }
-    if (!window.confirm("이 댓글을 신고할까? 신고가 쌓이면 자동으로 가려져.")) return;
-    const { error } = await supabase.rpc("mulgyeol_comment_report", {
-      p_comment_id: id,
-    });
+    const { data, error } = await supabase.rpc("like_toggle", { p_kind: "mg_comment", p_id: String(id) });
     if (error) {
-      window.alert(error.message || "신고하지 못했어");
+      window.alert(error.message || "누르지 못했어");
       return;
     }
-    window.alert("신고했어. 고마워!");
+    setLikes((m) => ({ ...m, [String(id)]: { ...(m[String(id)] || {}), likes: data.likes, liked: data.liked } }));
   };
   const comments = list ?? [];
-  const roots = comments.filter((c) => !c.parent_id);
+  const likeOf = (c) => likes[String(c.id)] || {};
+  // 나도 그래 3개 이상 받은 댓글 중 1등은 베스트로 맨 위에
+  const bestId = (() => {
+    const top = comments
+      .filter((c) => !c.parent_id && !c.author && num(likeOf(c).likes) >= 3)
+      .sort((a, b) => num(likeOf(b).likes) - num(likeOf(a).likes))[0];
+    return top ? top.id : null;
+  })();
+  const roots = comments
+    .filter((c) => !c.parent_id)
+    .sort((a, b) => (a.id === bestId ? -1 : b.id === bestId ? 1 : 0));
   const repliesOf = (id) => comments.filter((c) => Number(c.parent_id) === Number(id));
   const displayName = (c) => {
     if (c.author) return CHAR[c.author]?.name ?? c.author;
@@ -319,6 +342,16 @@ function Comments({ q, grade, user, onCount }) {
   };
   const Meta = ({ c, reply = false }) => (
     <div className="flex min-w-0 items-center gap-1.5 text-[12px]">
+      {c.id === bestId && <span className="font-bold text-amber-600">베스트</span>}
+      {!c.author && likeOf(c).author && (
+        <UserAvatar src={likeOf(c).author.avatar} nick={displayName(c)} color={likeOf(c).author.color} size={20} round />
+      )}
+      {!c.author && likeOf(c).author?.level && (
+        <span className="inline-flex h-[17px] items-center gap-1 rounded border border-[#D3DFE5] px-1 text-[10.5px] font-bold text-[#33505C]">
+          <i className="h-1.5 w-1.5 rounded-full" style={{ background: likeOf(c).author.color }} />
+          Lv.{likeOf(c).author.level}
+        </span>
+      )}
       <span className="max-w-[120px] truncate font-bold text-[#10262F]">{displayName(c)}</span>
       {!c.author && c.grade && <span className="text-gray-500">· {c.grade}</span>}
       <span className="text-gray-400">· {ago(c.created_at)}</span>
@@ -335,15 +368,11 @@ function Comments({ q, grade, user, onCount }) {
             댓글
           </button>
         )}
-        {c.mine ? (
+        {c.mine && (
           <button type="button" onClick={() => remove(c.id)} className="text-gray-400 hover:text-red-500">
             지우기
           </button>
-        ) : !c.author ? (
-          <button type="button" onClick={() => report(c.id)} className="text-gray-300 hover:text-gray-500">
-            신고
-          </button>
-        ) : null}
+        )}
       </span>
     </div>
   );
@@ -354,9 +383,21 @@ function Comments({ q, grade, user, onCount }) {
         {roots.map((c) => {
           const replies = repliesOf(c.id);
           return (
-            <li key={c.id} className="py-4 first:pt-1 last:pb-1">
+            <li key={c.id} className={`py-4 first:pt-1 last:pb-1 ${c.id === bestId ? "-mx-2 rounded-xl bg-amber-50/70 px-2" : ""}`}>
               <Meta c={c} />
               <p className="mt-1 whitespace-pre-line text-[14px] leading-relaxed text-[#10262F]">{c.body}</p>
+              {!c.author && (
+                <button
+                  type="button"
+                  onClick={() => like(c.id)}
+                  disabled={c.mine}
+                  className={`mt-2 rounded-full border px-2.5 py-0.5 text-[12px] font-bold ${
+                    likeOf(c).liked ? "border-[#1A5E9A] bg-[#E4EFF8] text-[#1A5E9A]" : "border-[#D3DFE5] text-gray-500"
+                  }`}
+                >
+                  나도 그래 {num(likeOf(c).likes)}
+                </button>
+              )}
               {replies.length > 0 && (
                 <ul className="mt-3 ml-5 divide-y divide-[#EEF2F4] border-l border-[#DCE5EA] pl-4">
                   {replies.map((r) => (
@@ -477,7 +518,7 @@ function Comments({ q, grade, user, onCount }) {
     </div>
   );
 }
-function Card({ q, grade, user, onAnswer, onCount }) {
+function Card({ q, grade, user, onAnswer, onCount, dept, toast }) {
   const [open, setOpen] = useState(false);
   const [changing, setChanging] = useState(false);
   const answered = Boolean(q.my_answer) && !changing;
@@ -505,6 +546,7 @@ function Card({ q, grade, user, onAnswer, onCount }) {
           <Result
             q={q}
             grade={grade}
+            dept={dept}
             onChange={() => {
               setChanging(true);
             }}
@@ -563,6 +605,7 @@ function Card({ q, grade, user, onAnswer, onCount }) {
           q={q}
           grade={grade}
           user={user}
+          toast={toast}
           onCount={(d) => {
             onCount(q.id, d);
           }}
@@ -579,6 +622,22 @@ export default function Mulgyeol() {
   const [asking, setAsking] = useState(null);
   const [showOld, setShowOld] = useState(10);
   const clientId = useMemo(() => getClientId(), []);
+  const [deptStats, setDeptStats] = useState({}); // 질문 id → { name, pct } (같은 학과 응답 10명 이상일 때만)
+  const [toastMsg, setToastMsg] = useState("");
+  const toast = (m) => {
+    setToastMsg(m);
+    setTimeout(() => setToastMsg(""), 1800);
+  };
+  const loadDept = useCallback(() => {
+    if (!user) return;
+    supabase.rpc("mg_stats").then(({ data }) => {
+      const m = {};
+      (data || []).forEach((x) => {
+        if (x.dept && x.dept_yes_pct != null) m[String(x.id)] = { name: x.dept, pct: x.dept_yes_pct };
+      });
+      setDeptStats(m);
+    });
+  }, [user]);
   useEffect(() => {
     const g = user?.user_metadata?.grade;
     if (!grade && GRADES.includes(g)) {
@@ -612,6 +671,7 @@ export default function Mulgyeol() {
   useEffect(() => {
     if (!authLoading) {
       load();
+      loadDept();
     }
   }, [authLoading, user, load]);
   // 한국 시간 밤 12시가 지나면 피드를 다시 불러와 새 질문을 자동으로 보여준다.
@@ -683,6 +743,13 @@ export default function Mulgyeol() {
       };
     });
     window.dispatchEvent(new Event(SB_CHECK)); // 오늘 질문 5개를 다 답했으면 조각 알림
+    if (user) {
+      loadDept();
+      supabase.rpc("lv_check").then(({ data: chk }) => {
+        if (chk?.level_up) toast(`Lv.${chk.info.level} ${chk.info.stage}이 됐어!`);
+        else if (!q.my_answer) toast("+1점");
+      });
+    }
     return true;
   };
   const answer = async (q, value) => {
@@ -779,6 +846,8 @@ export default function Mulgyeol() {
                       user={user}
                       onAnswer={answer}
                       onCount={bumpComments}
+                      dept={deptStats[String(q.id)]}
+                      toast={toast}
                     />
                   </div>
                 ))}
@@ -795,6 +864,8 @@ export default function Mulgyeol() {
                         user={user}
                         onAnswer={answer}
                         onCount={bumpComments}
+                        dept={deptStats[String(q.id)]}
+                        toast={toast}
                       />
                     </div>
                   ))}
@@ -815,6 +886,11 @@ export default function Mulgyeol() {
           </>
         )}
       </main>
+      {toastMsg && (
+        <div className="fixed bottom-24 left-1/2 md:bottom-8 z-50 -translate-x-1/2 rounded-full bg-[#10262F]/90 px-4 py-2 text-[13.5px] font-bold text-white">
+          {toastMsg}
+        </div>
+      )}
       {asking && (
         <GradeAsk
           onPick={pickGrade}
