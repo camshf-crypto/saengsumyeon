@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
+import CommunityStatsPanel from "./CommunityStatsPanel";
 
 /*
  * 관리자 — 커뮤니티 (/admin/community)
+ *   현황: 새 서비스가 얼마나 쓰이는지 (회원 · 날짜별 · 나만 그래? · 게시판 · 칼럼 · 노트 · 레벨 · 조각 · 쿠폰 · 설명회)
  *   설명회: 만들기 · 고치기 · 신청 학생 명단
  *   글 관리: 최근 게시판 글 · 댓글 · 나만 그래? 댓글 → 숨기기 / 다시 보이기 · 쓴 학생 7일 정지
  */
@@ -235,7 +237,7 @@ function Moderation() {
 export default function AdminCommunity() {
   const { user, loading } = useAuth();
   const [isAdmin, setIsAdmin] = useState(null);
-  const [tab, setTab] = useState("events");
+  const [tab, setTab] = useState("stats");
 
   useEffect(() => {
     if (!user) return setIsAdmin(false);
@@ -248,12 +250,13 @@ export default function AdminCommunity() {
   return (
     <div className="mx-auto max-w-6xl px-5 pb-20 pt-8">
       <div className="flex items-center gap-3">
-        <h1 className="text-[22px] font-bold text-sm-navy">커뮤니티 관리</h1>
+        <h1 className="text-[22px] font-bold text-sm-navy">커뮤니티 현황 · 관리</h1>
         <Link to="/admin" className="text-[13px] font-semibold text-gray-500">‹ 관리자</Link>
         <Link to="/admin/columns" className="ml-auto text-[13px] font-semibold text-gray-500">입시 칼럼 관리 ›</Link>
       </div>
       <div className="mt-5 flex gap-1 border-b border-gray-200">
         {[
+          ["stats", "현황"],
           ["events", "설명회"],
           ["mod", "글 관리"],
         ].map(([k, l]) => (
@@ -262,7 +265,7 @@ export default function AdminCommunity() {
           </button>
         ))}
       </div>
-      <div className="mt-5">{tab === "events" ? <Events /> : <Moderation />}</div>
+      <div className="mt-5">{tab === "stats" ? <CommunityStatsPanel /> : tab === "events" ? <Events /> : <Moderation />}</div>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/AuthContext";
 import VisitorsPanel from "./VisitorsPanel";
 import MulgyeolPanel from "./MulgyeolPanel";
+import CommunityStatsPanel from "./CommunityStatsPanel";
 import SbAdminPanel from "./SbAdminPanel";
 
 /* "YYYY-MM-DD"에서 n일 앞뒤 */
@@ -574,6 +575,7 @@ function ReferralPanel({ stats }) {
 
 const TABS = [
   { k: "visit", label: "방문", color: "#18224F" },
+  { k: "community", label: "커뮤니티 · 레벨", color: "#0D9488" },
   { k: "mulgyeol", label: "나만 그래?", color: "#1A5E9A" },
   { k: "sb", label: "합격 생기부", color: "#EA580C" },
   { k: "sum", label: "요약", color: "#18224F" },
@@ -1575,9 +1577,15 @@ export default function AdminTopics() {
     <div className="mx-auto max-w-6xl px-5 py-10">
       <div className="flex items-center gap-3">
         <h1 className="text-2xl font-extrabold tracking-tight text-sm-navy">관리자</h1>
+        <a href="/admin/columns" className="ml-auto rounded-lg border border-gray-300 px-3.5 py-2 text-[13.5px] font-bold text-gray-600 hover:border-gray-400">
+          칼럼 관리
+        </a>
+        <a href="/admin/community" className="rounded-lg border border-gray-300 px-3.5 py-2 text-[13.5px] font-bold text-gray-600 hover:border-gray-400">
+          설명회 · 글 관리
+        </a>
         <a
           href="/admin/orders"
-          className={`ml-auto flex items-center gap-2 rounded-lg px-4 py-2 text-[13.5px] font-bold ${pendingOrders ? "bg-sm-orange text-white" : "border border-gray-300 text-gray-600"
+          className={`flex items-center gap-2 rounded-lg px-4 py-2 text-[13.5px] font-bold ${pendingOrders ? "bg-sm-orange text-white" : "border border-gray-300 text-gray-600"
             }`}
         >
           입금 확인 {pendingOrders ? `대기 ${pendingOrders}건` : ""}
@@ -1646,6 +1654,13 @@ export default function AdminTopics() {
       )}
 
       {/* ── 나만 그래? 탭: 들어온 사람 → 누른 사람 → 댓글, 반응 좋은 질문, 신고 댓글 */}
+      {/* ── 커뮤니티 · 레벨 탭: 새 서비스 현황 (회원 · 날짜별 · 게시판 · 칼럼 · 노트 · 레벨 · 조각 · 쿠폰 · 설명회) */}
+      {tab === "community" && (
+        <div className="mt-6">
+          <CommunityStatsPanel from={from} to={to} />
+        </div>
+      )}
+
       {tab === "mulgyeol" && (
         <div className="mt-6">
           <MulgyeolPanel from={from} to={to} />
