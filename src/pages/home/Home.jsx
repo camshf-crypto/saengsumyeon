@@ -384,18 +384,22 @@ export default function Home() {
           {/* 검색 = 탐구주제 흔한가 진단 */}
           <form
             onSubmit={search}
-            className="flex h-14 items-center gap-3 rounded-[14px] border border-gray-200 bg-white pl-4 pr-2 focus-within:border-sm-navy sm:h-16 sm:pl-5"
+            className="flex h-14 items-center gap-3 rounded-[14px] border border-gray-200 bg-white pl-4 pr-2.5 focus-within:border-sm-navy sm:h-16 sm:pl-5 sm:pr-3"
           >
             <Icon name="search" className="h-[22px] w-[22px] flex-none text-gray-400" />
             <input
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
               placeholder="탐구주제를 입력하면 얼마나 흔한지 분석해요"
+              enterKeyHint="search"
               className="min-w-0 flex-1 bg-transparent text-[15px] text-gray-900 outline-none placeholder:text-gray-400 sm:text-[16.5px]"
             />
-            <button className="h-10 flex-none rounded-[10px] bg-sm-navy px-4 text-[13.5px] font-bold text-white sm:h-[46px] sm:px-5 sm:text-[14.5px]">
-              흔한가 진단
-            </button>
+            {/* 엔터로 진단 — 글자를 쓰면 작은 화살표만 나온다 (휴대폰에서 누를 곳) */}
+            {topic.trim() && (
+              <button aria-label="흔한가 진단" className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-sm-navy text-white sm:h-10 sm:w-10">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+              </button>
+            )}
           </form>
           <div className="mt-2.5 flex flex-wrap gap-x-3.5 gap-y-1 pl-1 text-[12.5px] text-gray-500">
             <span className="flex items-center gap-1.5"><i className="h-[5px] w-[5px] rounded-full bg-sm-orange" />탐구주제 데이터 <b className="text-gray-700">9,780건</b></span>
