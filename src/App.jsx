@@ -8,6 +8,7 @@ import Header from "./components/Header";
 import SbNotice from "./components/SbNotice";
 import Footer from "./components/Footer";
 import LevelUpHost from "./components/LevelUp";
+import StayTracker from "./components/StayTracker";
 import Suggest from "./pages/mulgyeol/Suggest";
 
 import Landing from "./pages/landing/Landing";
@@ -88,6 +89,7 @@ function Layout({ children }) {
       <main className="min-h-screen">
         {children}
         <LevelUpHost />
+        <StayTracker />
       </main>
     );
 
@@ -97,6 +99,7 @@ function Layout({ children }) {
       <main className="flex-1">{children}</main>
       <Footer />
       <LevelUpHost />
+      <StayTracker />
     </div>
   );
 }
