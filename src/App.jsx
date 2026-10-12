@@ -8,6 +8,7 @@ import Header from "./components/Header";
 import SbNotice from "./components/SbNotice";
 import Footer from "./components/Footer";
 import LevelUpHost from "./components/LevelUp";
+import Suggest from "./pages/mulgyeol/Suggest";
 
 import Landing from "./pages/landing/Landing";
 import Result from "./pages/landing/Result";
@@ -133,6 +134,7 @@ export default function App() {
 
             {/* 물결 — 나만 그래? 매일 밤 12시에 질문 5개가 열린다 */}
             <Route path="/mulgyeol" element={<Mulgyeol />} />
+            <Route path="/mulgyeol/suggest" element={<Suggest />} />
             <Route path="/sb" element={<Sb />} />
 
             {/* 입시 칼럼 — 화 · 목 오후 5시 공개 */}

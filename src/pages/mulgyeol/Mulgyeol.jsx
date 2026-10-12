@@ -843,6 +843,21 @@ export default function Mulgyeol() {
         )}
         {feed && (
           <>
+            {/* 질문 제안 — 맨 위 · 💧물방울(Lv.6)부터 (들어가면 레벨 안내가 나온다) */}
+            <button
+              type="button"
+              onClick={() => nav("/mulgyeol/suggest")}
+              className="mt-6 flex w-full items-center gap-3 rounded-2xl border border-dashed border-[#B9CFDB] bg-white px-4 py-3.5 text-left"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block text-[14.5px] font-extrabold">이런 거 물어보고 싶어?</span>
+                <span className="block text-[12.5px] text-gray-500">질문을 제안해 줘 · 채택되면 조각 +3 · 💧물방울(Lv.6)부터</span>
+              </span>
+              <span className="shrink-0 rounded-lg px-3 py-2 text-[13px] font-bold text-white" style={{ background: BLUE }}>
+                질문 제안
+              </span>
+            </button>
+
             <section className="mt-7">
               <h2 className="text-[17px] font-extrabold">물꼬가 물어봤어요</h2>
               <div className="mt-3 space-y-3">
@@ -861,6 +876,7 @@ export default function Mulgyeol() {
                 ))}
               </div>
             </section>
+
             {old.length > 0 && (
               <section className="mt-9">
                 <div className="mt-3 space-y-3">

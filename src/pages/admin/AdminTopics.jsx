@@ -4,6 +4,7 @@ import { useAuth } from "../../lib/AuthContext";
 import VisitorsPanel from "./VisitorsPanel";
 import MulgyeolPanel from "./MulgyeolPanel";
 import CommunityStatsPanel from "./CommunityStatsPanel";
+import QuestionSuggestPanel from "./QuestionSuggestPanel";
 import SbAdminPanel from "./SbAdminPanel";
 
 /* "YYYY-MM-DD"에서 n일 앞뒤 */
@@ -1663,6 +1664,11 @@ export default function AdminTopics() {
 
       {tab === "mulgyeol" && (
         <div className="mt-6">
+          {/* 학생이 제안한 질문 — 채택하면 조각 +3 */}
+          <section className="mb-10 rounded-2xl border border-gray-200 p-5">
+            <h2 className="mb-3 text-lg font-extrabold text-sm-navy">학생 질문 제안</h2>
+            <QuestionSuggestPanel />
+          </section>
           <MulgyeolPanel from={from} to={to} />
         </div>
       )}
