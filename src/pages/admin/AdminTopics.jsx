@@ -5,6 +5,7 @@ import VisitorsPanel from "./VisitorsPanel";
 import MulgyeolPanel from "./MulgyeolPanel";
 import CommunityStatsPanel from "./CommunityStatsPanel";
 import QuestionSuggestPanel from "./QuestionSuggestPanel";
+import StayPanel from "./StayPanel";
 import SbAdminPanel from "./SbAdminPanel";
 
 /* "YYYY-MM-DD"에서 n일 앞뒤 */
@@ -576,17 +577,26 @@ function ReferralPanel({ stats }) {
 
 const TABS = [
   { k: "visit", label: "방문", color: "#18224F" },
-  { k: "community", label: "커뮤니티 · 레벨", color: "#0D9488" },
+  { k: "stay", label: "머문 시간", color: "#18224F" },
+  { k: "community", label: "현황 · 레벨", color: "#0D9488" },
   { k: "mulgyeol", label: "나만 그래?", color: "#1A5E9A" },
-  { k: "sb", label: "합격 생기부", color: "#EA580C" },
-  { k: "sum", label: "요약", color: "#18224F" },
+  { k: "sb", label: "합격 생기부 퍼즐", color: "#EA580C" },
+  { k: "sum", label: "진단 요약", color: "#18224F" },
   { k: "topic", label: "탐구주제", color: "#EA580C" },
   { k: "reading", label: "독서", color: "#2F56D6" },
   { k: "motive", label: "지원동기", color: "#0B8A5E" },
   { k: "interview", label: "면접 예상질문", color: "#7C3AED" },
   { k: "inquiry", label: "탐구보고서", color: "#18224F" },
-  { k: "growth", label: "가입·추천·결제", color: "#18224F" },
+  { k: "growth", label: "가입 · 추천 · 결제", color: "#18224F" },
 ];
+// 탭 묶음 — 위에서 묶음을 고르고, 아래에서 그 안의 탭을 고른다
+const GROUPS = [
+  { k: "people", label: "사람", desc: "누가 오고 · 얼마나 머물고 · 다시 오는지", tabs: ["visit", "stay"] },
+  { k: "community", label: "커뮤니티", desc: "나만 그래? · 게시판 · 칼럼 · 노트 · 레벨 · 퍼즐", tabs: ["community", "mulgyeol", "sb"] },
+  { k: "diag", label: "흔한가 진단", desc: "진단 서비스별 이용 · AI 비용", tabs: ["sum", "topic", "reading", "motive", "interview", "inquiry"] },
+  { k: "money", label: "가입 · 결제", desc: "가입 경로 · 친구 추천 · 매출", tabs: ["growth"] },
+];
+const groupOf = (k) => GROUPS.find((g) => g.tabs.includes(k)) ?? GROUPS[0];
 const SERVICE = {
   topic: { label: "탐구주제", color: "#EA580C", bg: "#FFF7ED" },
   reading: { label: "독서", color: "#2F56D6", bg: "#EEF3FF" },
@@ -1376,12 +1386,12 @@ export default function AdminTopics() {
   // 탭 — 주소 끝 ?tab=reading 처럼 두면 그 탭으로 열린다
   const [tab, setTabState] = useState(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
-    return TABS.some((x) => x.k === t) ? t : "sum";
+    return TABS.some((x) => x.k === t) ? t : "visit";
   });
   const setTab = (t) => {
     setTabState(t);
     const u = new URL(window.location.href);
-    if (t === "sum") u.searchParams.delete("tab");
+    if (t === "visit") u.searchParams.delete("tab");
     else u.searchParams.set("tab", t);
     window.history.replaceState(null, "", u);
   };
@@ -1594,7 +1604,7 @@ export default function AdminTopics() {
         </a>
       </div>
       <p className="mt-2 text-sm text-gray-500">
-        흔한가 시리즈 전체 이용과 매출을 봅니다. 기간은 모든 탭에 같이 적용돼요.
+        생수면 전체 — 사람 · 커뮤니티 · 흔한가 진단 · 가입과 결제를 봅니다. 아래 기간은 모든 탭에 같이 적용돼요.
       </p>
 
       {/* 기간 */}
@@ -1631,19 +1641,39 @@ export default function AdminTopics() {
         </button>
       </div>
 
-      {/* 탭 */}
-      <div className="mt-6 flex gap-1 overflow-x-auto border-b-2 border-gray-200">
-        {TABS.map((t) => (
-          <button
-            key={t.k}
-            onClick={() => setTab(t.k)}
-            className="-mb-[2px] whitespace-nowrap border-b-[3px] px-4 py-2.5 text-[14px] font-extrabold transition"
-            style={tab === t.k ? { color: t.color, borderColor: t.color } : { color: "#6B7280", borderColor: "transparent" }}
-          >
-            {t.label}
-          </button>
-        ))}
+      {/* 탭 — 묶음 4개 → 그 안의 탭 */}
+      <div className="mt-6 grid grid-cols-2 gap-2 lg:grid-cols-4">
+        {GROUPS.map((g) => {
+          const on = groupOf(tab).k === g.k;
+          return (
+            <button
+              key={g.k}
+              onClick={() => !on && setTab(g.tabs[0])}
+              className={`rounded-xl border px-4 py-3 text-left transition ${on ? "border-sm-navy bg-sm-navy text-white" : "border-gray-200 bg-white text-sm-navy hover:border-gray-400"}`}
+            >
+              <span className="block text-[15px] font-extrabold">{g.label}</span>
+              <span className={`mt-0.5 block text-[12px] ${on ? "text-white/70" : "text-gray-400"}`}>{g.desc}</span>
+            </button>
+          );
+        })}
       </div>
+      {groupOf(tab).tabs.length > 1 && (
+        <div className="mt-4 flex gap-1 overflow-x-auto border-b-2 border-gray-200">
+          {groupOf(tab).tabs.map((k) => {
+            const t = TABS.find((x) => x.k === k);
+            return (
+              <button
+                key={k}
+                onClick={() => setTab(k)}
+                className="-mb-[2px] whitespace-nowrap border-b-[3px] px-4 py-2.5 text-[14px] font-extrabold transition"
+                style={tab === k ? { color: t.color, borderColor: t.color } : { color: "#6B7280", borderColor: "transparent" }}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {err && <p className="mt-5 text-sm font-semibold text-red-500">{err}</p>}
 
@@ -1656,6 +1686,13 @@ export default function AdminTopics() {
 
       {/* ── 나만 그래? 탭: 들어온 사람 → 누른 사람 → 댓글, 반응 좋은 질문, 신고 댓글 */}
       {/* ── 커뮤니티 · 레벨 탭: 새 서비스 현황 (회원 · 날짜별 · 게시판 · 칼럼 · 노트 · 레벨 · 조각 · 쿠폰 · 설명회) */}
+      {/* ── 머문 시간 탭: 방문 1번에 얼마나 있다 가는지 · 메뉴별 시간 */}
+      {tab === "stay" && (
+        <div className="mt-6">
+          <StayPanel from={from} to={to} />
+        </div>
+      )}
+
       {tab === "community" && (
         <div className="mt-6">
           <CommunityStatsPanel from={from} to={to} />
