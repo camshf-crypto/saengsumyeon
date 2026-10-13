@@ -6,6 +6,7 @@ import MulgyeolPanel from "./MulgyeolPanel";
 import CommunityStatsPanel from "./CommunityStatsPanel";
 import QuestionSuggestPanel from "./QuestionSuggestPanel";
 import StayPanel from "./StayPanel";
+import VoicePanel from "./VoicePanel";
 import SbAdminPanel from "./SbAdminPanel";
 
 /* "YYYY-MM-DD"에서 n일 앞뒤 */
@@ -578,6 +579,7 @@ function ReferralPanel({ stats }) {
 const TABS = [
   { k: "visit", label: "방문", color: "#18224F" },
   { k: "stay", label: "머문 시간", color: "#18224F" },
+  { k: "voice", label: "학생 의견", color: "#18224F" },
   { k: "community", label: "현황 · 레벨", color: "#0D9488" },
   { k: "mulgyeol", label: "나만 그래?", color: "#1A5E9A" },
   { k: "sb", label: "합격 생기부 퍼즐", color: "#EA580C" },
@@ -591,7 +593,7 @@ const TABS = [
 ];
 // 탭 묶음 — 위에서 묶음을 고르고, 아래에서 그 안의 탭을 고른다
 const GROUPS = [
-  { k: "people", label: "사람", desc: "누가 오고 · 얼마나 머물고 · 다시 오는지", tabs: ["visit", "stay"] },
+  { k: "people", label: "사람", desc: "누가 오고 · 얼마나 머물고 · 뭘 원하는지", tabs: ["visit", "stay", "voice"] },
   { k: "community", label: "커뮤니티", desc: "나만 그래? · 게시판 · 칼럼 · 노트 · 레벨 · 퍼즐", tabs: ["community", "mulgyeol", "sb"] },
   { k: "diag", label: "흔한가 진단", desc: "진단 서비스별 이용 · AI 비용", tabs: ["sum", "topic", "reading", "motive", "interview", "inquiry"] },
   { k: "money", label: "가입 · 결제", desc: "가입 경로 · 친구 추천 · 매출", tabs: ["growth"] },
@@ -1690,6 +1692,13 @@ export default function AdminTopics() {
       {tab === "stay" && (
         <div className="mt-6">
           <StayPanel from={from} to={to} />
+        </div>
+      )}
+
+      {/* ── 학생 의견 탭: 3문항 설문 결과 · 의견함 관리 */}
+      {tab === "voice" && (
+        <div className="mt-6">
+          <VoicePanel from={from} to={to} />
         </div>
       )}
 

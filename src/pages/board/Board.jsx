@@ -112,22 +112,14 @@ function WriteSheet({ prompt, onClose, onDone }) {
   );
 }
 
-/* 반응 3개 (목록에서는 숫자만, 글에서는 누르기) */
-function ReactCounts({ r }) {
-  return (
-    <span className="flex items-center gap-2.5">
-      {REACTS.map(([k, e]) =>
-        Number(r?.[k] ?? 0) > 0 ? (
-          <span key={k}>
-            {e} {r[k]}
-          </span>
-        ) : null
-      )}
-    </span>
-  );
-}
-
 /* ───────── 목록 ───────── */
+
+// 학년 색 (관리자 통계와 같은 색)
+const GCHIP = {
+  고1: "bg-blue-50 text-blue-700",
+  고2: "bg-teal-50 text-teal-700",
+  고3: "bg-orange-50 text-[#C2410C]",
+};
 
 export function BoardList() {
   const { user } = useAuth();
@@ -170,28 +162,40 @@ export function BoardList() {
 
   return (
     <div className="min-h-screen bg-[#F4F5F7]">
-      <div className="mx-auto max-w-2xl px-4 pb-28 pt-6 sm:px-5 sm:pt-10">
-        <h1 className="text-[26px] font-extrabold tracking-tight text-sm-navy">📣 옥상에서 외쳐!</h1>
-        <p className="mt-1 text-[14px] text-gray-600">학교에서 못 한 말, 친구한테 못 한 말. 여기서 외쳐! · 완전 익명</p>
+      <div className="mx-auto max-w-6xl px-4 pb-28 pt-6 sm:px-6 sm:pt-10">
+        {/* 노을 진 옥상 — 이 방만의 분위기 (아래 카드는 생수면 기본 흰 카드) */}
+        <section className="relative overflow-hidden rounded-2xl bg-[linear-gradient(180deg,#2B2F5E_0%,#6B4A86_48%,#E58FA0_82%,#F6C1A8_100%)] px-5 pb-16 pt-6 text-white sm:px-8 sm:pb-24 sm:pt-9">
+          <svg aria-hidden="true" viewBox="0 0 1200 120" preserveAspectRatio="none" className="pointer-events-none absolute inset-x-0 bottom-0 h-12 w-full text-[#2A2440]/75 sm:h-20">
+            <path fill="currentColor" d="M0 120V70h60V40h40v30h50V55h70v65h20V30h55v90h30V60h45V20h30v100h40V75h80V45h25v75h35V65h60V35h20V15h30v105h45V80h70V50h40v70h30V60h55v60h25V40h45v80h40V70h50v50Z" />
+          </svg>
+          <h1 className="relative text-[28px] font-black tracking-tight sm:text-[36px]">
+            📣 옥상에서 <span className="text-[#FFD3E0]">외쳐!</span>
+          </h1>
+          <p className="relative mt-1.5 text-[13.5px] leading-relaxed text-white/85 sm:text-[15px]">
+            같은 처지끼리, 여기서만큼은 솔직하게.
+            <br />
+            불안해도 괜찮아. 우리 다 비슷해 💜 · 완전 익명
+          </p>
 
-        {/* 물꼬의 오늘의 외침 */}
-        {today && (
-          <section className="mt-5 rounded-2xl bg-sm-navy p-5 text-white">
-            <p className="text-[12.5px] font-bold text-white/70">물꼬의 오늘의 외침</p>
-            <p className="mt-1.5 text-[19px] font-extrabold leading-snug">“{today.text}”</p>
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <button onClick={() => openWrite(today)} className="rounded-xl bg-white px-4 py-2.5 text-[14px] font-extrabold text-sm-navy">
-                오늘은 내 차례! 외치기
-              </button>
-              <button
-                onClick={() => setOnlyPrompt((v) => !v)}
-                className={`rounded-xl px-3.5 py-2.5 text-[13px] font-bold ${onlyPrompt ? "bg-white/25 text-white" : "text-white/80"}`}
-              >
-                {onlyPrompt ? "전체 외침 보기" : `오늘 ${today.answers}명이 외쳤어 ›`}
-              </button>
+          {/* 물꼬의 오늘의 외침 */}
+          {today && (
+            <div className="relative mt-5 max-w-xl rounded-2xl bg-white/15 p-4 ring-1 ring-white/25 backdrop-blur-sm">
+              <p className="text-[12px] font-bold text-white/75">물꼬의 오늘의 외침</p>
+              <p className="mt-1 break-keep text-[18px] font-extrabold leading-snug">“{today.text}”</p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button onClick={() => openWrite(today)} className="rounded-xl bg-white px-4 py-2.5 text-[14px] font-extrabold text-[#5B3F7A]">
+                  오늘은 내 차례! 외치기
+                </button>
+                <button
+                  onClick={() => setOnlyPrompt((v) => !v)}
+                  className={`rounded-xl px-3.5 py-2.5 text-[13px] font-bold ${onlyPrompt ? "bg-white/25 text-white" : "text-white/85"}`}
+                >
+                  {onlyPrompt ? "전체 외침 보기" : `오늘 ${today.answers}명이 외쳤어 ›`}
+                </button>
+              </div>
             </div>
-          </section>
-        )}
+          )}
+        </section>
 
         {uid && lv && !canWrite && (
           <div className="mt-4 rounded-2xl border-[1.5px] border-dashed border-gray-300 bg-white px-4 py-3.5 text-center">
@@ -202,8 +206,8 @@ export function BoardList() {
           </div>
         )}
 
-        {/* 말머리 · 정렬 */}
-        <div className="mt-5 flex items-center gap-2">
+        {/* 정렬 */}
+        <div className="mt-6 flex items-center gap-2">
           <p className="min-w-0 flex-1 text-[13px] font-bold text-gray-500">{sort === "hot" ? "이번 주 가장 큰 외침" : "방금 올라온 외침"}</p>
           <div className="flex shrink-0 gap-0.5 rounded-lg bg-[#E9EBEF] p-[3px]">
             {[
@@ -217,26 +221,33 @@ export function BoardList() {
           </div>
         </div>
 
-        {/* 외침 카드 */}
-        <div className="mt-3 space-y-2.5">
-          {list === null && <p className="py-12 text-center text-[14px] text-gray-500">불러오는 중…</p>}
-          {list?.length === 0 && (
-            <div className="rounded-2xl bg-white py-12 text-center">
-              <p className="text-[14px] text-gray-500">{sort === "hot" ? "이번 주 인기 외침이 아직 없어" : "아직 아무도 안 외쳤어. 첫 외침의 주인공이 돼 봐!"}</p>
-            </div>
-          )}
+        {/* 외침 카드 — 폰 2개 · 태블릿 3개 · PC 4개 */}
+        {list === null && <p className="py-12 text-center text-[14px] text-gray-500">불러오는 중…</p>}
+        {list?.length === 0 && (
+          <div className="mt-3 rounded-2xl bg-white py-12 text-center">
+            <p className="text-[14px] text-gray-500">{sort === "hot" ? "이번 주 인기 외침이 아직 없어" : "아직 아무도 안 외쳤어. 첫 외침의 주인공이 돼 봐!"}</p>
+          </div>
+        )}
+        <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4">
           {list?.map((p) => (
-            <Link key={p.id} to={`/board/${p.id}`} className="block rounded-2xl bg-white p-4 ring-1 ring-gray-200 transition hover:ring-gray-300">
-              <h3 className="text-[17px] font-extrabold leading-snug text-gray-900">{p.title}</h3>
-              {p.excerpt && <p className="mt-1 line-clamp-2 text-[13.5px] text-gray-500">{p.excerpt}</p>}
-              <div className="mt-3 flex items-center gap-2 text-[12px] text-gray-500">
-                <span>{who(p.author)}</span>
-                <span>· {ago(p.created_at)}</span>
-                {p.mine && <span className="font-bold text-sm-navy">· 내 외침</span>}
-                <span className="ml-auto flex items-center gap-2.5">
-                  <ReactCounts r={p.reacts} />
-                  <span>💬 {p.comments}</span>
+            <Link
+              key={p.id}
+              to={`/board/${p.id}`}
+              className="flex min-h-[168px] flex-col rounded-2xl bg-white p-3.5 ring-1 ring-gray-200 transition hover:-translate-y-0.5 hover:ring-gray-300 hover:shadow-[0_8px_18px_rgba(20,27,61,.08)] sm:min-h-[184px] sm:p-4"
+            >
+              <div className="flex items-center gap-1.5">
+                <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-bold ${GCHIP[p.author?.grade] ?? "bg-gray-100 text-gray-600"}`}>{p.author?.grade || "익명"}</span>
+                {p.prompt_id && <span className="truncate text-[11px] font-bold text-[#EA580C]">오늘의 외침</span>}
+                {p.mine && <span className="ml-auto shrink-0 text-[11px] font-bold text-sm-navy">내 외침</span>}
+              </div>
+              <h3 className="mt-2.5 line-clamp-3 break-keep text-[15.5px] font-extrabold leading-snug text-gray-900 sm:text-[16.5px]">{p.title}</h3>
+              {p.excerpt && <p className="mt-1.5 line-clamp-2 text-[12.5px] leading-relaxed text-gray-500">{p.excerpt}</p>}
+              <div className="mt-auto flex items-center gap-2.5 whitespace-nowrap pt-3 text-[12px] font-semibold text-gray-500 sm:gap-3">
+                <span>
+                  <span className="text-[#EA580C]">♥</span> {Number(p.likes ?? 0)}
                 </span>
+                <span>💬 {Number(p.comments ?? 0)}</span>
+                <span className="ml-auto hidden text-[11px] font-normal text-gray-400 sm:inline">{ago(p.created_at)}</span>
               </div>
             </Link>
           ))}
@@ -245,7 +256,7 @@ export function BoardList() {
 
       <button
         onClick={() => openWrite(null)}
-        className="fixed bottom-6 right-5 z-40 flex h-[52px] items-center gap-1.5 rounded-full bg-sm-navy px-5 text-[15px] font-bold text-white shadow-[0_8px_20px_rgba(20,27,61,.3)] sm:right-[max(20px,calc(50%-360px))]"
+        className="fixed bottom-6 right-5 z-40 flex h-[52px] items-center gap-1.5 rounded-full bg-sm-navy px-5 text-[15px] font-bold text-white shadow-[0_8px_20px_rgba(20,27,61,.3)] sm:right-6"
       >
         📣 나도 외치기
       </button>

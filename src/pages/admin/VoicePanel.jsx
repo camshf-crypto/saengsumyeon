@@ -3,7 +3,7 @@ import { supabase } from "../../lib/supabase";
 
 /*
  * 관리자 첫 화면 '사람 › 학생 의견' 탭
- * 위: 3문항 설문 결과 (문항별 보기 · 학년별) + 학생이 직접 쓴 말
+ * 위: 3문항 설문 결과 (문항별 보기 · 학년별) + 응답 하나씩 보기(누가 · 언제) + 학생이 직접 쓴 말
  * 아래: 의견함 — '나도 원해' 순 · 상태 바꾸기(검토 중 → 만드는 중 → 반영됨) · 반영 소식 · 후보 추가
  * 반영됨으로 바꾸면 제안한 학생에게 조각 +3, 학생 의견함 맨 위에 2주 동안 소식으로 뜬다
  */
@@ -239,6 +239,58 @@ function Feedback() {
   );
 }
 
+// 설문 응답 하나씩 (최근 순) — 누가 · 언제 · 뭘 골랐는지
+const when = (t) => new Date(t).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+function Answers({ from, to }) {
+  const [list, setList] = useState(null);
+  const [err, setErr] = useState("");
+  const [more, setMore] = useState(false);
+  useEffect(() => {
+    setList(null);
+    supabase
+      .rpc("admin_survey_list", { p_from: from || null, p_to: to || null })
+      .then(({ data, error }) => (error ? setErr(error.message) : setList(data || [])));
+  }, [from, to]);
+  if (err) return <p className="mt-3 rounded-lg bg-red-50 px-4 py-3 text-[13px] font-bold text-red-600">{err}</p>;
+  if (!list) return null;
+  const rows = more ? list : list.slice(0, 10);
+  const line = (k, arr, etc) => {
+    const v = [...(Array.isArray(arr) ? arr : arr ? [arr] : []), etc && `기타: ${etc}`].filter(Boolean);
+    return v.length ? (
+      <p className="text-[12.5px] text-gray-700">
+        <b className="mr-1.5 text-gray-400">{k}</b>
+        {v.join(" · ")}
+      </p>
+    ) : null;
+  };
+  return (
+    <section className="mt-3 rounded-xl border border-gray-200 bg-white p-4">
+      <h4 className="text-[14px] font-extrabold text-sm-navy">응답 하나씩 보기 ({list.length})</h4>
+      {list.length === 0 && <p className="py-6 text-center text-[13px] text-gray-400">아직 답한 학생이 없어요</p>}
+      <ul className="mt-2 divide-y divide-gray-100">
+        {rows.map((x, i) => (
+          <li key={i} className="space-y-0.5 py-2.5">
+            <p className="text-[12px]">
+              <b className="mr-1.5" style={{ color: GCOLOR[x.grade] ?? "#9CA3AF" }}>{x.grade}</b>
+              <b className="text-gray-800">{x.author?.nick ?? "(닉네임 없음)"}</b>
+              <span className="ml-2 text-gray-400">{when(x.at)}</span>
+            </p>
+            {line("Q1", x.q1, x.q1_etc)}
+            {line("Q2", x.q2, x.q2_etc)}
+            {line("Q3", x.q3, x.q3_etc)}
+            {x.memo && line("한마디", x.memo)}
+          </li>
+        ))}
+      </ul>
+      {list.length > 10 && (
+        <button onClick={() => setMore((v) => !v)} className="mt-2 w-full rounded-lg bg-[#F4F5F7] py-2 text-[12.5px] font-bold text-gray-600">
+          {more ? "접기" : `${list.length - 10}개 더 보기`}
+        </button>
+      )}
+    </section>
+  );
+}
+
 export default function VoicePanel({ from, to }) {
   const [s, setS] = useState(null);
   const [err, setErr] = useState("");
@@ -273,6 +325,7 @@ export default function VoicePanel({ from, to }) {
               <Question key={q} title={QTITLE[q]} rows={s[q]} people={s.total} />
             ))}
           </div>
+          <Answers from={from} to={to} />
           {s.texts?.length > 0 && (
             <section className="mt-3 rounded-xl border border-gray-200 bg-white p-4">
               <h4 className="text-[14px] font-extrabold text-sm-navy">학생이 직접 쓴 말 ({s.texts.length})</h4>
