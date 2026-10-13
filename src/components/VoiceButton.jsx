@@ -4,18 +4,17 @@ import { useLocation, useNavigate } from "react-router-dom";
 /*
  * 📮 생수면 우체통 — 화면 오른쪽 아래에 떠 있는 의견함 버튼 (App 에 한 번만 둔다)
  * · 누르면 작은 창: [불편해요] [이런 기능 원해요] → 의견함으로 (보던 화면 주소를 같이 넘긴다)
- * · 하루에 한 번, 들어오고 3초 뒤 말풍선을 8초 동안 보여준다 (문구는 날마다 바뀜 · 말풍선을 눌러도 열린다)
+ * · 생수면에 들어올 때마다(창을 새로 열 때마다) 3초 뒤 말풍선을 8초 동안 보여준다 (문구는 날마다 바뀜 · 말풍선을 눌러도 열린다)
  * · 옥상에서 외쳐!(나도 외치기 버튼이 있음) · 의견함 · 관리자 · 로그인/가입 · 탐구보고서 작업 화면에서는 숨긴다
  */
 const HIDE = ["/board", "/voice", "/admin", "/login", "/signup", "/auth", "/inquiry/"];
-const SEEN = "sm_voice_tip"; // 마지막으로 말풍선을 보여준 날
+const SEEN = "sm_voice_tip2"; // 이번에 들어와서 말풍선을 이미 보여줬는지 (창을 닫으면 지워짐)
 const TIPS = [
   "불편한 점 있어? 여기다 넣어 줘",
   "이런 기능 있으면 좋겠다? 말만 해",
   "생수면한테 하고 싶은 말, 여기로!",
   "써 보니 별로인 거 있어? 알려 줘",
 ];
-const today = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 
 export default function VoiceButton() {
   const { pathname } = useLocation();
@@ -25,22 +24,32 @@ export default function VoiceButton() {
   const msg = TIPS[new Date().getDate() % TIPS.length];
 
   useEffect(() => setOpen(false), [pathname]);
+  const hidden = HIDE.some((p) => pathname.startsWith(p));
+
+  // 들어올 때마다 한 번 말풍선 — 실제로 보여줄 때 '봤다'고 적는다 (숨는 화면에서는 아낀다)
   useEffect(() => {
+    if (hidden) return undefined;
     try {
-      if (localStorage.getItem(SEEN) === today()) return undefined;
-      localStorage.setItem(SEEN, today());
+      if (sessionStorage.getItem(SEEN)) return undefined;
     } catch {
-      return undefined;
+      /* 저장소를 못 쓰면 그냥 보여준다 */
     }
-    const a = setTimeout(() => setTip(true), 3000);
+    const a = setTimeout(() => {
+      setTip(true);
+      try {
+        sessionStorage.setItem(SEEN, "1");
+      } catch {
+        /* 못 적어도 괜찮다 */
+      }
+    }, 3000);
     const b = setTimeout(() => setTip(false), 11000);
     return () => {
       clearTimeout(a);
       clearTimeout(b);
     };
-  }, []);
+  }, [hidden]);
 
-  if (HIDE.some((p) => pathname.startsWith(p))) return null;
+  if (hidden) return null;
 
   const go = (tab) => nav(tab === "fix" ? "/voice?tab=fix" : "/voice", { state: { from: pathname } });
 
