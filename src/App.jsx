@@ -17,6 +17,7 @@ import Suggest from "./pages/mulgyeol/Suggest";
 import Landing from "./pages/landing/Landing";
 import Result from "./pages/landing/Result";
 import Login from "./pages/auth/Login";
+import TestLogin from "./pages/auth/TestLogin";
 import Signup from "./pages/auth/Signup";
 import AuthCallback from "./pages/auth/AuthCallback";
 import MyPage from "./pages/my/MyPage";
@@ -163,6 +164,8 @@ export default function App() {
 
             {/* 인증 — 구글 로그인 후 /auth/callback으로 돌아온다 */}
             <Route path="/login" element={<Login />} />
+            {/* 운영자 전용 테스트 계정 로그인 — 링크 없음, 주소로만 */}
+            <Route path="/sm-gate-7k3" element={<TestLogin />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
 
