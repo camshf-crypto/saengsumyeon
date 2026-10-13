@@ -19,7 +19,7 @@ const PATHS = {
   interview: "/interview",
   mg: "/mulgyeol",
   puzzle: "/sb",
-  voice: "/voice",
+  columns: "/columns",
   note: "/my/note",
   board: "/board",
   ladder: null, // 준비 중
@@ -41,7 +41,7 @@ const TILES = [
   { key: "puzzle", title: "합격 생기부 퍼즐", sub: "대학별 합격 사례", icon: "puzzle" },
   { key: "board", title: "옥상에서 외쳐!", sub: "학교에서 못 한 말", icon: "shout", badge: "NEW" },
   { key: "note", title: "내 생기부 노트", sub: "다 적으면 AI 입시 진단", icon: "note", badge: "AI 진단" },
-  { key: "voice", title: "생수면 의견함", sub: "원하는 기능 · 불편한 점", icon: "chat" },
+  { key: "columns", title: "입시 칼럼", sub: "매주 목요일 오후 5시", icon: "news" },
   { key: "ladder", title: "대학 사다리", sub: "내 성적 위치", icon: "ladder", badge: "준비 중", muted: true },
 ];
 

@@ -10,6 +10,7 @@ import Footer from "./components/Footer";
 import LevelUpHost from "./components/LevelUp";
 import StayTracker from "./components/StayTracker";
 import SurveyPopup from "./components/SurveyPopup";
+import VoiceButton from "./components/VoiceButton";
 import Voice from "./pages/voice/Voice";
 import Suggest from "./pages/mulgyeol/Suggest";
 
@@ -104,6 +105,7 @@ function Layout({ children }) {
       <LevelUpHost />
       <StayTracker />
       <SurveyPopup />
+      <VoiceButton />
     </div>
   );
 }
