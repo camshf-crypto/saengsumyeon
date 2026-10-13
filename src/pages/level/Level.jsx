@@ -14,7 +14,7 @@ import { NicknameModal, uploadAvatar, AVATAR_EVENT } from "../../components/Nick
  */
 
 const STAGES = [
-  { no: 1, name: "새싹", range: "Lv.1~5", color: "#059669", items: ["나만 그래? · 댓글 · 출석 · 퍼즐", "Lv.3부터 자유게시판 글쓰기"], pieces: 1 },
+  { no: 1, name: "새싹", range: "Lv.1~5", color: "#059669", items: ["나만 그래? · 댓글 · 출석 · 퍼즐", "Lv.3부터 옥상에서 외치기"], pieces: 1 },
   { no: 2, name: "물방울", range: "Lv.6~10", color: "#2563EB", items: ["대학 사다리 (준비 중)", "나만 그래? 질문 제안 (채택되면 조각 +3)"], pieces: 2, coupon: true },
   { no: 3, name: "물결", range: "Lv.11~15", color: "#4F46E5", items: ["새 칼럼 하루 먼저 보기", "퍼즐 힌트 (준비 중)"], pieces: 3, coupon: true },
   { no: 4, name: "파도", range: "Lv.16~20", color: "#E8590C", items: ["무료 입시설명회 신청 (부모님과 함께)", "칼럼 주제 신청 (준비 중)"], pieces: 5, coupon: true },
@@ -38,7 +38,7 @@ const POINTS = [
   ["출석", "2점", "하루 1번"],
   ["나만 그래? 응답", "1점", "하루 5점"],
   ["댓글 (10자 이상)", "2점", "하루 6점"],
-  ["자유게시판 글", "3점", "하루 1개"],
+  ["옥상에서 외쳐! 글", "3점", "하루 1개"],
   ["내 글 · 댓글이 '나도 그래' 받기", "2점", "하루 6점"],
 ];
 

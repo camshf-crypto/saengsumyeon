@@ -2,19 +2,23 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
-import Comments, { LvTag } from "../../components/Comments";
+import Comments, { askReason } from "../../components/Comments";
 import { checkLevel } from "../../components/LevelUp";
-import Avatar from "../../components/Avatar";
 
 /*
- * 자유게시판
- *   /board      목록 — 말머리(질문·고민·수다) · 최신/인기 · 글쓰기(Lv.3부터)
- *   /board/:id  글 — 나도 그래 · 내 글 지우기 · 댓글
- * 글 3점(하루 1개), 나도 그래 받기 2점(하루 6점). 연락처·링크는 서버에서 막는다
+ * 📣 옥상에서 외쳐! (예전 자유게시판 · 주소는 그대로 /board)
+ *   /board      물꼬의 오늘의 외침 · 최신/인기 외침 · 나도 외치기(Lv.3부터)
+ *               말머리는 우선 쓰지 않는다 (새 외침은 모두 '아무말'로 저장 · 글이 많아지면 다시 연다)
+ *   /board/:id  외침 하나 — 반응 3개(나도 그래 · 응원해 · 웃겨) · 신고 · 내 외침 지우기 · 댓글(익명)
+ * 완전 익명 — '고2 · 익명'으로만 보인다. 학교 이름 · 반 · 연락처 · 링크는 서버에서 막는다
+ * 신고 3번이면 자동으로 가려지고 관리자가 확인한다
  */
 
-const TAGS = ["질문", "고민", "수다"];
-const TAG_COLOR = { 질문: "text-indigo-700", 고민: "text-teal-700", 수다: "text-sm-orange" };
+const REACTS = [
+  ["same", "💙", "나도 그래"],
+  ["cheer", "🫶", "응원해"],
+  ["lol", "😂", "웃겨"],
+];
 
 function ago(iso) {
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -23,6 +27,7 @@ function ago(iso) {
   const d = new Date(iso);
   return `${d.getMonth() + 1}월 ${d.getDate()}일`;
 }
+const who = (a) => `${a?.grade ? `${a.grade} · ` : ""}익명`;
 
 function useToast() {
   const [msg, setMsg] = useState("");
@@ -33,27 +38,27 @@ function useToast() {
     t.current = setTimeout(() => setMsg(""), 1800);
   };
   const node = msg ? (
-    <div className="fixed bottom-40 left-1/2 md:bottom-24 z-50 -translate-x-1/2 rounded-[10px] bg-sm-navy/95 px-4 py-2.5 text-[13.5px] font-semibold text-white">{msg}</div>
+    <div className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 rounded-[10px] bg-sm-navy/95 px-4 py-2.5 text-[13.5px] font-semibold text-white">{msg}</div>
   ) : null;
   return [node, show];
 }
 
-/* ───────── 글쓰기 창 ───────── */
+/* ───────── 나도 외치기 창 ───────── */
 
-function WriteSheet({ onClose, onDone }) {
-  const [tag, setTag] = useState("질문");
+function WriteSheet({ prompt, onClose, onDone }) {
+  const tag = "아무말"; // 말머리는 우선 하나로
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
+  const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
   async function submit(e) {
     e.preventDefault();
     setErr("");
-    if (title.trim().length < 2) return setErr("제목을 2자 넘게 적어 주세요");
-    if (!body.trim()) return setErr("내용을 적어 주세요");
+    if (title.trim().length < 2) return setErr("2자 넘게 외쳐 줘");
     setBusy(true);
-    const { data, error } = await supabase.rpc("post_create", { p_tag: tag, p_title: title, p_body: body });
+    const { data, error } = await supabase.rpc("post_create", { p_tag: tag, p_title: title, p_body: body, p_prompt: prompt?.id ?? null });
     setBusy(false);
     if (error) return setErr(error.message);
     onDone(data);
@@ -61,45 +66,64 @@ function WriteSheet({ onClose, onDone }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#0B0F1F]/50 sm:items-center" onClick={onClose}>
-      <form onSubmit={submit} onClick={(e) => e.stopPropagation()} className="w-full max-w-lg rounded-t-2xl bg-white p-5 sm:rounded-2xl">
+      <form onSubmit={submit} onClick={(e) => e.stopPropagation()} className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl">
         <div className="flex items-center">
-          <b className="text-[17px] font-bold text-gray-900">글쓰기</b>
-          <button type="button" onClick={onClose} className="ml-auto text-[14px] text-gray-500">닫기</button>
+          <b className="text-[17px] font-extrabold text-gray-900">📣 나도 외치기</b>
+          <button type="button" onClick={onClose} className="ml-auto text-[14px] text-gray-500">
+            닫기
+          </button>
         </div>
-        <div className="mt-4 flex gap-1.5">
-          {TAGS.map((t) => (
-            <button
-              type="button"
-              key={t}
-              onClick={() => setTag(t)}
-              className={`rounded-full border px-4 py-1.5 text-[13.5px] font-semibold ${tag === t ? "border-sm-navy bg-sm-navy text-white" : "border-gray-200 text-gray-600"}`}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          maxLength={60}
-          placeholder="제목"
-          className="mt-3 w-full rounded-[10px] border border-gray-200 px-3.5 py-3 text-[15px] font-semibold outline-none focus:border-sm-navy"
-        />
+        {prompt && (
+          <p className="mt-3 rounded-xl bg-[#F4F5F7] px-3.5 py-2.5 text-[13px] text-gray-700">
+            <b className="text-sm-navy">물꼬의 오늘의 외침</b> · {prompt.text}
+          </p>
+        )}
         <textarea
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          maxLength={2000}
-          rows={7}
-          placeholder="고민이나 궁금한 걸 편하게 적어 주세요"
-          className="mt-2 w-full resize-none rounded-[10px] border border-gray-200 px-3.5 py-3 text-[14.5px] leading-relaxed outline-none focus:border-sm-navy"
+          value={title}
+          onChange={(e) => setTitle(e.target.value.replace(/\n/g, "").slice(0, 60))}
+          autoFocus
+          rows={2}
+          placeholder="야!!! 하고 싶은 말 한 줄 외쳐 봐"
+          className="mt-3 w-full resize-none rounded-[12px] border border-gray-200 px-4 py-3 text-[18px] font-extrabold leading-snug outline-none placeholder:font-semibold focus:border-sm-navy"
         />
-        <p className="mt-1 text-[11.5px] text-gray-400">연락처 · SNS 아이디 · 링크 · 홍보 글은 올라가지 않아요.</p>
+        <p className="text-right text-[11.5px] text-gray-400">{title.length}/60</p>
+        {more ? (
+          <textarea
+            value={body}
+            onChange={(e) => setBody(e.target.value.slice(0, 2000))}
+            rows={5}
+            placeholder="더 하고 싶은 말 (안 써도 돼)"
+            className="mt-1 w-full resize-none rounded-[10px] border border-gray-200 px-3.5 py-3 text-[14.5px] leading-relaxed outline-none focus:border-sm-navy"
+          />
+        ) : (
+          <button type="button" onClick={() => setMore(true)} className="text-[13px] font-semibold text-gray-500">
+            + 더 하고 싶은 말 쓰기
+          </button>
+        )}
+        <p className="mt-3 rounded-lg bg-orange-50 px-3 py-2 text-[12px] leading-relaxed text-[#C2410C]">
+          완전 익명으로 올라가 (학년만 보여). 대신 이름 · 학교 · 반처럼 누군지 알 수 있는 내용, 특정 사람을 저격하는 글은 안 돼.
+        </p>
         {err && <p className="mt-2 text-[13px] font-semibold text-red-600">{err}</p>}
         <button disabled={busy} className="mt-3 h-12 w-full rounded-[10px] bg-sm-navy text-[15px] font-bold text-white disabled:opacity-50">
-          {busy ? "올리는 중…" : "올리기 · +3점"}
+          {busy ? "외치는 중…" : "외치기 · +3점"}
         </button>
       </form>
     </div>
+  );
+}
+
+/* 반응 3개 (목록에서는 숫자만, 글에서는 누르기) */
+function ReactCounts({ r }) {
+  return (
+    <span className="flex items-center gap-2.5">
+      {REACTS.map(([k, e]) =>
+        Number(r?.[k] ?? 0) > 0 ? (
+          <span key={k}>
+            {e} {r[k]}
+          </span>
+        ) : null
+      )}
+    </span>
   );
 }
 
@@ -109,20 +133,27 @@ export function BoardList() {
   const { user } = useAuth();
   const uid = user?.id ?? null;
   const nav = useNavigate();
-  const [tag, setTag] = useState(null);
+  const tag = null; // 말머리는 우선 안 나눈다
   const [sort, setSort] = useState("new");
+  const [onlyPrompt, setOnlyPrompt] = useState(false);
   const [list, setList] = useState(null);
+  const [today, setToday] = useState(null);
   const [lv, setLv] = useState(null);
-  const [writing, setWriting] = useState(false);
+  const [writing, setWriting] = useState(null); // null | { prompt }
   const [toastNode, toast] = useToast();
 
-  const load = () => supabase.rpc("post_list", { p_tag: tag, p_sort: sort, p_limit: 50 }).then(({ data }) => setList(data || []));
+  const load = () =>
+    supabase
+      .rpc("post_list", { p_tag: tag, p_sort: sort, p_limit: 50, p_prompt: onlyPrompt ? today?.id ?? null : null })
+      .then(({ data }) => setList(data || []));
 
+  useEffect(() => {
+    supabase.rpc("shout_today").then(({ data }) => setToday(data || null));
+  }, []);
   useEffect(() => {
     setList(null);
     load();
-  }, [tag, sort, uid]);
-
+  }, [tag, sort, onlyPrompt, uid]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!uid) return setLv(null);
     supabase.rpc("lv_me").then(({ data }) => setLv(data));
@@ -131,42 +162,50 @@ export function BoardList() {
   const canWrite = lv && lv.level >= 3;
   const needToWrite = lv && lv.level < 3 ? 8 - lv.points : null; // Lv.3 = 8점
 
-  function openWrite() {
+  function openWrite(prompt = null) {
     if (!uid) return nav("/signup");
-    if (!canWrite) return toast(`글쓰기는 Lv.3부터 · ${needToWrite}점 남았어요`);
-    setWriting(true);
+    if (!canWrite) return toast(`외치기는 Lv.3부터 · ${needToWrite}점 남았어`);
+    setWriting({ prompt });
   }
 
   return (
     <div className="min-h-screen bg-[#F4F5F7]">
-      <div className="mx-auto max-w-3xl px-4 pb-24 pt-6 sm:px-6 sm:pt-10">
-        <div className="flex items-end">
-          <div>
-            <h1 className="text-[24px] font-bold tracking-tight text-sm-navy">자유게시판</h1>
-            <p className="mt-1 text-[13px] text-gray-500">질문 · 고민 · 수다 · 글 하나 +3점</p>
-          </div>
-        </div>
+      <div className="mx-auto max-w-2xl px-4 pb-28 pt-6 sm:px-5 sm:pt-10">
+        <h1 className="text-[26px] font-extrabold tracking-tight text-sm-navy">📣 옥상에서 외쳐!</h1>
+        <p className="mt-1 text-[14px] text-gray-600">학교에서 못 한 말, 친구한테 못 한 말. 여기서 외쳐! · 완전 익명</p>
+
+        {/* 물꼬의 오늘의 외침 */}
+        {today && (
+          <section className="mt-5 rounded-2xl bg-sm-navy p-5 text-white">
+            <p className="text-[12.5px] font-bold text-white/70">물꼬의 오늘의 외침</p>
+            <p className="mt-1.5 text-[19px] font-extrabold leading-snug">“{today.text}”</p>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button onClick={() => openWrite(today)} className="rounded-xl bg-white px-4 py-2.5 text-[14px] font-extrabold text-sm-navy">
+                오늘은 내 차례! 외치기
+              </button>
+              <button
+                onClick={() => setOnlyPrompt((v) => !v)}
+                className={`rounded-xl px-3.5 py-2.5 text-[13px] font-bold ${onlyPrompt ? "bg-white/25 text-white" : "text-white/80"}`}
+              >
+                {onlyPrompt ? "전체 외침 보기" : `오늘 ${today.answers}명이 외쳤어 ›`}
+              </button>
+            </div>
+          </section>
+        )}
 
         {uid && lv && !canWrite && (
           <div className="mt-4 rounded-2xl border-[1.5px] border-dashed border-gray-300 bg-white px-4 py-3.5 text-center">
-            <b className="text-[14px] text-sm-navy">글쓰기는 Lv.3부터 열려요</b>
+            <b className="text-[14px] text-sm-navy">외치기는 Lv.3부터 열려</b>
             <small className="mt-0.5 block text-[12.5px] text-gray-500">
-              지금 Lv.{lv.level} · {needToWrite}점만 더 모으면 돼요 (댓글 10자 이상 1개 = 2점)
+              지금 Lv.{lv.level} · {needToWrite}점만 더 모으면 돼 (나만 그래? 응답 · 댓글로 금방 올라가)
             </small>
           </div>
         )}
 
-        <div className="mt-4 flex items-center gap-1.5">
-          {[null, ...TAGS].map((t) => (
-            <button
-              key={t ?? "all"}
-              onClick={() => setTag(t)}
-              className={`rounded-full border px-3.5 py-1.5 text-[13px] font-semibold ${tag === t ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-600"}`}
-            >
-              {t ?? "전체"}
-            </button>
-          ))}
-          <div className="ml-auto flex gap-0.5 rounded-lg bg-[#E9EBEF] p-[3px]">
+        {/* 말머리 · 정렬 */}
+        <div className="mt-5 flex items-center gap-2">
+          <p className="min-w-0 flex-1 text-[13px] font-bold text-gray-500">{sort === "hot" ? "이번 주 가장 큰 외침" : "방금 올라온 외침"}</p>
+          <div className="flex shrink-0 gap-0.5 rounded-lg bg-[#E9EBEF] p-[3px]">
             {[
               ["new", "최신"],
               ["hot", "인기"],
@@ -178,23 +217,26 @@ export function BoardList() {
           </div>
         </div>
 
-        <div className="mt-3 rounded-2xl border border-gray-200 bg-white px-4 sm:px-5">
+        {/* 외침 카드 */}
+        <div className="mt-3 space-y-2.5">
           {list === null && <p className="py-12 text-center text-[14px] text-gray-500">불러오는 중…</p>}
-          {list?.length === 0 && <p className="py-12 text-center text-[14px] text-gray-500">{sort === "hot" ? "이번 주 인기글이 아직 없어요" : "첫 글을 남겨 보세요"}</p>}
+          {list?.length === 0 && (
+            <div className="rounded-2xl bg-white py-12 text-center">
+              <p className="text-[14px] text-gray-500">{sort === "hot" ? "이번 주 인기 외침이 아직 없어" : "아직 아무도 안 외쳤어. 첫 외침의 주인공이 돼 봐!"}</p>
+            </div>
+          )}
           {list?.map((p) => (
-            <Link key={p.id} to={`/board/${p.id}`} className="block border-b border-gray-100 py-4 last:border-0">
-              <span className={`text-[11.5px] font-bold ${TAG_COLOR[p.tag]}`}>{p.tag}</span>
-              <h3 className="mt-0.5 text-[15.5px] font-semibold leading-snug text-gray-900">
-                {p.title}
-                {p.comments > 0 && <span className="ml-1.5 text-[13px] font-bold text-sm-orange">[{p.comments}]</span>}
-              </h3>
-              <p className="mt-1 truncate text-[13px] text-gray-500">{p.excerpt}</p>
-              <div className="mt-2 flex items-center gap-2 text-[12px] text-gray-500">
-                <Avatar src={p.author?.avatar} nick={p.author?.nick} color={p.author?.color} size={20} round />
-                <LvTag author={p.author} />
-                <span>{p.author?.nick}</span>
+            <Link key={p.id} to={`/board/${p.id}`} className="block rounded-2xl bg-white p-4 ring-1 ring-gray-200 transition hover:ring-gray-300">
+              <h3 className="text-[17px] font-extrabold leading-snug text-gray-900">{p.title}</h3>
+              {p.excerpt && <p className="mt-1 line-clamp-2 text-[13.5px] text-gray-500">{p.excerpt}</p>}
+              <div className="mt-3 flex items-center gap-2 text-[12px] text-gray-500">
+                <span>{who(p.author)}</span>
                 <span>· {ago(p.created_at)}</span>
-                <span className="ml-auto">나도 그래 {p.likes}</span>
+                {p.mine && <span className="font-bold text-sm-navy">· 내 외침</span>}
+                <span className="ml-auto flex items-center gap-2.5">
+                  <ReactCounts r={p.reacts} />
+                  <span>💬 {p.comments}</span>
+                </span>
               </div>
             </Link>
           ))}
@@ -202,17 +244,18 @@ export function BoardList() {
       </div>
 
       <button
-        onClick={openWrite}
-        className="fixed bottom-20 right-5 z-40 md:bottom-6 flex h-[52px] items-center gap-1.5 rounded-full bg-sm-navy px-5 text-[15px] font-bold text-white shadow-[0_8px_20px_rgba(20,27,61,.3)] sm:right-[max(20px,calc(50%-380px))]"
+        onClick={() => openWrite(null)}
+        className="fixed bottom-6 right-5 z-40 flex h-[52px] items-center gap-1.5 rounded-full bg-sm-navy px-5 text-[15px] font-bold text-white shadow-[0_8px_20px_rgba(20,27,61,.3)] sm:right-[max(20px,calc(50%-360px))]"
       >
-        <span className="text-[20px] leading-none">+</span> 글쓰기
+        📣 나도 외치기
       </button>
 
       {writing && (
         <WriteSheet
-          onClose={() => setWriting(false)}
+          prompt={writing.prompt}
+          onClose={() => setWriting(null)}
           onDone={(id) => {
-            setWriting(false);
+            setWriting(null);
             checkLevel();
             nav(`/board/${id}`);
           }}
@@ -223,7 +266,7 @@ export function BoardList() {
   );
 }
 
-/* ───────── 글 ───────── */
+/* ───────── 외침 하나 ───────── */
 
 export function BoardPost() {
   const { id } = useParams();
@@ -241,16 +284,28 @@ export function BoardPost() {
     });
   }, [id, uid]);
 
-  async function like() {
+  async function react(kind) {
     if (!uid) return nav("/signup");
-    const { data, error } = await supabase.rpc("like_toggle", { p_kind: "post", p_id: String(p.id) });
+    const { data, error } = await supabase.rpc("post_react", { p_id: p.id, p_kind: kind });
     if (error) return toast(error.message);
-    setP((x) => ({ ...x, liked: data.liked, likes: data.likes }));
+    setP((x) => ({ ...x, reacts: data.reacts, my_react: data.my_react }));
   }
 
+  async function report() {
+    if (!uid) return nav("/signup");
+    const reason = askReason();
+    if (!reason) return;
+    const { data, error } = await supabase.rpc("report_target", { p_kind: "post", p_id: String(p.id), p_reason: reason });
+    if (error) return toast(error.message);
+    if (data?.hidden) {
+      window.alert("신고가 쌓여 이 외침은 가려졌어. 관리자가 확인할게.");
+      return nav("/board", { replace: true });
+    }
+    toast(data?.already ? "이미 신고했어" : "신고했어 · 확인할게");
+  }
 
   async function remove() {
-    if (!window.confirm("글을 지울까요? 지우면 이 글로 받은 점수도 빠져요.")) return;
+    if (!window.confirm("외침을 지울까? 지우면 이 외침으로 받은 점수도 빠져.")) return;
     await supabase.rpc("post_delete", { p_id: p.id });
     nav("/board", { replace: true });
   }
@@ -259,7 +314,9 @@ export function BoardPost() {
     return (
       <div className="mx-auto max-w-2xl px-4 py-24 text-center">
         <p className="text-[15px] text-gray-600">{err}</p>
-        <Link to="/board" className="mt-4 inline-block font-bold text-sm-navy">자유게시판으로</Link>
+        <Link to="/board" className="mt-4 inline-block font-bold text-sm-navy">
+          옥상에서 외쳐!로
+        </Link>
       </div>
     );
   if (!p) return <div className="py-24 text-center text-[14px] text-gray-500">불러오는 중…</div>;
@@ -267,31 +324,50 @@ export function BoardPost() {
   return (
     <div className="bg-white">
       <article className="mx-auto max-w-2xl px-5 pb-20 pt-6 sm:pt-10">
-        <Link to="/board" className="text-[13px] font-semibold text-gray-500 hover:text-sm-navy">‹ 자유게시판</Link>
-        <span className={`mt-5 block text-[12px] font-bold ${TAG_COLOR[p.tag]}`}>{p.tag}</span>
-        <h1 className="mt-1 text-[22px] font-bold leading-snug tracking-tight text-gray-900">{p.title}</h1>
+        <Link to="/board" className="text-[13px] font-semibold text-gray-500 hover:text-sm-navy">
+          ‹ 옥상에서 외쳐!
+        </Link>
+        {p.prompt && <p className="mt-5 text-[12.5px] text-gray-500">물꼬의 외침 · {p.prompt}</p>}
+        <h1 className="mt-4 text-[24px] font-extrabold leading-snug tracking-tight text-gray-900">{p.title}</h1>
         <div className="mt-3 flex items-center gap-2 text-[12.5px] text-gray-500">
-          <Avatar src={p.author?.avatar} nick={p.author?.nick} color={p.author?.color} size={30} round />
-          <LvTag author={p.author} />
-          <b className="font-bold text-gray-800">{p.author?.nick}</b>
-          <span>{ago(p.created_at)}</span>
-          <span className="ml-auto">
-            {p.mine && (
-              <button onClick={remove} className="text-gray-400 hover:text-red-600">지우기</button>
+          <span>{who(p.author)}</span>
+          <span>· {ago(p.created_at)}</span>
+          <span className="ml-auto flex gap-3">
+            {p.mine ? (
+              <button onClick={remove} className="text-gray-400 hover:text-red-600">
+                지우기
+              </button>
+            ) : (
+              <button onClick={report} className="text-gray-400 hover:text-red-600">
+                신고
+              </button>
             )}
           </span>
         </div>
-        <p className="mt-6 whitespace-pre-line text-[15.5px] leading-[1.8] text-gray-800">{p.body}</p>
+        {p.body && <p className="mt-5 whitespace-pre-line text-[15.5px] leading-[1.8] text-gray-800">{p.body}</p>}
 
-        <div className="mt-8 flex justify-center">
-          <button
-            onClick={like}
-            disabled={p.mine}
-            className={`rounded-full border-[1.5px] px-6 py-2.5 text-[14.5px] font-bold ${p.liked ? "border-sm-orange bg-orange-50 text-sm-orange" : "border-gray-200 text-gray-600"}`}
-          >
-            나도 그래 {p.likes}
-          </button>
+        {/* 반응 3개 */}
+        <div className="mt-8 grid grid-cols-3 gap-2">
+          {REACTS.map(([k, e, l]) => {
+            const on = p.my_react === k;
+            return (
+              <button
+                key={k}
+                onClick={() => react(k)}
+                disabled={p.mine}
+                className={`flex h-16 flex-col items-center justify-center rounded-2xl border-[1.5px] text-[13px] font-bold transition disabled:opacity-60 ${
+                  on ? "border-sm-navy bg-sm-navy text-white" : "border-gray-200 text-gray-700"
+                }`}
+              >
+                <span className="text-[18px] leading-none">{e}</span>
+                <span className="mt-1">
+                  {l} {Number(p.reacts?.[k] ?? 0)}
+                </span>
+              </button>
+            );
+          })}
         </div>
+        {p.mine && <p className="mt-2 text-center text-[12px] text-gray-400">내 외침에는 반응을 누를 수 없어</p>}
 
         <Comments kind="post" target={p.id} toast={toast} />
       </article>

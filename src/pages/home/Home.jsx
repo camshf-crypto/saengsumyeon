@@ -8,7 +8,7 @@ import { checkLevel } from "../../components/LevelUp";
 
 /*
  * 생수면 메인 (/)
- * 왼쪽: 탐구주제 검색창(= 흔한가 진단 입구) → 칼럼 배너 → 메뉴 8칸 → 지금 많이 보는 글
+ * 왼쪽: 탐구주제 검색창(= 흔한가 진단 입구) → 옥상에서 외쳐! 배너 → 메뉴 8칸 → 지금 많이 보는 글
  * 오른쪽: (회원) 내 레벨 + 오늘 할 일 / 오늘의 나만 그래? / (비회원) 가입 카드
  * 회원이 들어오면 출석을 찍고, 단계 보상을 확인해서 레벨업 팝업을 띄운다
  *
@@ -19,7 +19,7 @@ const PATHS = {
   interview: "/interview",
   mg: "/mulgyeol",
   puzzle: "/sb",
-  columns: "/columns",
+  voice: "/voice",
   note: "/my/note",
   board: "/board",
   ladder: null, // 준비 중
@@ -39,17 +39,16 @@ const TILES = [
   { key: "interview", title: "생기부 예상질문", sub: "대학별 면접 기준", icon: "mic", badge: "5개 무료" },
   { key: "mg", title: "나만 그래?", sub: "매일 5문항", icon: "poll" },
   { key: "puzzle", title: "합격 생기부 퍼즐", sub: "대학별 합격 사례", icon: "puzzle" },
-  { key: "columns", title: "입시 칼럼", sub: "매주 목요일 오후 5시", icon: "news", badge: "NEW" },
+  { key: "board", title: "옥상에서 외쳐!", sub: "학교에서 못 한 말", icon: "shout", badge: "NEW" },
   { key: "note", title: "내 생기부 노트", sub: "다 적으면 AI 입시 진단", icon: "note", badge: "AI 진단" },
-  { key: "board", title: "자유게시판", sub: "질문 · 고민 · 수다", icon: "chat" },
+  { key: "voice", title: "생수면 의견함", sub: "원하는 기능 · 불편한 점", icon: "chat" },
   { key: "ladder", title: "대학 사다리", sub: "내 성적 위치", icon: "ladder", badge: "준비 중", muted: true },
 ];
 
 const HOT_TABS = [
   { key: null, label: "전체" },
-  { key: "column", label: "칼럼" },
   { key: "mg", label: "나만 그래?" },
-  { key: "post", label: "게시판" },
+  { key: "post", label: "옥상에서 외쳐!" },
 ];
 
 /* ───────── 작은 조각들 ───────── */
@@ -68,45 +67,13 @@ function Icon({ name, className = "h-[22px] w-[22px]" }) {
     clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
     user: <><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0113 0M16 4.5a3.5 3.5 0 010 7M18 20a6.5 6.5 0 00-2.5-5.1" /></>,
     down: <path d="M6 9l6 6 6-6" />,
+    shout: <><path d="M3 10v4a1 1 0 001 1h3l5 4V5L7 9H4a1 1 0 00-1 1z" /><path d="M16 9a4 4 0 010 6M19 6a8 8 0 010 12" /></>,
   }[name];
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className={className}>
       {p}
     </svg>
   );
-}
-
-function LvTag({ author }) {
-  if (!author?.level) return null;
-  return (
-    <span className="inline-flex h-[18px] items-center gap-1 rounded border border-gray-200 px-1.5 text-[11px] font-bold text-gray-700">
-      <i className="h-1.5 w-1.5 rounded-full" style={{ background: author.color }} />
-      {author.stage ?? `Lv.${author.level}`}
-    </span>
-  );
-}
-
-function useCountdown(target) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    if (!target) return;
-    const t = setInterval(() => setNow(Date.now()), 30000);
-    return () => clearInterval(t);
-  }, [target]);
-  if (!target) return null;
-  const ms = new Date(target).getTime() - now;
-  if (ms <= 0) return "곧 공개";
-  const d = Math.floor(ms / 86400000);
-  const h = Math.floor((ms % 86400000) / 3600000);
-  const m = Math.floor((ms % 3600000) / 60000);
-  return `${d > 0 ? `${d}일 ` : ""}${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-}
-
-function whenLabel(iso) {
-  const d = new Date(iso);
-  const days = ["일", "월", "화", "수", "목", "금", "토"];
-  const h = d.getHours();
-  return `${days[d.getDay()]}요일 ${h < 12 ? "오전" : "오후"} ${h % 12 || 12}시`;
 }
 
 function ago(iso) {
@@ -125,7 +92,8 @@ export default function Home() {
 
   const [topic, setTopic] = useState("");
   const [members, setMembers] = useState(null);
-  const [next, setNext] = useState(null);
+  const [shout, setShout] = useState(null); // 물꼬의 오늘의 외침
+  const [topShout, setTopShout] = useState(null); // 이번 주 가장 큰 외침
   const [hot, setHot] = useState([]);
   const [hotTab, setHotTab] = useState(null);
   const [qs, setQs] = useState([]);
@@ -137,12 +105,11 @@ export default function Home() {
   const [answering, setAnswering] = useState(false);
   const [photo, setPhoto] = useState(null);
 
-  const countdown = useCountdown(next?.publish_at);
-
   // 모두에게 보이는 것
   useEffect(() => {
     supabase.rpc("main_numbers").then(({ data }) => data && setMembers(data.members));
-    supabase.rpc("col_next").then(({ data }) => setNext(data || null));
+    supabase.rpc("shout_today").then(({ data }) => setShout(data || null));
+    supabase.rpc("post_list", { p_sort: "hot", p_limit: 1 }).then(({ data }) => setTopShout(data?.[0] ?? null));
     supabase.rpc("mg_stats").then(({ data }) => setQs(data || []));
   }, [uid]);
 
@@ -238,8 +205,7 @@ export default function Home() {
   }
 
   function openHot(h) {
-    if (h.kind === "column") nav(`${PATHS.columns}/${h.id}`);
-    else if (h.kind === "post") nav(`${PATHS.board}/${h.id}`);
+    if (h.kind === "post") nav(`${PATHS.board}/${h.id}`);
     else nav(PATHS.mg);
   }
 
@@ -425,33 +391,30 @@ export default function Home() {
             </Link>
           )}
 
-          {/* 칼럼 배너 */}
+          {/* 옥상에서 외쳐! 배너 — 물꼬의 오늘의 외침 + 이번 주 가장 큰 외침 */}
           <Link
-            to={next ? PATHS.columns : PATHS.columns}
-            className="relative mt-6 flex min-h-[132px] flex-col justify-center sm:justify-start overflow-hidden rounded-2xl bg-sm-navy px-6 py-6 text-white sm:flex-row sm:items-center sm:px-8"
+            to={PATHS.board}
+            className="relative mt-6 flex min-h-[132px] flex-col gap-4 overflow-hidden rounded-2xl bg-sm-navy px-6 py-6 text-white sm:flex-row sm:items-center sm:px-8"
           >
-            <div className="relative">
-              <small className="inline-flex items-center gap-1.5 text-[12px] font-bold text-orange-300">
-                입시 칼럼
-                {next?.series && (
-                  <em className="rounded bg-white/10 px-1.5 py-px font-semibold not-italic text-white">
-                    {next.series} {next.series_no}편
-                  </em>
-                )}
-              </small>
-              <b className="mt-2 block text-[19px] font-bold tracking-tight sm:text-[22px]">
-                {next ? next.title : "매주 목요일 오후 5시, 3분 입시 칼럼"}
+            <div className="relative min-w-0 flex-1">
+              <small className="text-[12px] font-bold text-orange-300">📣 옥상에서 외쳐! · 물꼬의 오늘의 외침</small>
+              <b className="mt-2 block text-[19px] font-bold leading-snug tracking-tight sm:text-[22px]">
+                {shout ? `“${shout.text}”` : "학교에서 못 한 말, 여기서 외쳐!"}
               </b>
-              <span className="mt-1.5 block text-[13px] text-slate-300">
-                {next ? `${whenLabel(next.publish_at)} 공개 · 3분 분량` : "지난 칼럼 보러 가기"}
-              </span>
+              {topShout ? (
+                <span className="mt-2 block truncate text-[13px] text-slate-300">
+                  가장 큰 외침 · “{topShout.title}”
+                  <span className="ml-1.5 text-slate-400">
+                    {topShout.author?.grade ? `${topShout.author.grade} · ` : ""}익명
+                  </span>
+                </span>
+              ) : (
+                <span className="mt-2 block text-[13px] text-slate-300">완전 익명 · 한 줄만 외쳐도 돼</span>
+              )}
             </div>
-            {next && (
-              <div className="relative mt-3 sm:ml-auto sm:mt-0 sm:text-right">
-                <small className="text-[11.5px] text-slate-300">공개까지</small>
-                <b className="block text-[24px] font-bold tabular-nums">{countdown}</b>
-              </div>
-            )}
+            <span className="relative shrink-0 self-start rounded-xl bg-white px-4 py-2.5 text-[14px] font-extrabold text-sm-navy sm:self-center">
+              나도 외치기 ›
+            </span>
           </Link>
 
           {/* 메뉴 8칸 */}
@@ -516,7 +479,7 @@ export default function Home() {
                   <span className={`w-5 flex-none text-[17px] font-bold tabular-nums ${i < 3 ? "text-sm-orange" : "text-gray-900"}`}>{i + 1}</span>
                   <div className="min-w-0 flex-1">
                     <span className={`mb-1 block text-[11.5px] font-bold ${h.kind === "mg_result" ? "text-sm-orange" : h.kind === "post" ? "text-teal-700" : "text-indigo-700"}`}>
-                      {h.category}
+                      {h.kind === "post" ? "옥상에서 외쳐!" : h.category}
                     </span>
                     <h3 className="text-[15.5px] font-semibold leading-snug text-gray-900 sm:text-[16px]">{h.title}</h3>
                     <div className="mt-1.5 flex flex-wrap items-center gap-2.5 text-[12.5px] text-gray-500">
@@ -527,17 +490,9 @@ export default function Home() {
                           {h.best?.body && <span className="truncate">베스트 · "{h.best.body}"</span>}
                         </>
                       )}
-                      {h.kind === "column" && (
-                        <>
-                          <span className="flex items-center gap-1"><Icon name="clock" className="h-3.5 w-3.5" />{h.minutes}분</span>
-                          <span className="flex items-center gap-1"><Icon name="chat" className="h-3.5 w-3.5" />{h.comments}</span>
-                          <span>생수면 입시연구소</span>
-                        </>
-                      )}
                       {h.kind === "post" && (
                         <>
-                          <LvTag author={h.author} />
-                          <span>{h.author?.nick} · {ago(h.created_at)}</span>
+                          <span>{h.author?.grade ? `${h.author.grade} · ` : ""}익명 · {ago(h.created_at)}</span>
                           <span className="flex items-center gap-1"><Icon name="chat" className="h-3.5 w-3.5" />{h.comments}</span>
                         </>
                       )}
@@ -549,16 +504,10 @@ export default function Home() {
                       나도 그래
                     </span>
                   )}
-                  {h.kind === "column" && (
-                    <span className="flex h-[60px] w-[72px] flex-none flex-col items-center justify-center rounded-[10px] bg-sm-navy text-[11.5px] font-semibold text-slate-300 sm:h-[72px] sm:w-24">
-                      <b className="text-[15px] font-bold text-white">칼럼</b>
-                      {h.minutes}분
-                    </span>
-                  )}
                   {h.kind === "post" && (
                     <span className="flex h-[60px] w-[72px] flex-none flex-col items-center justify-center rounded-[10px] bg-[#F4F5F7] text-[11.5px] font-semibold text-gray-700 sm:h-[72px] sm:w-24">
                       <b className="text-[18px] font-extrabold tabular-nums text-gray-900 sm:text-[22px]">{h.comments}</b>
-                      답변
+                      댓글
                     </span>
                   )}
                 </button>

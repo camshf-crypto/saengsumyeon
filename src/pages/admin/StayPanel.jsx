@@ -11,7 +11,7 @@ const SECTION = {
   home: "홈",
   mulgyeol: "나만 그래?",
   columns: "입시 칼럼",
-  board: "자유게시판",
+  board: "옥상에서 외쳐!",
   sb: "합격 생기부 퍼즐",
   note: "내 생기부 노트",
   level: "내 레벨",

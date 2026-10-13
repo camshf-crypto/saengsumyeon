@@ -63,9 +63,9 @@ const SECTIONS = [
     title: "커뮤니티",
     items: [
       { to: "/mulgyeol", label: "나만 그래?", icon: "poll", color: "#1A5E9A" },
-      { to: "/board", label: "자유게시판", icon: "chat", color: "#0D9488" },
-      { to: "/columns", label: "입시 칼럼", icon: "news", color: "#18224F" },
+      { to: "/board", label: "옥상에서 외쳐!", icon: "chat", color: "#0D9488" },
       { to: "/sb", label: "합격 생기부 퍼즐", icon: "puzzle", color: "#DB2777" },
+      { to: "/voice", label: "생수면 의견함", icon: "mail", color: "#0D9488" },
     ],
   },
   {

@@ -6,10 +6,22 @@ import { supabase } from "../lib/supabase";
 import Avatar from "./Avatar";
 
 /*
- * 댓글 (입시 칼럼 · 자유게시판이 같이 쓴다)
- *   kind: "column" | "post",  target: 칼럼 id 또는 글 id
+ * 댓글 (입시 칼럼 · 옥상에서 외쳐!가 같이 쓴다)
+ *   kind: "column" | "post",  target: 칼럼 id 또는 외침 id
  *   답글(한 단계) · 나도 그래(좋아요) · 내 댓글 지우기 · 나도 그래 3개 이상 1등은 베스트
+ *   옥상(post) 댓글은 완전 익명 — '익명 · 고2', 글쓴이 댓글은 '글쓴이' · 신고 (3번 쌓이면 가려짐)
  */
+
+// 익명 글쓴이 이름 — 옥상은 '글쓴이' / '익명', 칼럼은 닉네임
+const nameOf = (a) => (a?.anon ? (a.op ? "글쓴이" : "익명") : a?.nick ?? "");
+const REPORT_REASONS = ["누군지 알 수 있는 내용 (이름 · 학교)", "특정 사람 저격 · 괴롭힘", "욕설 · 혐오", "광고 · 도배", "기타"];
+
+// 신고 사유 고르기 (번호로 고른다) — 고르지 않으면 신고하지 않는다
+export function askReason() {
+  const v = window.prompt(`신고 이유를 번호로 골라 줘\n${REPORT_REASONS.map((r, i) => `${i + 1}. ${r}`).join("\n")}`, "1");
+  const i = Number(v) - 1;
+  return REPORT_REASONS[i] ?? null;
+}
 
 function ago(iso) {
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -85,6 +97,16 @@ export default function Comments({ kind, target, toast, onCount }) {
     setList((l) => l.map((x) => (x.id === c.id ? { ...x, liked: data.liked, likes: data.likes } : x)));
   }
 
+  async function report(c) {
+    if (!user) return nav("/signup");
+    const reason = askReason();
+    if (!reason) return;
+    const { data, error } = await supabase.rpc("report_target", { p_kind: "comment", p_id: String(c.id), p_reason: reason });
+    if (error) return toast?.(error.message);
+    toast?.(data?.already ? "이미 신고했어요" : "신고했어요 · 확인할게요");
+    if (data?.hidden) load();
+  }
+
   async function remove(c) {
     if (!window.confirm("댓글을 지울까요? 달린 답글도 같이 지워져요.")) return;
     await supabase.rpc("cmt_delete", { p_id: c.id });
@@ -102,9 +124,16 @@ export default function Comments({ kind, target, toast, onCount }) {
       <div className={reply ? "py-3" : ""}>
         <div className="flex items-center gap-1.5 text-[12.5px]">
           {c.best && <span className="mr-1 text-[11px] font-bold text-amber-700">베스트</span>}
-          <Avatar src={c.author?.avatar} nick={c.author?.nick} color={c.author?.color} size={22} round />
+          {c.author?.anon ? (
+            <span className={`flex h-[22px] w-[22px] flex-none items-center justify-center rounded-full text-[11px] font-bold text-white ${c.author.op ? "bg-sm-orange" : "bg-gray-400"}`}>
+              {c.author.op ? "글" : "익"}
+            </span>
+          ) : (
+            <Avatar src={c.author?.avatar} nick={c.author?.nick} color={c.author?.color} size={22} round />
+          )}
           <LvTag author={c.author} />
-          <b className="font-bold text-gray-900">{c.author?.nick}</b>
+          <b className={`font-bold ${c.author?.op ? "text-sm-orange" : "text-gray-900"}`}>{nameOf(c.author)}</b>
+          {c.author?.anon && c.author.grade && <span className="text-gray-400">· {c.author.grade}</span>}
           <span className="text-gray-400">{ago(c.created_at)}</span>
           <span className="ml-auto flex gap-2.5 text-[11.5px] text-gray-400">
             {!reply && (
@@ -120,6 +149,7 @@ export default function Comments({ kind, target, toast, onCount }) {
               </button>
             )}
             {c.mine && <button onClick={() => remove(c)}>지우기</button>}
+            {!c.mine && kind === "post" && <button onClick={() => report(c)}>신고</button>}
           </span>
         </div>
         <p className={`my-1.5 whitespace-pre-line leading-relaxed text-gray-800 ${reply ? "text-[13.5px]" : "text-[14px]"}`}>{c.body}</p>
@@ -168,7 +198,7 @@ export default function Comments({ kind, target, toast, onCount }) {
                         value={replyText}
                         onChange={(e) => setReplyText(e.target.value)}
                         maxLength={300}
-                        placeholder={`${c.author?.nick ?? ""}에게 답글`}
+                        placeholder={`${nameOf(c.author)}에게 답글`}
                         className="min-w-0 flex-1 rounded-[10px] border border-gray-200 px-3 py-2.5 text-[13.5px] outline-none focus:border-sm-navy"
                       />
                       <button disabled={busy} className="flex-none rounded-[10px] bg-sm-navy px-3.5 text-[13px] font-bold text-white disabled:opacity-50">

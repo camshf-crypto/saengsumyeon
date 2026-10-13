@@ -4,7 +4,7 @@ import { supabase } from "../../lib/supabase";
 
 /*
  * 새 서비스 현황 — 관리자 첫 화면 '커뮤니티 · 레벨' 탭과 커뮤니티 관리 '현황' 탭이 같이 쓴다
- * 회원 · 날짜별 활동 · 나만 그래? · 자유게시판 · 생기부 노트 · 퍼즐 · 쿠폰 · 레벨 분포 · 조각 · 입시 칼럼 · 설명회
+ * 회원 · 날짜별 활동 · 나만 그래? · 옥상에서 외쳐! · 생기부 노트 · 퍼즐 · 쿠폰 · 레벨 분포 · 조각 · 입시 칼럼 · 설명회
  * from · to 를 주면 그 기간, 안 주면 위에 기간 버튼(오늘 · 7일 · 30일 · 전체)이 나온다
  */
 
@@ -138,7 +138,7 @@ export default function CommunityStatsPanel({ from, to }) {
                 <Tile label="댓글 나도 그래" value={n(d.mulgyeol.likes)} />
               </div>
             </Block>
-            <Block title="자유게시판">
+            <Block title="옥상에서 외쳐!">
               <div className="grid grid-cols-3 gap-2">
                 <Tile label="글" value={n(d.board.posts)} sub={`${n(d.board.writers)}명 · ${Object.entries(d.board.tags ?? {}).map(([k, v]) => `${k} ${v}`).join(" · ")}`} />
                 <Tile label="댓글" value={n(d.board.comments)} />

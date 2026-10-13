@@ -9,6 +9,8 @@ import SbNotice from "./components/SbNotice";
 import Footer from "./components/Footer";
 import LevelUpHost from "./components/LevelUp";
 import StayTracker from "./components/StayTracker";
+import SurveyPopup from "./components/SurveyPopup";
+import Voice from "./pages/voice/Voice";
 import Suggest from "./pages/mulgyeol/Suggest";
 
 import Landing from "./pages/landing/Landing";
@@ -90,6 +92,7 @@ function Layout({ children }) {
         {children}
         <LevelUpHost />
         <StayTracker />
+        <SurveyPopup />
       </main>
     );
 
@@ -100,6 +103,7 @@ function Layout({ children }) {
       <Footer />
       <LevelUpHost />
       <StayTracker />
+      <SurveyPopup />
     </div>
   );
 }
@@ -139,12 +143,14 @@ export default function App() {
             <Route path="/mulgyeol" element={<Mulgyeol />} />
             <Route path="/mulgyeol/suggest" element={<Suggest />} />
             <Route path="/sb" element={<Sb />} />
+            {/* 생수면 의견함 — 원하는 기능에 나도 원해 · 새로 제안 */}
+            <Route path="/voice" element={<Voice />} />
 
             {/* 입시 칼럼 — 화 · 목 오후 5시 공개 */}
             <Route path="/columns" element={<ColumnList />} />
             <Route path="/columns/:id" element={<ColumnRead />} />
 
-            {/* 자유게시판 — 글쓰기는 Lv.3부터 */}
+            {/* 옥상에서 외쳐! (예전 자유게시판) — 외치기는 Lv.3부터 */}
             <Route path="/board" element={<BoardList />} />
             <Route path="/board/:id" element={<BoardPost />} />
 

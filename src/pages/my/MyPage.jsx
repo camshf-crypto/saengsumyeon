@@ -825,7 +825,7 @@ export default function MyPage() {
                 </Link>
               ))}
 
-            {/* 내 댓글 — 자유게시판 · 입시 칼럼 · 나만 그래? */}
+            {/* 내 댓글 — 옥상에서 외쳐! · 입시 칼럼 · 나만 그래? */}
             {!busy && tab === "comments" &&
               rows.map((c) => (
                 <Link key={c.id} to={c.link} className="block rounded-xl border border-gray-200 p-4">
