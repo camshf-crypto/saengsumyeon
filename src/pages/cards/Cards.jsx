@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
+import LoginGate, { LoginPopup } from "../../components/LoginGate";
 
 /*
  * 💧 물병 단어장 — 사탐 · 과탐 개념 외우기 (고1 · 고2)
@@ -53,7 +54,7 @@ function Bottle({ value = 0, size = 44 }) {
 
 /* ───────── 학년 › 과목 고르기 ───────── */
 
-export function CardHome() {
+function CardHomeInner() {
   const { user } = useAuth();
   const [grade, setGrade] = useState(null);
   const [list, setList] = useState(null);
@@ -146,11 +147,12 @@ export function CardHome() {
 
 /* ───────── 단원 목록 ───────── */
 
-export function CardUnits() {
+function CardUnitsInner() {
   const { subject } = useParams();
   const SUBJECT = decodeURIComponent(subject);
   const { user } = useAuth();
   const [units, setUnits] = useState(null);
+  const [askLogin, setAskLogin] = useState(false); // 비회원이 단원을 눌렀을 때
 
   useEffect(() => {
     supabase.rpc("cards_units", { p_subject: SUBJECT }).then(({ data }) => setUnits(data || []));
@@ -165,13 +167,20 @@ export function CardUnits() {
         <p className="mt-3 text-[12.5px] font-bold text-gray-500">💧 물병 단어장</p>
         <h1 className="mt-0.5 text-[24px] font-extrabold tracking-tight text-sm-navy">{nameOf(SUBJECT)}</h1>
         <p className="mt-1 text-[13.5px] text-gray-600">빨간 가리개를 내려서 확인하고, 알면 옆으로 넘겨. 단원 물병을 가득 채워 봐.</p>
-        {!user && <p className="mt-3 rounded-xl bg-orange-50 px-3.5 py-2.5 text-[12.5px] text-[#C2410C]">로그인하면 물병이 저장돼서 다음에 이어서 채울 수 있어</p>}
         <div className="mt-4 grid grid-cols-2 gap-2.5">
           {units === null && <p className="col-span-2 py-12 text-center text-[14px] text-gray-500">불러오는 중…</p>}
           {units?.map((u) => {
             const v = u.known / Math.max(1, u.total);
             return (
-              <Link key={u.unit_no} to={`/cards/${encodeURIComponent(SUBJECT)}/${u.unit_no}`} className="flex flex-col rounded-2xl bg-white p-4 ring-1 ring-gray-200 transition hover:-translate-y-0.5 hover:ring-gray-300">
+              <Link
+                key={u.unit_no}
+                to={`/cards/${encodeURIComponent(SUBJECT)}/${u.unit_no}`}
+                onClick={(e) => {
+                  if (user) return;
+                  e.preventDefault();
+                  setAskLogin(true);
+                }}
+                className="flex flex-col rounded-2xl bg-white p-4 ring-1 ring-gray-200 transition hover:-translate-y-0.5 hover:ring-gray-300">
                 <div className="flex items-start justify-between">
                   <span className="text-[12px] font-extrabold text-[#2563EB]">{u.unit_no}단원</span>
                   <Bottle value={v} size={30} />
@@ -185,13 +194,20 @@ export function CardUnits() {
           })}
         </div>
       </div>
+      <LoginPopup
+        open={askLogin}
+        onClose={() => setAskLogin(false)}
+        icon={<Bottle value={0.6} size={56} />}
+        title="로그인하고 이 단원 채우기"
+        desc={"로그인하면 고1~고3 전과목 개념 카드를 볼 수 있고, 외운 카드가 저장돼서 이어서 공부할 수 있어요."}
+      />
     </div>
   );
 }
 
 /* ───────── 단어장 넘기기 ───────── */
 
-export default function Cards() {
+function CardsInner() {
   const { subject, unit } = useParams();
   const SUBJECT = decodeURIComponent(subject);
   const { user } = useAuth();
@@ -400,5 +416,34 @@ export default function Cards() {
         )}
       </div>
     </div>
+  );
+}
+
+/* 로그인한 회원만 — 비회원이 들어오면 공통 로그인 안내 (생기부 진단과 같은 모양) */
+function MemberOnly({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="py-24 text-center text-[14px] text-gray-500">불러오는 중…</div>;
+  if (user) return children;
+  return (
+    <LoginGate
+      icon={<Bottle value={0.6} size={56} />}
+      title="전과목 단어장은 회원 전용이에요"
+      desc="로그인하면 고1~고3 전과목 개념 카드를 볼 수 있고, 외운 카드가 저장돼서 이어서 공부할 수 있어요."
+    />
+  );
+}
+
+// 과목 · 단원 목록은 누구나 볼 수 있다 — 단원을 누를 때 로그인 안내 (카드 화면은 회원만)
+export function CardHome() {
+  return <CardHomeInner />;
+}
+export function CardUnits() {
+  return <CardUnitsInner />;
+}
+export default function Cards() {
+  return (
+    <MemberOnly>
+      <CardsInner />
+    </MemberOnly>
   );
 }

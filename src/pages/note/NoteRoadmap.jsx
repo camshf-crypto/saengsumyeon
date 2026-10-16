@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
+import LoginGate, { NoteIcon } from "../../components/LoginGate";
 
 /*
  * 내 로드맵 (/my/note/roadmap) — 고2 로드맵 · 고3 1학기 로드맵 (결제 승인된 학생만)
@@ -313,12 +314,7 @@ export default function NoteRoadmap() {
 
   if (loading) return <div className="py-24 text-center text-gray-500">불러오는 중…</div>;
   if (!user)
-    return (
-      <div className="mx-auto max-w-md px-5 py-20 text-center">
-        <p className="text-[15px] text-gray-600">로그인하면 로드맵을 볼 수 있어요.</p>
-        <button onClick={() => nav("/login")} className="mt-4 rounded-[10px] bg-sm-navy px-6 py-3 text-[14.5px] font-bold text-white">로그인</button>
-      </div>
-    );
+    return <LoginGate icon={<NoteIcon />} title="내 생기부 진단은 회원 전용이에요" desc="학년별 활동을 적으면 가고 싶은 학과 기준으로 AI가 입시 방향을 진단하고, 다음 학년 로드맵까지 짜 줘요." />;
 
   return (
     <div className="min-h-screen bg-[#F4F5F7]">

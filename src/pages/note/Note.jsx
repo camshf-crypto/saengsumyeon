@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
+import { LoginPopup, NoteIcon } from "../../components/LoginGate";
 
 /*
  * 내 생기부 노트 (/my/note)
@@ -67,11 +68,17 @@ export default function Note() {
   const [err, setErr] = useState("");
   const [roadmapPaid, setRoadmapPaid] = useState(false); // 로드맵을 결제(승인)했는지
   const [diagDone, setDiagDone] = useState(false); // 진단을 이미 받았는지 (받았으면 다시 돌리지 않고 결과로)
+  const [askLogin, setAskLogin] = useState(false); // 비회원이 저장하려 할 때 — 화면은 다 보여 주고 저장 순간에 로그인 안내
 
   const load = () => supabase.rpc("note_list").then(({ data }) => setList(data || []));
 
   useEffect(() => {
-    if (!uid) return;
+    // 비회원도 화면은 그대로 본다 (빈 노트) — 저장할 때 로그인 안내
+    if (!uid) {
+      setList([]);
+      setEditMy(true);
+      return;
+    }
     load();
     supabase.from("note_roadmap_access").select("user_id").maybeSingle().then(({ data }) => setRoadmapPaid(Boolean(data)));
     supabase.from("note_diagnoses").select("id").limit(1).then(({ data }) => setDiagDone(Boolean(data?.length)));
@@ -104,6 +111,7 @@ export default function Note() {
 
   async function saveMy(e) {
     e.preventDefault();
+    if (!uid) return setAskLogin(true);
     const { error } = await supabase.rpc("sm_set_dept", { p_department: my.department });
     if (error) return setErr(error.message);
     setEditMy(false);
@@ -111,6 +119,7 @@ export default function Note() {
 
   async function add(e) {
     e.preventDefault();
+    if (!uid) return setAskLogin(true);
     setErr("");
 
     // 교과 세특 — 채운 과목 줄을 한 번에 저장
@@ -166,21 +175,6 @@ export default function Note() {
   }
 
   if (loading) return <div className="py-24 text-center text-gray-500">불러오는 중…</div>;
-
-  if (!uid)
-    return (
-      <div className="mx-auto max-w-md px-5 py-20 text-center">
-        <h1 className="text-[22px] font-bold text-sm-navy">내 생기부 노트</h1>
-        <p className="mt-2 text-[14px] leading-relaxed text-gray-600">
-          학년별 생기부를 다 적으면,
-          <br />
-          AI가 내 입시 방향을 진단해 줘요.
-        </p>
-        <Link to="/signup" className="mt-6 inline-block rounded-[10px] bg-[#FEE500] px-6 py-3 text-[14.5px] font-bold text-[#191919]">
-          카카오로 시작하기
-        </Link>
-      </div>
-    );
 
   const input = "w-full rounded-[10px] border border-gray-200 bg-white px-3 py-2.5 text-[14px] outline-none focus:border-sm-navy";
 
@@ -444,6 +438,14 @@ export default function Note() {
       {toast && (
         <div className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 rounded-[10px] bg-sm-navy/95 px-4 py-2.5 text-[13.5px] font-semibold text-white md:bottom-8">{toast}</div>
       )}
+
+      <LoginPopup
+        open={askLogin}
+        onClose={() => setAskLogin(false)}
+        icon={<NoteIcon />}
+        title="로그인하고 저장하기"
+        desc="적은 활동이 내 생기부 노트에 저장되고, 10칸을 채우면 가고 싶은 학과 기준으로 AI 진단을 받을 수 있어요."
+      />
     </div>
   );
 }
