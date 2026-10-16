@@ -6,7 +6,7 @@ import { supabase } from "../../lib/supabase";
 /*
  * 내 생기부 노트 (/my/note)
  * 학년 · 영역별로 내 활동을 한 줄씩 쌓는다 (학기 구분 없음). 생기부 예상질문에서 넣은 활동도 같이 보인다
- * 고1을 다 채우면 (교과 세특 10과목 + 자율 · 동아리 · 진로 = 13칸) AI 입시 방향 진단이 열린다
+ * 고1 13칸(교과 세특 10과목 + 자율 · 동아리 · 진로) 중 10칸 이상 채우면 AI 입시 방향 진단이 열린다 (13칸 다 채우면 더 정확)
  * 세특 과목 수: 고1 10 · 고2 10 · 고3 6 (고3은 1학기까지만 반영)
  * 독서는 대입에 반영되지 않아 선택 (적으면 진단에 참고만)
  */
@@ -21,7 +21,8 @@ const KINDS = [
 ];
 const KIND_LABEL = Object.fromEntries(KINDS.map((k) => [k.key, k.label]));
 const NEED_SUBJECTS = { 고1: 10, 고2: 10, 고3: 6 }; // 학년별 세특 과목 수
-const UNLOCK_GRADE = "고1"; // 이 학년을 다 채우면 진단이 열린다
+const UNLOCK_GRADE = "고1"; // 이 학년 칸으로 진단을 연다
+const UNLOCK_AT = 10; // 13칸 중 이만큼 채우면 진단이 열린다 (서버 note_diagnose 와 같게)
 
 const PLACEHOLDER = {
   subject: "예) 손 소독제 농도별로 세균 배양을 비교하는 실험을 하고 보고서를 씀",
@@ -58,15 +59,22 @@ export default function Note() {
   const [editMy, setEditMy] = useState(false);
   const [tab, setTab] = useState(UNLOCK_GRADE);
   const [f, setF] = useState({ kind: "subject", subject: "", content: "", author: "" });
+  // 교과 세특은 과목을 여러 개 한 번에 적는다 — [+ 과목 추가]로 칸을 늘린다
+  const blankRows = () => [{ subject: "", content: "" }, { subject: "", content: "" }, { subject: "", content: "" }];
+  const [rows, setRows] = useState(blankRows);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
   const [err, setErr] = useState("");
+  const [roadmapPaid, setRoadmapPaid] = useState(false); // 로드맵을 결제(승인)했는지
+  const [diagDone, setDiagDone] = useState(false); // 진단을 이미 받았는지 (받았으면 다시 돌리지 않고 결과로)
 
   const load = () => supabase.rpc("note_list").then(({ data }) => setList(data || []));
 
   useEffect(() => {
     if (!uid) return;
     load();
+    supabase.from("note_roadmap_access").select("user_id").maybeSingle().then(({ data }) => setRoadmapPaid(Boolean(data)));
+    supabase.from("note_diagnoses").select("id").limit(1).then(({ data }) => setDiagDone(Boolean(data?.length)));
     supabase.rpc("sm_get_my").then(({ data }) => {
       if (!data) return;
       setMy({ grade: data.grade, department: data.department });
@@ -104,6 +112,37 @@ export default function Note() {
   async function add(e) {
     e.preventDefault();
     setErr("");
+
+    // 교과 세특 — 채운 과목 줄을 한 번에 저장
+    if (f.kind === "subject") {
+      const fill = rows.filter((r) => r.subject.trim() || r.content.trim());
+      if (!fill.length) return setErr("과목과 활동을 하나 이상 적어 주세요");
+      const bad = fill.find((r) => !r.subject.trim() || r.content.trim().length < 4);
+      if (bad) return setErr(bad.subject.trim() ? `${bad.subject} 활동을 조금 더 적어 주세요` : "과목 이름을 적어 주세요");
+      setBusy(true);
+      let n = 0;
+      for (const r of fill) {
+        const { error } = await supabase.rpc("note_add", {
+          p_grade: tab, p_term: null, p_kind: "subject", p_subject: r.subject.trim(), p_content: r.content.trim(), p_author: null,
+        });
+        if (error) {
+          setErr(n ? `${n}과목까지 저장했어요. ${error.message}` : error.message);
+          break;
+        }
+        n += 1;
+      }
+      setBusy(false);
+      if (n) {
+        setRows((rs) => {
+          const left = rs.filter((r) => (r.subject.trim() || r.content.trim()) && !fill.slice(0, n).includes(r));
+          return left.length ? left : blankRows();
+        });
+        flash(`${n}과목 저장했어요`);
+        load();
+      }
+      return;
+    }
+
     setBusy(true);
     const { data, error } = await supabase.rpc("note_add", {
       p_grade: tab,
@@ -157,36 +196,55 @@ export default function Note() {
         <div className="mt-4 rounded-2xl bg-sm-navy p-5 text-white">
           <small className="text-[12px] font-bold text-orange-300">AI 입시 방향 진단</small>
           <b className="mt-1 block text-[19px] font-bold leading-snug tracking-tight">
-            학년별 생기부를 다 적으면,
+            학년별 활동을 {UNLOCK_AT}칸 적으면,
             <br />
-            AI가 내 입시 방향을 진단해 줘요
+            가고 싶은 학과 기준으로 진단해 줘요
           </b>
           <ul className="mt-3 grid gap-1.5 text-[13.5px] text-slate-200">
-            <li>· 지금 내 생기부가 어느 계열 · 학과로 모이고 있는지</li>
-            <li>· 같은 계열 합격 생기부와 비교해 비어 있는 곳</li>
-            <li>· 다음 학년에 이어서 하면 좋은 탐구 · 활동</li>
+            <li>· 가고 싶은 학과와 내 생기부가 얼마나 이어지는지</li>
+            <li>· 그 학과가 보는 역량 중 비어 있는 곳</li>
+            <li>· 고2에 고를 선택과목과 이어갈 탐구</li>
           </ul>
 
           <div className="mt-5 flex items-baseline justify-between text-[13px]">
             <span className="text-slate-300">고1 채운 칸</span>
             <b className="text-[20px] font-bold tabular-nums">
-              {unlock.done}
-              <span className="text-[14px] text-slate-400"> / {unlock.total}</span>
+              {Math.min(unlock.done, UNLOCK_AT)}
+              <span className="text-[14px] text-slate-400"> / {UNLOCK_AT}</span>
             </b>
           </div>
           <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-white/15">
-            <i className="block h-full rounded-full bg-orange-300 transition-all" style={{ width: `${unlock.pct}%` }} />
+            <i className="block h-full rounded-full bg-orange-300 transition-all" style={{ width: `${Math.min(100, (unlock.done * 100) / UNLOCK_AT)}%` }} />
           </div>
           <p className="mt-2 text-[12.5px] text-slate-300">
-            {unlock.complete
-              ? "고1을 다 채웠어요. 진단이 열리면 가장 먼저 알려 드릴게요."
+            {roadmapPaid
+              ? "로드맵이 열렸어요. 저장된 로드맵을 바로 볼 수 있어요."
+              : diagDone
+              ? "진단을 받았어요. 저장된 결과를 다시 볼 수 있어요."
+              : unlock.done >= UNLOCK_AT
+              ? "진단이 열렸어요. 가고 싶은 학과 기준으로 진단을 받아 보세요."
               : unlock.next.key === "subject"
               ? `고1 교과 세특을 ${unlock.next.need - unlock.next.done}과목 더 적어 주세요`
               : `고1 ${unlock.next.label} 활동을 적어 주세요`}
           </p>
-          <button disabled className="mt-4 h-11 w-full rounded-[10px] bg-white/10 text-[14px] font-bold text-slate-300">
-            {unlock.complete ? "AI 진단 받기 (곧 열려요)" : `${unlock.total - unlock.done}칸만 더 채우면 진단이 열려요`}
-          </button>
+          {roadmapPaid && (
+            <Link to="/my/note/roadmap" className="mt-4 flex h-12 w-full items-center justify-center rounded-[10px] bg-white text-[15px] font-bold text-sm-navy">
+              🗺️ 내 로드맵 보기 →
+            </Link>
+          )}
+          {roadmapPaid ? (
+            <Link to="/my/note/diagnosis" className="mt-2 block text-center text-[12.5px] font-semibold text-slate-300 underline">
+              진단 결과 보기
+            </Link>
+          ) : unlock.done >= UNLOCK_AT || diagDone ? (
+            <Link to="/my/note/diagnosis" className="mt-4 flex h-11 w-full items-center justify-center rounded-[10px] bg-orange-400 text-[14.5px] font-bold text-sm-navy">
+              {diagDone ? "내 진단 결과 보기 →" : "AI 진단 받기 →"}
+            </Link>
+          ) : (
+            <button disabled className="mt-4 h-11 w-full rounded-[10px] bg-white/10 text-[14px] font-bold text-slate-300">
+              {`${UNLOCK_AT - unlock.done}칸만 더 채우면 진단이 열려요`}
+            </button>
+          )}
           <p className="mt-3 text-[11.5px] text-slate-400">고2 · 고3 활동까지 적을수록 진단이 더 정확해져요</p>
         </div>
 
@@ -275,10 +333,45 @@ export default function Note() {
               </button>
             ))}
           </div>
-          {f.kind === "subject" && (
-            <input value={f.subject} onChange={(e) => setF((x) => ({ ...x, subject: e.target.value }))} placeholder="과목 (예: 통합과학, 생명과학Ⅰ)" className={input} />
-          )}
-          {f.kind === "book" ? (
+          {f.kind === "subject" ? (
+            <div className="grid gap-3">
+              {rows.map((r, i) => (
+                <div key={i} className="grid gap-1.5 rounded-xl bg-gray-50 p-2.5">
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={r.subject}
+                      onChange={(e) => setRows((rs) => rs.map((x, k) => (k === i ? { ...x, subject: e.target.value } : x)))}
+                      placeholder={`과목 ${i + 1} (예: 통합과학)`}
+                      className={`${input} flex-1`}
+                    />
+                    {rows.length > 1 && (
+                      <button type="button" onClick={() => setRows((rs) => rs.filter((_, k) => k !== i))} className="shrink-0 px-1 text-[12px] text-gray-400 hover:text-red-600" aria-label="이 과목 줄 빼기">
+                        빼기
+                      </button>
+                    )}
+                  </div>
+                  <textarea
+                    value={r.content}
+                    onChange={(e) => setRows((rs) => rs.map((x, k) => (k === i ? { ...x, content: e.target.value } : x)))}
+                    maxLength={300}
+                    rows={2}
+                    placeholder={i === 0 ? PLACEHOLDER.subject : "이 과목에서 내가 한 일"}
+                    className={`${input} resize-none leading-relaxed`}
+                  />
+                  {r.content.length > 150 && (
+                    <p className="text-[12px] text-amber-700">생기부 문장을 그대로 넣지 말고, 내가 한 일을 짧게 적어 주세요.</p>
+                  )}
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setRows((rs) => [...rs, { subject: "", content: "" }])}
+                className="h-10 rounded-[10px] border border-dashed border-gray-300 text-[13.5px] font-semibold text-gray-600 hover:border-sm-navy hover:text-sm-navy"
+              >
+                + 과목 추가
+              </button>
+            </div>
+          ) : f.kind === "book" ? (
             <div className="grid grid-cols-[1fr_140px] gap-2">
               <input value={f.content} onChange={(e) => setF((x) => ({ ...x, content: e.target.value }))} placeholder="책 제목" className={input} />
               <input value={f.author} onChange={(e) => setF((x) => ({ ...x, author: e.target.value }))} placeholder="저자" className={input} />
@@ -294,9 +387,18 @@ export default function Note() {
             />
           )}
           {f.kind === "book" && <p className="text-[11.5px] text-gray-400">독서는 대입에 직접 반영되지 않지만, 진단할 때 관심 분야를 보는 데 참고해요.</p>}
+          {f.kind !== "book" && f.kind !== "subject" && f.content.length > 150 && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-[12.5px] leading-relaxed text-amber-800">
+              생기부 문장을 그대로 붙여 넣었나요? 무엇을 했고 무엇을 알게 됐는지만 내 말로 짧게 적어 주세요.
+            </p>
+          )}
           {err && <p className="text-[13px] font-semibold text-red-600">{err}</p>}
           <button disabled={busy} className="h-12 rounded-[10px] bg-sm-navy text-[15px] font-bold text-white disabled:opacity-50">
-            {busy ? "저장 중…" : "활동 저장"}
+            {busy
+              ? "저장 중…"
+              : f.kind === "subject"
+              ? `${rows.filter((r) => r.subject.trim() && r.content.trim()).length || ""}과목 저장`.trim()
+              : "활동 저장"}
           </button>
           <p className="text-[11.5px] leading-relaxed text-gray-400">생기부 문장을 그대로 옮기지 말고, 내가 한 일을 내 말로 한 줄 요약해 적어 주세요.</p>
         </form>
@@ -337,15 +439,6 @@ export default function Note() {
           ))}
         </div>
 
-        {(list || []).length > 0 && (
-          <button onClick={() => nav("/interview")} className="mt-6 flex w-full items-center gap-3 rounded-2xl border-[1.5px] border-sm-orange bg-orange-50/60 p-4 text-left">
-            <div>
-              <b className="block text-[15px] font-bold text-[#7C2D12]">이 활동으로 면접 예상질문 받기</b>
-              <span className="text-[12.5px] text-[#9A3412]">지원 대학 면접관이 물을 질문 5개를 무료로 뽑아 줘요</span>
-            </div>
-            <span className="ml-auto text-[20px] text-sm-orange">→</span>
-          </button>
-        )}
       </div>
 
       {toast && (

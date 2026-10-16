@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/AuthContext";
 
@@ -8,6 +8,8 @@ import { useAuth } from "../../lib/AuthContext";
  * 계열 고르기 → 학교 단계 고르기 → 학년·영역 퍼즐
  * 진짜 생기부 위에 퍼즐 조각이 덮여 있고, 궁금한 조각을 눌러 조각(코인)으로 연다.
  * 잠긴 문장은 서버가 보내지 않는다 — 연 조각이 덮던 줄만 본문이 온다.
+ * 조각이 있으면 판에 들어오는 순간 랜덤 칸을 자동으로 깬다 (멈추기 가능)
+ * /sb?auto=1 (화면 구석 '안 깬 조각' 알림) 로 오면 하던 퍼즐로 바로 간다.
  */
 
 const AREAS = [
@@ -44,6 +46,7 @@ const savePick = (g) => {
 const MAX_W = 544; // 생기부 종이 최대 너비 (다른 화면 카드 폭과 같게)
 const LABEL_W = 54; // 왼쪽 '자율 · 국어' 칸
 const num = (v) => Number(v ?? 0);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const stars = (n) => "★".repeat(num(n));
 const mdOf = (d) => (d ? `${Number(d.slice(5, 7))}월 ${Number(d.slice(8, 10))}일` : "");
 const kstToday = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
@@ -117,6 +120,7 @@ function useToast() {
 export default function Sb() {
   const { user, loading: authLoading } = useAuth();
   const nav = useNavigate();
+  const { search } = useLocation();
   const [toast, showToast] = useToast();
 
   const [view, setView] = useState("tracks"); // tracks | ladder | puzzle
@@ -135,6 +139,10 @@ export default function Sb() {
   const [streak, setStreak] = useState(0); // 오늘까지 며칠 연속 출석했는지
   const [half, setHalf] = useState(0); // 모아 둔 반쪽 (0 또는 1)
   const [progress, setProgress] = useState([]); // 이어서 깨기 (내가 열던 생기부)
+  const [auto, setAuto] = useState(null); // 자동 깨기 중이면 { done, total }
+  const [crack, setCrack] = useState(null); // 지금 깨지는 조각 번호
+  const stopRef = useRef(false);
+  const ranFor = useRef(new Set()); // 이번 접속에서 자동 깨기를 이미 한 판
   const paperRef = useRef(null);
   const [paperW, setPaperW] = useState(0); // 화면 폭에 맞춘 생기부 종이 너비
 
@@ -196,6 +204,17 @@ export default function Sb() {
     setView("puzzle");
   }
 
+  // 화면 구석 '안 깬 조각' 알림으로 왔으면 — 하던 퍼즐이 있으면 거기로 바로 (주소의 ?auto=1 은 지운다)
+  useEffect(() => {
+    if (!user || !new URLSearchParams(search).has("auto")) return;
+    nav("/sb", { replace: true });
+    supabase.rpc("sb_my_progress").then(({ data }) => {
+      const list = Array.isArray(data) ? data : [];
+      if (list.length) resume(list[0]);
+      else showToast("계열 → 학교를 고르면 바로 조각을 깨 줄게");
+    });
+  }, [user, search]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // 학교 단계 목록
   const loadCatalog = useCallback(
     (t) => supabase.rpc("sb_catalog", { p_track: t }).then(({ data }) => setCatalog(data ?? [])),
@@ -222,8 +241,8 @@ export default function Sb() {
 
   // 판 하나
   const loadBoard = useCallback(() => {
-    if (!pick?.record_id) return;
-    supabase.rpc("sb_board", { p_record: pick.record_id, p_grade: grade, p_area: area }).then(({ data, error }) => {
+    if (!pick?.record_id) return Promise.resolve();
+    return supabase.rpc("sb_board", { p_record: pick.record_id, p_grade: grade, p_area: area }).then(({ data, error }) => {
       if (error) return showToast(error.message);
       setBoard(data);
     });
@@ -289,6 +308,68 @@ export default function Sb() {
     if (data.completed) loadMe();
   }
 
+  /*
+   * 자동 깨기 — 조각이 있으면 판에 들어오자마자 랜덤 칸을 하나씩 깬다
+   * 판 하나에 한 번만 (멈추기를 눌렀거나 다 깼으면 그 판에서는 다시 안 돈다. 버튼으로 다시 시작 가능)
+   */
+  async function runAuto() {
+    const b = board?.board;
+    if (!b || auto) return;
+    const opened0 = new Set(board.opened ?? []);
+    const left = Array.from({ length: size }, (_, n) => n).filter((n) => !opened0.has(n));
+    const total = Math.min(Math.floor(balance / cost), left.length);
+    if (total < 1) return;
+    stopRef.current = false;
+    setAuto({ done: 0, total });
+    let done = 0;
+    for (let i = 0; i < total; i++) {
+      if (stopRef.current) break;
+      const pickN = left.splice(Math.floor(Math.random() * left.length), 1)[0];
+      setCrack(pickN);
+      document.getElementById(`sbp-${pickN}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+      await sleep(650); // 깨지는 모습을 보여준다
+      const { data, error } = await supabase.rpc("sb_open", { p_board: b.id, p_piece: pickN });
+      if (error) {
+        showToast(error.message);
+        break;
+      }
+      done += 1;
+      setMe((m) => (m ? { ...m, balance: data.balance } : m));
+      await loadBoard();
+      setAuto({ done, total });
+      if (data.completed) {
+        setCelebrate({ bonus: data.bonus, scoreUnlocked: data.score_unlocked });
+        loadMe();
+        break;
+      }
+      await sleep(250);
+    }
+    setCrack(null);
+    setAuto(null);
+    if (done > 0) showToast(`조각 ${done}개로 ${done}칸 열었어!`);
+  }
+
+  // 판이 열리면 (조각이 있을 때) 자동 깨기 시작
+  useEffect(() => {
+    if (view !== "puzzle" || !board?.board || !me || auto) return;
+    if (board.lock && board.lock !== "login") return;
+    const id = board.board.id;
+    if (ranFor.current.has(id)) return;
+    if (balance < cost || (board.opened?.length ?? 0) >= size) return;
+    ranFor.current.add(id);
+    runAuto();
+  }, [view, board, me]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 판·화면을 떠나면 자동 깨기를 멈춘다
+  useEffect(() => {
+    stopRef.current = true;
+  }, [view, pick?.record_id, grade, area]);
+
+  const crackStyle = (n) =>
+    crack === n
+      ? { transform: "scale(1.25) rotate(9deg)", opacity: 0, transition: "transform .6s ease-in, opacity .6s ease-in", zIndex: 5 }
+      : { transition: "transform .2s" };
+
   /* ─── 화면 조각 ─── */
 
   const coin = user ? (
@@ -324,9 +405,9 @@ export default function Sb() {
               </>
             ) : (
               <>
-                <h1 className="text-[24px] font-extrabold tracking-tight text-sm-navy">합격 생기부 퍼즐</h1>
+                <h1 className="text-[24px] font-extrabold tracking-tight text-sm-navy">선배 생기부 보기</h1>
                 <p className="mt-1 text-[15px] font-bold text-sm-orange">조각을 모아 선배 생기부를 한 칸씩</p>
-                <p className="mt-0.5 text-[13px] text-gray-500">나만 그래?·흔한가에 참여하면 조각을 받아. 궁금한 칸부터 열어봐.</p>
+                <p className="mt-0.5 text-[13px] text-gray-500">미션을 하면 조각을 받아. 퍼즐에 들어오면 조각이 랜덤 칸을 자동으로 깨 줘.</p>
               </>
             )}
           </div>
@@ -383,6 +464,12 @@ export default function Sb() {
   /* 1. 계열 */
   const tracksView = (
     <div className="mx-auto max-w-xl px-4 py-6 sm:px-5">
+      {user && balance >= 1 && progress.length === 0 && (
+        <div className="mb-5 rounded-2xl bg-sm-navy px-4 py-3.5 text-white">
+          <p className="text-[15px] font-black">조각 {balance}개가 기다리고 있어!</p>
+          <p className="mt-0.5 text-[12.5px] text-white/80">아래에서 계열 → 학교를 고르면 바로 랜덤 칸을 깨 줄게.</p>
+        </div>
+      )}
       {progress.length > 0 && (
         <section className="mb-7">
           <h2 className="text-[17px] font-extrabold text-sm-navy">이어서 깨기</h2>
@@ -524,11 +611,35 @@ export default function Sb() {
             <span className="text-[13px] font-bold text-gray-600">
               {grade}학년 {areaInfo.label} · {boardOpened} / {size}
             </span>
-            <span className="text-[12px] text-gray-500">궁금한 조각을 눌러봐</span>
+            <span className="text-[12px] text-gray-500">{auto ? "자동으로 깨는 중" : "궁금한 조각을 눌러도 돼"}</span>
           </div>
           <div className="mb-3 h-2 overflow-hidden rounded-full bg-gray-200">
-            <div className="h-full bg-sm-orange" style={{ width: `${(boardOpened / size) * 100}%` }} />
+            <div className="h-full bg-sm-orange transition-all duration-500" style={{ width: `${(boardOpened / size) * 100}%` }} />
           </div>
+
+          {/* 자동 깨기 — 도는 중이면 진행 막대, 아니면 남은 조각으로 다시 깨기 버튼 */}
+          {auto ? (
+            <div className="sticky top-2 z-20 mb-3 flex items-center gap-3 rounded-2xl bg-sm-navy px-4 py-3 text-white shadow-lg">
+              <span className="min-w-0 flex-1">
+                <span className="block text-[14px] font-black">조각으로 랜덤 칸을 깨는 중… {auto.done}/{auto.total}</span>
+                <span className="block text-[11.5px] text-white/70">궁금한 칸을 직접 고르고 싶으면 멈춰</span>
+              </span>
+              <button onClick={() => (stopRef.current = true)} className="h-9 shrink-0 rounded-lg bg-white/15 px-3 text-[12.5px] font-bold">
+                멈추기
+              </button>
+            </div>
+          ) : (
+            user &&
+            balance >= cost &&
+            boardOpened < size && (
+              <button
+                onClick={runAuto}
+                className="mb-3 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-sm-orange text-[14.5px] font-black text-white"
+              >
+                조각 {balance}개로 랜덤 깨기
+              </button>
+            )
+          )}
 
           {isPdf ? (
             <>
@@ -561,13 +672,15 @@ export default function Sb() {
                         return (
                           <button
                             key={`p${n}`}
+                            id={`sbp-${n}`}
+                            disabled={Boolean(auto)}
                             onClick={() => {
                               setSheet(n);
                               loadMe();
                             }}
                             aria-label={`${areaInfo.label} 조각`}
-                            className="absolute p-0 transition-transform hover:-translate-y-0.5"
-                            style={{ left: j * cw, top: i * ch, width: cw, height: ch }}
+                            className="absolute p-0 hover:-translate-y-0.5"
+                            style={{ left: j * cw, top: i * ch, width: cw, height: ch, ...crackStyle(n) }}
                           >
                             <svg width={cw} height={ch} viewBox={`0 0 ${cw} ${ch}`} className="absolute inset-0 overflow-visible">
                               <path d={gridPiece(i, j, cols, rows, cw, ch)} fill={(i + j) % 2 ? "#2B3A72" : "#18224F"} stroke="#FFFFFF" strokeWidth="2" />
@@ -627,13 +740,15 @@ export default function Sb() {
                   return (
                     <button
                       key={`p${n}`}
+                      id={`sbp-${n}`}
+                      disabled={Boolean(auto)}
                       onClick={() => {
                         setSheet(n);
                         loadMe();
                       }}
                       aria-label={`${r.label} 조각`}
-                      className="absolute p-0 transition-transform hover:-translate-y-0.5"
-                      style={{ left: k * w, top: r.y, width: w, height: r.h }}
+                      className="absolute p-0 hover:-translate-y-0.5"
+                      style={{ left: k * w, top: r.y, width: w, height: r.h, ...crackStyle(n) }}
                     >
                       <svg width={w} height={r.h} viewBox={`0 0 ${w} ${r.h}`} className="absolute inset-0 overflow-visible">
                         <path d={piecePath(w, r.h, left, right)} fill={(ri + k) % 2 ? "#2B3A72" : "#18224F"} stroke="#FFFFFF" strokeWidth="2" />

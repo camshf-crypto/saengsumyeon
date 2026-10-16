@@ -23,6 +23,7 @@ const PATHS = {
   note: "/my/note",
   board: "/board",
   ladder: null, // 준비 중
+  cards: "/cards",
   signup: "/signup",
   myLevel: "/my/level",
 };
@@ -37,11 +38,9 @@ const SERIES = [
 const TILES = [
   { key: "topic", title: "흔한가 진단", sub: "탐구주제 · 독서 외", icon: "scan", menu: true },
   { key: "interview", title: "생기부 예상질문", sub: "대학별 면접 기준", icon: "mic", badge: "5개 무료" },
-  { key: "mg", title: "나만 그래?", sub: "매일 5문항", icon: "poll" },
-  { key: "puzzle", title: "합격 생기부 퍼즐", sub: "대학별 합격 사례", icon: "puzzle" },
-  { key: "board", title: "옥상에서 외쳐!", sub: "학교에서 못 한 말", icon: "shout", badge: "NEW" },
-  { key: "note", title: "내 생기부 노트", sub: "다 적으면 AI 입시 진단", icon: "note", badge: "AI 진단" },
-  { key: "columns", title: "입시 칼럼", sub: "매주 목요일 오후 5시", icon: "news" },
+  { key: "puzzle", title: "선배 생기부 보기", sub: "대학별 합격 사례", icon: "puzzle" },
+  { key: "note", title: "내 생기부 진단", sub: "다 적으면 AI 입시 진단", icon: "note", badge: "AI 진단" },
+  { key: "cards", title: "전과목 단어장", sub: "전과목 개념 외우기", icon: "bottle", badge: "NEW" },
   { key: "ladder", title: "대학 사다리", sub: "내 성적 위치", icon: "ladder", badge: "준비 중", muted: true },
 ];
 
@@ -67,6 +66,7 @@ function Icon({ name, className = "h-[22px] w-[22px]" }) {
     clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
     user: <><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0113 0M16 4.5a3.5 3.5 0 010 7M18 20a6.5 6.5 0 00-2.5-5.1" /></>,
     down: <path d="M6 9l6 6 6-6" />,
+    bottle: <><path d="M10 3h4v3c0 1 3 2 3 5v8a2 2 0 01-2 2H9a2 2 0 01-2-2v-8c0-3 3-4 3-5z" /><path d="M7 14h10" /></>,
     shout: <><path d="M3 10v4a1 1 0 001 1h3l5 4V5L7 9H4a1 1 0 00-1 1z" /><path d="M16 9a4 4 0 010 6M19 6a8 8 0 010 12" /></>,
   }[name];
   return (

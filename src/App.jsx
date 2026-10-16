@@ -11,15 +11,17 @@ import LevelUpHost from "./components/LevelUp";
 import StayTracker from "./components/StayTracker";
 import SurveyPopup from "./components/SurveyPopup";
 import VoiceButton from "./components/VoiceButton";
+import PieceNudge from "./components/PieceNudge";
 import Voice from "./pages/voice/Voice";
+import Cards, { CardHome, CardUnits } from "./pages/cards/Cards";
 import Suggest from "./pages/mulgyeol/Suggest";
 
 import Landing from "./pages/landing/Landing";
 import Result from "./pages/landing/Result";
 import Login from "./pages/auth/Login";
-import TestLogin from "./pages/auth/TestLogin";
 import Signup from "./pages/auth/Signup";
 import AuthCallback from "./pages/auth/AuthCallback";
+import TestLogin from "./pages/auth/TestLogin";
 import MyPage from "./pages/my/MyPage";
 import AdminTopics from "./pages/admin/AdminTopics";
 import AdminOrders from "./pages/admin/AdminOrders";
@@ -36,6 +38,8 @@ import Sb from "./pages/sb/Sb";
 import Home from "./pages/home/Home";
 import { ColumnList, ColumnRead } from "./pages/columns/Columns";
 import Note from "./pages/note/Note";
+import NoteDiagnosis from "./pages/note/NoteDiagnosis";
+import NoteRoadmap from "./pages/note/NoteRoadmap";
 import { BoardList, BoardPost } from "./pages/board/Board";
 import Level from "./pages/level/Level";
 import AdminColumns from "./pages/admin/AdminColumns";
@@ -107,6 +111,7 @@ function Layout({ children }) {
       <StayTracker />
       <SurveyPopup />
       <VoiceButton />
+      <PieceNudge />
     </div>
   );
 }
@@ -148,6 +153,9 @@ export default function App() {
             <Route path="/sb" element={<Sb />} />
             {/* 생수면 의견함 — 원하는 기능에 나도 원해 · 새로 제안 */}
             <Route path="/voice" element={<Voice />} />
+          <Route path="/cards" element={<CardHome />} />
+          <Route path="/cards/:subject" element={<CardUnits />} />
+          <Route path="/cards/:subject/:unit" element={<Cards />} />
 
             {/* 입시 칼럼 — 화 · 목 오후 5시 공개 */}
             <Route path="/columns" element={<ColumnList />} />
@@ -159,15 +167,18 @@ export default function App() {
 
             {/* 내 기록 — 권한은 화면 안에서 확인. /my/… 가 /my 보다 먼저 */}
             <Route path="/my/note" element={<Note />} />
+            <Route path="/my/note/diagnosis" element={<NoteDiagnosis />} />
+            {/* 내 로드맵 — 고2 로드맵 · 고3 1학기 로드맵 (결제한 학생) */}
+            <Route path="/my/note/roadmap" element={<NoteRoadmap />} />
             <Route path="/my/level" element={<Level />} />
             <Route path="/my" element={<MyPage />} />
 
             {/* 인증 — 구글 로그인 후 /auth/callback으로 돌아온다 */}
             <Route path="/login" element={<Login />} />
-            {/* 운영자 전용 테스트 계정 로그인 — 링크 없음, 주소로만 */}
-            <Route path="/sm-gate-7k3" element={<TestLogin />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
+            {/* 운영자 전용 테스트 로그인 — 링크 없음, robots.txt에도 적지 말 것 */}
+            <Route path="/sm-gate-7k3" element={<TestLogin />} />
 
             {/* 어드민 — 주소로만 접근. 권한은 화면 안에서 확인 */}
             <Route path="/admin" element={<AdminTopics />} />
