@@ -9,6 +9,7 @@ import StayPanel from "./StayPanel";
 import VoicePanel from "./VoicePanel";
 import SbAdminPanel from "./SbAdminPanel";
 import StudyCardsPanel from "./StudyCardsPanel";
+import TailPanel from "./TailPanel";
 import { StudyAdminBox } from "../study/Study";
 
 /* "YYYY-MM-DD"에서 n일 앞뒤 */
@@ -595,6 +596,7 @@ const TABS = [
   { k: "motive", label: "지원동기", color: "#0B8A5E" },
   { k: "interview", label: "면접 예상질문", color: "#7C3AED" },
   { k: "inquiry", label: "탐구보고서", color: "#18224F" },
+  { k: "tail", label: "꼬리질문", color: "#FD1673" },
   { k: "growth", label: "가입 · 추천 · 결제", color: "#18224F" },
 ];
 // 탭 묶음 — 위에서 묶음을 고르고, 아래에서 그 안의 탭을 고른다
@@ -602,7 +604,7 @@ const GROUPS = [
   { k: "people", label: "사람", desc: "누가 오고 · 얼마나 머물고 · 뭘 원하는지", tabs: ["visit", "stay", "voice"] },
   { k: "community", label: "커뮤니티", desc: "나만 그래? · 게시판 · 칼럼 · 노트 · 레벨 · 퍼즐", tabs: ["community", "mulgyeol", "sb"] },
   { k: "learn", label: "공부", desc: "공부법 도감 · 단어장 · 쿠폰 보상 · 모의고사 인증", tabs: ["study", "cards", "studyreward", "studyverify"] },
-  { k: "diag", label: "흔한가 진단", desc: "진단 서비스별 이용 · AI 비용", tabs: ["sum", "topic", "reading", "motive", "interview", "inquiry"] },
+  { k: "diag", label: "흔한가 진단", desc: "진단 서비스별 이용 · AI 비용", tabs: ["sum", "topic", "reading", "motive", "interview", "inquiry", "tail"] },
   { k: "money", label: "가입 · 결제", desc: "가입 경로 · 친구 추천 · 매출", tabs: ["growth"] },
 ];
 const groupOf = (k) => GROUPS.find((g) => g.tabs.includes(k)) ?? GROUPS[0];
@@ -1769,6 +1771,12 @@ export default function AdminTopics() {
         </div>
       )}
       {tab === "inquiry" && <InquiryPanel f={inqFunnel} />}
+      {/* ── 면접 꼬리질문 */}
+      {tab === "tail" && (
+        <div className="mt-6">
+          <TailPanel from={from} to={to} />
+        </div>
+      )}
       {tab === "growth" && (
         <>
           <div className="mt-6">
