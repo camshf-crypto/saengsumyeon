@@ -40,6 +40,8 @@ import { ColumnList, ColumnRead } from "./pages/columns/Columns";
 import Note from "./pages/note/Note";
 import NoteDiagnosis from "./pages/note/NoteDiagnosis";
 import NoteRoadmap from "./pages/note/NoteRoadmap";
+import Study from "./pages/study/Study";
+import Tail from "./pages/tail/Tail";
 import { BoardList, BoardPost } from "./pages/board/Board";
 import Level from "./pages/level/Level";
 import AdminColumns from "./pages/admin/AdminColumns";
@@ -170,6 +172,10 @@ export default function App() {
             <Route path="/my/note/diagnosis" element={<NoteDiagnosis />} />
             {/* 내 로드맵 — 고2 로드맵 · 고3 1학기 로드맵 (결제한 학생) */}
             <Route path="/my/note/roadmap" element={<NoteRoadmap />} />
+            {/* 전국 공부법 도감 */}
+            <Route path="/study" element={<Study />} />
+            {/* 면접 꼬리질문 */}
+            <Route path="/tail" element={<Tail />} />
             <Route path="/my/level" element={<Level />} />
             <Route path="/my" element={<MyPage />} />
 

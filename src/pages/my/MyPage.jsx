@@ -11,7 +11,7 @@ import MyTabs from "../../components/MyTabs";
 /*
  * 마이페이지 — /my
  * 위: 프로필(사진 · 레벨) · 나의 생수면(조각 · 쿠폰 · 뱃지 · 노트) · 내 정보 · 남은 횟수 · 이용권/결제 · 친구 초대 · 다음에 해볼 것
- * 아래: 내 기록 탭 — 탐구주제 · 독서 · 지원동기 · 면접 · 탐구보고서 · 나만 그래? · 내 글 · 내 댓글
+ * 아래: 내 기록 탭 — 탐구주제 · 독서 · 지원동기 · 면접 · 꼬리질문 · 탐구보고서 · 나만 그래? · 내 글 · 내 댓글
  * 맨 아래: 약관 · 로그아웃 · 회원 탈퇴(이유를 묻고 신청 → 관리자가 처리)
  * 주소 끝에 ?tab=reading 처럼 붙이면 그 탭으로 열린다
  */
@@ -21,6 +21,7 @@ const TABS = [
   { k: "reading", label: "독서", color: "#2F56D6", go: "/reading", empty: "아직 진단한 책이 없어요." },
   { k: "motive", label: "지원동기", color: "#0B8A5E", go: "/motive", empty: "아직 진단한 지원동기가 없어요." },
   { k: "interview", label: "면접", color: "#18224F", go: "/interview", empty: "아직 뽑은 예상 질문이 없어요." },
+  { k: "tail", label: "꼬리질문", color: "#FD1673", go: "/tail", empty: "아직 연습한 꼬리질문이 없어요." },
   { k: "inquiry", label: "탐구보고서", color: "#C2410C", go: "/inquiry", empty: "아직 시작한 탐구가 없어요." },
   { k: "mulgyeol", label: "나만 그래?", color: "#1A5E9A", go: "/mulgyeol", empty: "아직 답한 질문이 없어요." },
   { k: "posts", label: "내 글", color: "#18224F", go: "/board", empty: "아직 쓴 글이 없어요." },
@@ -180,6 +181,11 @@ export default function MyPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [openId, setOpenId] = useState(null);
+  const [tailN, setTailN] = useState(null); // 꼬리질문 탭 옆 숫자 (sm_64)
+  useEffect(() => {
+    if (!user) return;
+    supabase.rpc("tail_my_count").then(({ data, error }) => { if (!error) setTailN(Number(data ?? 0)); });
+  }, [user?.id]);
   const [copied, setCopied] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [lv, setLv] = useState(null); // 내 레벨
@@ -240,6 +246,8 @@ export default function MyPage() {
         ? supabase.from("motive_queries").select("id, university, department, use_for, motive, result, used_bonus, created_at").order("created_at", { ascending: false }).limit(100)
         : tab === "interview"
         ? supabase.from("interview_queries").select("id, targets, university, department, result, created_at").order("created_at", { ascending: false }).limit(50)
+        : tab === "tail"
+        ? supabase.rpc("tail_my_sessions")
         : tab === "inquiry"
         ? supabase.rpc("mypage_inquiries")
         : tab === "posts" || tab === "comments"
@@ -336,7 +344,7 @@ export default function MyPage() {
   const toggle = (id) => setOpenId(openId === id ? null : id);
   const meta = user.user_metadata ?? {};
   const provider = user.app_metadata?.provider;
-  const counts = { ...(sum?.counts ?? {}), ...(mine ? { posts: mine.posts, comments: mine.comments } : {}) };
+  const counts = { ...(sum?.counts ?? {}), ...(mine ? { posts: mine.posts, comments: mine.comments } : {}), ...(tailN != null ? { tail: tailN } : {}) };
   // 나의 생수면 — 누르면 그 화면으로
   const tiles = mine
     ? [
@@ -690,6 +698,42 @@ export default function MyPage() {
                   </Row>
                 );
               })}
+
+            {/* 면접 꼬리질문 — 내가 연습한 대화 */}
+            {!busy && tab === "tail" &&
+              rows.map((r) => (
+                <Row
+                  key={r.id}
+                  open={openId === r.id}
+                  onToggle={() => toggle(r.id)}
+                  meta={[r.univ, r.department, r.main_type].filter(Boolean).join(" · ")}
+                  title={String(r.main_q ?? "").slice(0, 60) + (String(r.main_q ?? "").length > 60 ? "…" : "")}
+                  sub={`${day(r.updated_at)} · 꼬리 ${r.tails}개`}
+                  color={T.color}
+                >
+                  <div className="flex flex-col gap-2.5">
+                    <div className="rounded-xl bg-white p-3 ring-1 ring-gray-200">
+                      <p className="text-[11px] font-extrabold text-gray-500">면접관 · {r.main_type}</p>
+                      <p className="mt-0.5 text-[13.5px] font-semibold leading-relaxed text-gray-900">{r.main_q}</p>
+                    </div>
+                    {(r.turns ?? []).map((t, i) => (t.q ? (
+                      <div key={i} className="rounded-xl bg-[#FFF0F5] p-3">
+                        <p className="text-[11px] font-extrabold text-[#FD1673]">꼬리 · {t.pattern}</p>
+                        <p className="mt-0.5 text-[13.5px] font-semibold leading-relaxed text-gray-900">{t.q}</p>
+                        {t.tip && <p className="mt-1 text-[12px] text-gray-500">답할 때 · {t.tip}</p>}
+                      </div>
+                    ) : (
+                      <div key={i} className="ml-6 rounded-xl bg-[#18224F] p-3 text-white">
+                        <p className="text-[11px] font-extrabold text-white/70">내 답변</p>
+                        <p className="mt-0.5 whitespace-pre-wrap text-[13.5px] leading-relaxed">{t.a}</p>
+                      </div>
+                    )))}
+                  </div>
+                  <button onClick={() => nav(`/tail?session=${r.id}`)} className="mt-4 h-11 w-full rounded-xl text-[14px] font-extrabold text-white" style={{ background: "#FD1673" }}>
+                    {r.tails < 6 ? "이어서 연습하기" : "다시 보기"}
+                  </button>
+                </Row>
+              ))}
 
             {/* 면접 예상질문 */}
             {!busy && tab === "interview" &&

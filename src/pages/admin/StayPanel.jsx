@@ -22,6 +22,9 @@ const SECTION = {
   interview: "생기부 예상질문",
   inquiry: "탐구보고서",
   ladder: "대학 사다리",
+  study: "전국 공부법 도감",
+  tail: "면접 꼬리질문",
+  cards: "전과목 단어장",
   auth: "로그인 · 가입",
   etc: "기타",
 };

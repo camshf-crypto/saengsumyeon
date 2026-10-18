@@ -24,6 +24,8 @@ const PATHS = {
   board: "/board",
   ladder: null, // 준비 중
   cards: "/cards",
+  study: "/study",
+  tail: "/tail",
   signup: "/signup",
   myLevel: "/my/level",
 };
@@ -36,8 +38,10 @@ const SERIES = [
 ];
 
 const TILES = [
+  { key: "study", title: "전국 공부법", sub: "다음 등급 공부법", icon: "book", badge: "NEW" },
   { key: "topic", title: "흔한가 진단", sub: "탐구주제 · 독서 외", icon: "scan", menu: true },
   { key: "interview", title: "생기부 예상질문", sub: "대학별 면접 기준", icon: "mic", badge: "5개 무료" },
+  { key: "tail", title: "면접 꼬리질문", sub: "내 답변에 압박질문", icon: "mic", badge: "5개 무료" },
   { key: "puzzle", title: "선배 생기부 보기", sub: "대학별 합격 사례", icon: "puzzle" },
   { key: "note", title: "내 생기부 진단", sub: "다 적으면 AI 입시 진단", icon: "note", badge: "AI 진단" },
   { key: "cards", title: "전과목 단어장", sub: "전과목 개념 외우기", icon: "bottle", badge: "NEW" },
@@ -67,6 +71,7 @@ function Icon({ name, className = "h-[22px] w-[22px]" }) {
     user: <><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0113 0M16 4.5a3.5 3.5 0 010 7M18 20a6.5 6.5 0 00-2.5-5.1" /></>,
     down: <path d="M6 9l6 6 6-6" />,
     bottle: <><path d="M10 3h4v3c0 1 3 2 3 5v8a2 2 0 01-2 2H9a2 2 0 01-2-2v-8c0-3 3-4 3-5z" /><path d="M7 14h10" /></>,
+    book: <><path d="M4 5a2 2 0 012-2h5v17H6a2 2 0 00-2 2z" /><path d="M20 5a2 2 0 00-2-2h-5v17h5a2 2 0 012 2z" /></>,
     shout: <><path d="M3 10v4a1 1 0 001 1h3l5 4V5L7 9H4a1 1 0 00-1 1z" /><path d="M16 9a4 4 0 010 6M19 6a8 8 0 010 12" /></>,
   }[name];
   return (

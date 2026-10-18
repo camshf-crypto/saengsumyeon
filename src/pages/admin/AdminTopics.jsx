@@ -8,6 +8,8 @@ import QuestionSuggestPanel from "./QuestionSuggestPanel";
 import StayPanel from "./StayPanel";
 import VoicePanel from "./VoicePanel";
 import SbAdminPanel from "./SbAdminPanel";
+import StudyCardsPanel from "./StudyCardsPanel";
+import { StudyAdminBox } from "../study/Study";
 
 /* "YYYY-MM-DD"에서 n일 앞뒤 */
 function addDays(day, n) {
@@ -583,6 +585,10 @@ const TABS = [
   { k: "community", label: "현황 · 레벨", color: "#0D9488" },
   { k: "mulgyeol", label: "나만 그래?", color: "#1A5E9A" },
   { k: "sb", label: "합격 생기부 퍼즐", color: "#EA580C" },
+  { k: "study", label: "공부법 도감", color: "#FD1673" },
+  { k: "cards", label: "전과목 단어장", color: "#2F56D6" },
+  { k: "studyreward", label: "쿠폰 보상 · 번호", color: "#FD1673" },
+  { k: "studyverify", label: "모의고사 인증", color: "#FD1673" },
   { k: "sum", label: "진단 요약", color: "#18224F" },
   { k: "topic", label: "탐구주제", color: "#EA580C" },
   { k: "reading", label: "독서", color: "#2F56D6" },
@@ -595,6 +601,7 @@ const TABS = [
 const GROUPS = [
   { k: "people", label: "사람", desc: "누가 오고 · 얼마나 머물고 · 뭘 원하는지", tabs: ["visit", "stay", "voice"] },
   { k: "community", label: "커뮤니티", desc: "나만 그래? · 게시판 · 칼럼 · 노트 · 레벨 · 퍼즐", tabs: ["community", "mulgyeol", "sb"] },
+  { k: "learn", label: "공부", desc: "공부법 도감 · 단어장 · 쿠폰 보상 · 모의고사 인증", tabs: ["study", "cards", "studyreward", "studyverify"] },
   { k: "diag", label: "흔한가 진단", desc: "진단 서비스별 이용 · AI 비용", tabs: ["sum", "topic", "reading", "motive", "interview", "inquiry"] },
   { k: "money", label: "가입 · 결제", desc: "가입 경로 · 친구 추천 · 매출", tabs: ["growth"] },
 ];
@@ -1716,6 +1723,20 @@ export default function AdminTopics() {
             <QuestionSuggestPanel />
           </section>
           <MulgyeolPanel from={from} to={to} />
+        </div>
+      )}
+
+      {/* ── 공부 묶음: 공부법 도감 · 전과목 단어장 */}
+      {(tab === "study" || tab === "cards") && (
+        <div className="mt-6">
+          <StudyCardsPanel which={tab} from={from} to={to} />
+        </div>
+      )}
+
+      {/* ── 공부 묶음: 쿠폰 보상(번호) · 모의고사 인증 확인 */}
+      {(tab === "studyreward" || tab === "studyverify") && (
+        <div className="mt-6">
+          <StudyAdminBox which={tab === "studyverify" ? "verify" : "reward"} />
         </div>
       )}
 

@@ -469,6 +469,9 @@ export default function Motive() {
           {user ? (
             <>
               <Detail r={r} onInterview={() => nav("/interview", { state: { university: r.univ?.name ?? form.university, department: form.department } })} />
+              <button onClick={() => nav("/tail?from=motive")} className="mt-4 flex h-12 w-full items-center justify-center rounded-xl bg-[#FFF0F5] text-[14.5px] font-extrabold text-[#FD1673]">
+                이 지원동기로 압박 꼬리질문 받기 →
+              </button>
               <After r={r} onAgain={again} />
             </>
           ) : (
