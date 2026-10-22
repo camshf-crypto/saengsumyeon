@@ -47,6 +47,9 @@ import Level from "./pages/level/Level";
 import AdminColumns from "./pages/admin/AdminColumns";
 import AdminCommunity from "./pages/admin/AdminCommunity";
 import { Terms, Privacy, Refund } from "./pages/legal/Legal";
+import OutputCreate from "./pages/output/OutputCreate";
+import OutputEdit from "./pages/output/OutputEdit";
+import OutputShare from "./pages/output/OutputShare";
 
 // 화면을 옮기면 항상 맨 위에서 시작한다
 function ScrollToTop() {
@@ -88,11 +91,15 @@ function RefCapture() {
  * 화면 틀 — 탐구 준비·분석·보고서(/inquiry/…)는 노트북 작업 화면이라
  * 자체 머리(단계 표시)를 쓰고, 공통 머리·꼬리는 숨긴다
  * /inquiry (탐구보고서 첫 화면)는 일반 화면이라 공통 머리·꼬리를 쓴다
+ * 탐구 결과물 완성·편집(/output/:id)도 자체 상단 바가 있는 작업 화면 (/output/new 는 일반 화면)
  */
 function Layout({ children }) {
   const { pathname } = useLocation();
   // 앱처럼 쓰는 화면은 공통 머리·꼬리 없이
-  const workspace = pathname.startsWith("/inquiry/") || pathname.startsWith("/admin/orders");
+  const workspace =
+    pathname.startsWith("/inquiry/") ||
+    pathname.startsWith("/admin/orders") ||
+    (pathname.startsWith("/output/") && pathname !== "/output/new");
 
   if (workspace)
     return (
@@ -145,6 +152,13 @@ export default function App() {
             <Route path="/inquiry/:id/result" element={<InquiryResult />} />
             {/* 보고서 디자인 — 형식 고르기 · 디자인 고르기 · 편집 · PDF */}
             <Route path="/inquiry/:id/report" element={<InquiryReport />} />
+
+            {/* 탐구 결과물 만들기 — 주제 → 종류 → 탐구 설계 → 틀 → 모양 → 만드는 중 (?topic=주제) */}
+            <Route path="/output/new" element={<OutputCreate />} />
+            {/* 완성·편집 — 다음에 뭘 해 볼까(무료) · 말로 고치기(20번) · 공유. 권한은 화면 안에서 */}
+            <Route path="/output/:id" element={<OutputEdit />} />
+            {/* 공유 링크·QR — 로그인 없이 열린다 */}
+            <Route path="/r/:slug" element={<OutputShare />} />
 
             {/* 대학 사다리 — 성적 입력 → 나의 위치 → 대학 사다리 → 한 칸 위로 (1단계: 내신만) */}
             <Route path="/ladder" element={<PositionReport />} />
