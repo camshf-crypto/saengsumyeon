@@ -2,11 +2,10 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 
 /*
- * 관리자 '공부' 묶음 — 전국 공부법 도감 · 전과목 단어장 이용 숫자
- *   <StudyCardsPanel which="study" from to />  공부법 도감
- *   <StudyCardsPanel which="cards" from to />  전과목 단어장
+ * 관리자 '공부' 묶음 — 전국 공부법 도감 이용 숫자 (전과목 단어장은 2026-10 에 없앰)
+ *   <StudyPanel which="study" from to />  공부법 도감
  * DB: sql/sm_55_admin_study_cards.sql (admin_study_cards_stats)
- * 들어온 사람은 '머문 시간' 기록으로 센다 — StayTracker 에 /study · /cards 를 넣은 뒤부터 쌓인다
+ * 들어온 사람은 '머문 시간' 기록으로 센다 — StayTracker 에 /study 를 넣은 뒤부터 쌓인다
  */
 
 const n = (v) => Number(v ?? 0).toLocaleString();
@@ -56,7 +55,7 @@ function Bars({ rows, keys }) {
   );
 }
 
-export default function StudyCardsPanel({ which, from, to }) {
+export default function StudyPanel({ which, from, to }) {
   const [d, setD] = useState(null);
   const [err, setErr] = useState("");
   useEffect(() => {
@@ -70,7 +69,7 @@ export default function StudyCardsPanel({ which, from, to }) {
 
   if (err) return <p className="rounded-lg bg-red-50 px-4 py-3 text-[13px] font-bold text-red-600">숫자를 불러오지 못했어요 · {err}</p>;
   if (!d) return <p className="py-16 text-center text-sm text-gray-400">숫자를 불러오는 중…</p>;
-  return which === "cards" ? <Cards c={d.cards} /> : <Study s={d.study} from={from} to={to} />;
+  return <Study s={d.study} from={from} to={to} />;
 }
 
 /* ━━━━━━━━━━ 전국 공부법 도감 ━━━━━━━━━━ */
@@ -165,6 +164,11 @@ function RecentPosts({ from, to }) {
               <span className={r.verified ? "font-bold text-[#15803D]" : "text-gray-400"}>{r.verified ? "✓ 모의고사 인증" : "직접 적은 등급"}</span>
               <span className="text-gray-500">{EXAM[r.exam_type ?? "-"]}</span>
               {r.hidden && <span className="font-bold text-red-500">숨김</span>}
+              {r.reward && (
+                <span className="rounded-md px-2 py-0.5 text-[12px] font-bold" style={{ background: "#FFF0F5", color: "#FD1673" }}>
+                  🎁 {r.reward === "sent" ? "쿠폰 보냄" : r.reward === "rejected" ? "쿠폰 반려" : r.phone ? `${r.phone.replace(/^(\d{3})(\d{3,4})(\d{4})$/, "$1-$2-$3")}` : "번호 아직"}
+                </span>
+              )}
               <span className="ml-auto text-[12px] font-bold text-gray-400">{on ? "접기 ▲" : "펼치기 ▼"}</span>
             </button>
             {on && (
@@ -187,117 +191,6 @@ function RecentPosts({ from, to }) {
           </div>
         );
       })}
-    </div>
-  );
-}
-
-/* ━━━━━━━━━━ 전과목 단어장 ━━━━━━━━━━ */
-/* 최근 14일 출석표 — 온 날은 파란 칸 */
-function Dots({ days }) {
-  const set = new Set((days ?? []).map((d) => String(d)));
-  const today = new Date();
-  const cells = [...Array(14)].map((_, i) => {
-    const d = new Date(today.getTime() - (13 - i) * 864e5 + 9 * 3600e3).toISOString().slice(0, 10);
-    return { d, on: set.has(d) };
-  });
-  return (
-    <div className="flex gap-[3px]">
-      {cells.map((x) => <i key={x.d} title={x.d} className="inline-block h-3.5 w-3.5 rounded-sm" style={{ background: x.on ? "#2F56D6" : "#E5E7EB" }} />)}
-    </div>
-  );
-}
-
-function Cards({ c }) {
-  const v = c.visit ?? {};
-  const b = c.back ?? {}, r = b.retention ?? {};
-  const rate = (a, ready) => (Number(ready) ? `${pct(a, ready)}%` : "-");
-  return (
-    <div className="flex flex-col gap-6">
-      <section>
-        <h2 className="mb-3 text-lg font-extrabold text-sm-navy">들어오고 · 공부하고</h2>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <Tile label="들어온 사람" value={`${n(v.visitors)}명`} sub={`회원 ${n(v.members)} · 평균 ${t(v.avg_sec)} 머묾`} />
-          <Tile label="카드를 공부한 회원" value={`${n(c.learners)}명`} sub={`누적 ${n(c.learners_all)}명`} color="#2F56D6" />
-          <Tile label="카드 누른 횟수" value={`${n(c.marks)}번`} sub={`1인당 평균 ${n(c.per_learner)}장 공부`} />
-          <Tile label="'안다' 비율" value={c.known_rate == null ? "-" : `${c.known_rate}%`} sub={`전체 카드 ${n(c.cards_total)}장`} color="#0B8A5E" />
-        </div>
-      </section>
-
-      <section>
-        <h2 className="mb-3 text-lg font-extrabold text-sm-navy">다시 오는지</h2>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <Tile label="2일 이상 온 사람" value={`${n(b.again)}명`} sub={`이 기간에 온 ${n(b.came)}명 중 ${pct(b.again, b.came)}%`} color="#2F56D6" />
-          <Tile label="1명이 평균 온 날" value={`${b.avg_days ?? 0}일`} sub="이 기간 안에서" />
-          <Tile label="다시 올 때까지" value={`평균 ${b.avg_gap ?? 0}일`} sub="같은 사람이 다음에 다시 오기까지" />
-          <Tile label="처음 온 사람" value={`${n(r.first)}명`} sub="이 기간에 처음 단어장에 온 사람" />
-        </div>
-        <div className="mt-3 grid grid-cols-3 gap-3">
-          <Tile label="다음 날 다시 옴" value={rate(r.d1, r.d1_ready)} sub={`${n(r.d1)}명 / 하루 지난 ${n(r.d1_ready)}명`} color="#0B8A5E" />
-          <Tile label="3일 안에 다시 옴" value={rate(r.d3, r.d3_ready)} sub={`${n(r.d3)}명 / 3일 지난 ${n(r.d3_ready)}명`} color="#0B8A5E" />
-          <Tile label="7일 안에 다시 옴" value={rate(r.d7, r.d7_ready)} sub={`${n(r.d7)}명 / 7일 지난 ${n(r.d7_ready)}명`} color="#0B8A5E" />
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-gray-200 p-5">
-        <h2 className="mb-1 text-lg font-extrabold text-sm-navy">회원별 언제 왔는지</h2>
-        <p className="mb-3 text-[12px] text-gray-400">최근에 온 순 · 파란 칸이 온 날 (최근 14일, 오른쪽 끝이 오늘)</p>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse">
-            <thead><tr><th className={th}>닉네임</th><th className={th}>최근 14일</th><th className={th}>온 날</th><th className={th}>처음</th><th className={th}>마지막</th><th className={th}>공부한 카드</th></tr></thead>
-            <tbody>
-              {(b.people ?? []).map((x, i) => (
-                <tr key={i}>
-                  <td className={td}>{x.nick}</td>
-                  <td className={td}><Dots days={x.recent} /></td>
-                  <td className={td}>{n(x.days)}일</td>
-                  <td className={td}>{String(x.first).slice(5)}</td>
-                  <td className={td}>{String(x.last).slice(5)}</td>
-                  <td className={td}>{n(x.cards)}장</td>
-                </tr>
-              ))}
-              {(b.people ?? []).length === 0 && <tr><td className={td} colSpan={6}>아직 기록이 없어요</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-gray-200 p-5">
-        <h2 className="mb-1 text-lg font-extrabold text-sm-navy">날짜별</h2>
-        <p className="mb-3 text-[12px] text-gray-400">들어온 사람 · 공부한 회원은 이번 배포와 SQL 실행 뒤부터 쌓여요</p>
-        <Bars rows={c.daily} keys={[{ k: "visitors", l: "들어온 사람", c: "#18224F" }, { k: "learners", l: "공부한 회원", c: "#2F56D6" }]} />
-      </section>
-
-      <section className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-2xl border border-gray-200 p-5">
-          <h3 className="mb-2 text-[15px] font-extrabold text-sm-navy">과목별</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead><tr><th className={th}>과목</th><th className={th}>공부한 회원</th><th className={th}>카드 표시</th><th className={th}>안다</th></tr></thead>
-              <tbody>
-                {(c.by_subject ?? []).map((x) => (
-                  <tr key={x.k}><td className={td}>{x.k}</td><td className={td}>{n(x.learners)}명</td><td className={td}>{n(x.marks)}장</td><td className={td}>{x.known ?? 0}%</td></tr>
-                ))}
-                {(c.by_subject ?? []).length === 0 && <tr><td className={td} colSpan={4}>이 기간에 공부한 기록이 없어요</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <div className="rounded-2xl border border-gray-200 p-5">
-          <h3 className="mb-2 text-[15px] font-extrabold text-sm-navy">많이 공부한 회원</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead><tr><th className={th}>닉네임</th><th className={th}>카드</th><th className={th}>안다</th><th className={th}>마지막</th></tr></thead>
-              <tbody>
-                {(c.top_learners ?? []).map((x, i) => (
-                  <tr key={i}><td className={td}>{x.nick}</td><td className={td}>{n(x.cards)}장</td><td className={td}>{pct(x.known, x.cards)}%</td>
-                    <td className={td}>{new Date(x.last).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}</td></tr>
-                ))}
-                {(c.top_learners ?? []).length === 0 && <tr><td className={td} colSpan={4}>아직 없어요</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
     </div>
   );
 }

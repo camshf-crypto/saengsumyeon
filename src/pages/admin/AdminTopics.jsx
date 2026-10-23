@@ -8,8 +8,9 @@ import QuestionSuggestPanel from "./QuestionSuggestPanel";
 import StayPanel from "./StayPanel";
 import VoicePanel from "./VoicePanel";
 import SbAdminPanel from "./SbAdminPanel";
-import StudyCardsPanel from "./StudyCardsPanel";
+import StudyPanel from "./StudyPanel";
 import TailPanel from "./TailPanel";
+import AdsPanel from "./AdsPanel";
 import { StudyAdminBox } from "../study/Study";
 
 /* "YYYY-MM-DD"에서 n일 앞뒤 */
@@ -587,7 +588,6 @@ const TABS = [
   { k: "mulgyeol", label: "나만 그래?", color: "#1A5E9A" },
   { k: "sb", label: "합격 생기부 퍼즐", color: "#EA580C" },
   { k: "study", label: "공부법 도감", color: "#FD1673" },
-  { k: "cards", label: "전과목 단어장", color: "#2F56D6" },
   { k: "studyreward", label: "쿠폰 보상 · 번호", color: "#FD1673" },
   { k: "studyverify", label: "모의고사 인증", color: "#FD1673" },
   { k: "sum", label: "진단 요약", color: "#18224F" },
@@ -598,14 +598,15 @@ const TABS = [
   { k: "inquiry", label: "탐구보고서", color: "#18224F" },
   { k: "tail", label: "꼬리질문", color: "#FD1673" },
   { k: "growth", label: "가입 · 추천 · 결제", color: "#18224F" },
+  { k: "ads", label: "광고", color: "#18224F" },
 ];
 // 탭 묶음 — 위에서 묶음을 고르고, 아래에서 그 안의 탭을 고른다
 const GROUPS = [
   { k: "people", label: "사람", desc: "누가 오고 · 얼마나 머물고 · 뭘 원하는지", tabs: ["visit", "stay", "voice"] },
   { k: "community", label: "커뮤니티", desc: "나만 그래? · 게시판 · 칼럼 · 노트 · 레벨 · 퍼즐", tabs: ["community", "mulgyeol", "sb"] },
-  { k: "learn", label: "공부", desc: "공부법 도감 · 단어장 · 쿠폰 보상 · 모의고사 인증", tabs: ["study", "cards", "studyreward", "studyverify"] },
+  { k: "learn", label: "공부", desc: "공부법 도감 · 쿠폰 보상 · 모의고사 인증", tabs: ["study", "studyreward", "studyverify"] },
   { k: "diag", label: "흔한가 진단", desc: "진단 서비스별 이용 · AI 비용", tabs: ["sum", "topic", "reading", "motive", "interview", "inquiry", "tail"] },
-  { k: "money", label: "가입 · 결제", desc: "가입 경로 · 친구 추천 · 매출", tabs: ["growth"] },
+  { k: "money", label: "가입 · 결제", desc: "가입 경로 · 친구 추천 · 매출 · 광고", tabs: ["growth", "ads"] },
 ];
 const groupOf = (k) => GROUPS.find((g) => g.tabs.includes(k)) ?? GROUPS[0];
 const SERVICE = {
@@ -1728,10 +1729,10 @@ export default function AdminTopics() {
         </div>
       )}
 
-      {/* ── 공부 묶음: 공부법 도감 · 전과목 단어장 */}
-      {(tab === "study" || tab === "cards") && (
+      {/* ── 공부 묶음: 공부법 도감 */}
+      {tab === "study" && (
         <div className="mt-6">
-          <StudyCardsPanel which={tab} from={from} to={to} />
+          <StudyPanel which={tab} from={from} to={to} />
         </div>
       )}
 
@@ -1777,6 +1778,13 @@ export default function AdminTopics() {
           <TailPanel from={from} to={to} />
         </div>
       )}
+      {/* ── 가입 · 결제 묶음: 광고 */}
+      {tab === "ads" && (
+        <div className="mt-6">
+          <AdsPanel from={from} to={to} />
+        </div>
+      )}
+
       {tab === "growth" && (
         <>
           <div className="mt-6">

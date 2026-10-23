@@ -5,6 +5,7 @@ import { supabase } from "../../lib/supabase";
 import { getClientId } from "../../lib/clientId";
 import Avatar from "../../components/Avatar";
 import { checkLevel } from "../../components/LevelUp";
+import AdSlot from "../../components/AdSlot";
 
 /*
  * 생수면 메인 (/)
@@ -23,7 +24,6 @@ const PATHS = {
   note: "/my/note",
   board: "/board",
   ladder: null, // 준비 중
-  cards: "/cards",
   study: "/study",
   tail: "/tail",
   signup: "/signup",
@@ -44,7 +44,6 @@ const TILES = [
   { key: "tail", title: "면접 꼬리질문", sub: "내 답변에 압박질문", icon: "mic", badge: "5개 무료" },
   { key: "puzzle", title: "선배 생기부 보기", sub: "대학별 합격 사례", icon: "puzzle" },
   { key: "note", title: "내 생기부 진단", sub: "다 적으면 AI 입시 진단", icon: "note", badge: "AI 진단" },
-  { key: "cards", title: "전과목 단어장", sub: "전과목 개념 외우기", icon: "bottle", badge: "NEW" },
   { key: "ladder", title: "대학 사다리", sub: "내 성적 위치", icon: "ladder", badge: "준비 중", muted: true },
 ];
 
@@ -352,6 +351,9 @@ export default function Home() {
       <div className="mx-auto grid max-w-6xl gap-5 px-4 pb-16 pt-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-7 lg:pt-9">
         {/* ── 왼쪽 */}
         <div className="min-w-0">
+          {/* 광고 — 맨 위 3칸 (광고가 없으면 안 보임) */}
+          <AdSlot slot="home_top" className="mb-4" />
+
           {/* 검색 = 탐구주제 흔한가 진단 */}
           <form
             onSubmit={search}
@@ -526,6 +528,8 @@ export default function Home() {
           {levelCard && <div className="hidden lg:block">{levelCard}</div>}
           {mgCard}
           {joinCard}
+          {/* 광고 — 띠 배너 여러 개 + 큰 배너 (광고가 없으면 안 보임) */}
+          <AdSlot slot="home_right" />
         </aside>
       </div>
 

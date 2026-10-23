@@ -18,6 +18,8 @@ export default function Footer() {
           <Link to="/terms" className="hover:text-sm-orange">이용약관</Link>
           <Link to="/privacy" className="text-sm-navy hover:text-sm-orange">개인정보처리방침</Link>
           <Link to="/refund" className="hover:text-sm-orange">환불 규정</Link>
+          {/* 광고 문의 — 업체용 페이지 (src/pages/ads/Advertise.jsx) */}
+          <Link to="/advertise" className="hover:text-sm-orange">광고 문의</Link>
         </div>
 
         <div className="mt-5 space-y-1 text-xs leading-relaxed text-gray-500">

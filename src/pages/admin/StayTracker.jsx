@@ -34,7 +34,7 @@ function sectionOf(path) {
     ["/ladder", "ladder"],
     ["/study", "study"],
     ["/tail", "tail"],
-    ["/cards", "cards"],
+    ["/cite", "cite"],
     ["/login", "auth"],
     ["/signup", "auth"],
     ["/auth", "auth"],
