@@ -27,7 +27,25 @@ const TABS = [
   { k: "posts", label: "내 글", color: "#18224F", go: "/board", empty: "아직 쓴 글이 없어요." },
   { k: "comments", label: "내 댓글", color: "#18224F", go: "/mulgyeol", empty: "아직 남긴 댓글이 없어요." },
 ];
-const PRODUCT = { interview: "면접 예상질문 1곳", interview6: "면접 예상질문 6곳", ten: "탐구보고서 10건", one: "탐구보고서 1건" };
+const PRODUCT = {
+  interview: "면접 예상질문 1곳",
+  interview6: "면접 예상질문 6곳",
+  ten: "탐구보고서 10건",
+  one: "탐구보고서 1건",
+  roadmap: "생기부 로드맵",
+  tail: "압박 꼬리질문",
+  agent30: "입시 상담 AI 30일 이용권",
+};
+// 결제 완료된 상품 옆 버튼 — 누르면 그 상품을 쓰는 화면으로 간다 [주소, 버튼 글씨]
+const PRODUCT_GO = {
+  interview: ["/interview", "질문 보기"],
+  interview6: ["/interview", "질문 보기"],
+  tail: ["/tail", "연습하기"],
+  agent30: ["/agent", "상담하기"],
+  roadmap: ["/my/note", "로드맵 보기"],
+  ten: ["/inquiry", "탐구 시작"],
+  one: ["/inquiry", "탐구 시작"],
+};
 const ORDER_STATUS = { pending: "입금 확인 중", approved: "결제 완료", rejected: "취소됨", cancelled: "취소됨", refunded: "환불됨" };
 const PROVIDER = { kakao: "카카오", google: "구글", email: "이메일" };
 const STEPS = ["탐구 시작", "탐구 준비", "결과 분석", "보고서"];
@@ -465,7 +483,7 @@ export default function MyPage() {
               {orders.map((o) => {
                 const pending = o.status === "pending";
                 const refund = o.refund_status && o.refund_status !== "rejected" && o.refund_status !== "done";
-                const isInterview = String(o.product).startsWith("interview");
+                const [goTo, goLabel] = PRODUCT_GO[o.product] ?? ["/inquiry", "탐구 시작"];
                 return (
                   <div
                     key={o.id}
@@ -483,8 +501,8 @@ export default function MyPage() {
                       </p>
                     </div>
                     {o.status === "approved" && !refund && (
-                      <Link to={isInterview ? "/my?tab=interview" : "/inquiry"} className="shrink-0 text-[13px] font-bold text-sm-navy">
-                        {isInterview ? "질문 보기" : "탐구 시작"}
+                      <Link to={goTo} className="shrink-0 text-[13px] font-bold text-sm-navy">
+                        {goLabel}
                       </Link>
                     )}
                   </div>
