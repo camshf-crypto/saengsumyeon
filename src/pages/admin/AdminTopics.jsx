@@ -7,6 +7,7 @@ import CommunityStatsPanel from "./CommunityStatsPanel";
 import QuestionSuggestPanel from "./QuestionSuggestPanel";
 import StayPanel from "./StayPanel";
 import VoicePanel from "./VoicePanel";
+import UnivRequestPanel from "./UnivRequestPanel";
 import SbAdminPanel from "./SbAdminPanel";
 import StudyPanel from "./StudyPanel";
 import TailPanel from "./TailPanel";
@@ -584,6 +585,7 @@ const TABS = [
   { k: "visit", label: "방문", color: "#18224F" },
   { k: "stay", label: "머문 시간", color: "#18224F" },
   { k: "voice", label: "학생 의견", color: "#18224F" },
+  { k: "univreq", label: "대학 추가 요청", color: "#18224F" },
   { k: "community", label: "현황 · 레벨", color: "#0D9488" },
   { k: "mulgyeol", label: "나만 그래?", color: "#1A5E9A" },
   { k: "sb", label: "합격 생기부 퍼즐", color: "#EA580C" },
@@ -602,7 +604,7 @@ const TABS = [
 ];
 // 탭 묶음 — 위에서 묶음을 고르고, 아래에서 그 안의 탭을 고른다
 const GROUPS = [
-  { k: "people", label: "사람", desc: "누가 오고 · 얼마나 머물고 · 뭘 원하는지", tabs: ["visit", "stay", "voice"] },
+  { k: "people", label: "사람", desc: "누가 오고 · 얼마나 머물고 · 뭘 원하는지", tabs: ["visit", "stay", "voice", "univreq"] },
   { k: "community", label: "커뮤니티", desc: "나만 그래? · 게시판 · 칼럼 · 노트 · 레벨 · 퍼즐", tabs: ["community", "mulgyeol", "sb"] },
   { k: "learn", label: "공부", desc: "공부법 도감 · 쿠폰 보상 · 모의고사 인증", tabs: ["study", "studyreward", "studyverify"] },
   { k: "diag", label: "흔한가 진단", desc: "진단 서비스별 이용 · AI 비용", tabs: ["sum", "topic", "reading", "motive", "interview", "inquiry", "tail"] },
@@ -1702,6 +1704,13 @@ export default function AdminTopics() {
       {tab === "stay" && (
         <div className="mt-6">
           <StayPanel from={from} to={to} />
+        </div>
+      )}
+
+      {/* ── 대학 추가 요청 탭: 물꼬 채팅에서 자료 없는 대학을 요청한 것 (sql/sm_87) */}
+      {tab === "univreq" && (
+        <div className="mt-6">
+          <UnivRequestPanel />
         </div>
       )}
 

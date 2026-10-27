@@ -502,6 +502,8 @@ Deno.serve(async (req) => {
     const user = auth?.user ?? null; // 비회원이면 null
     const body = await req.json();
     const clientId = clean(body.client_id, 64);
+    // 물꼬 입시 에이전트가 부른 요청 — 이 기능의 무료 횟수 대신 에이전트 주간 사용량(토큰)으로 계산한다
+    const viaAgent = req.headers.get("x-agent-key") === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     // 가입(로그인) 뒤 — 이 브라우저의 비회원 기록을 계정으로 옮기고, 뽑아 둔 질문을 전부 돌려준다 (AI 비용 0)
     if (body.action === "claim") {
@@ -592,7 +594,7 @@ Deno.serve(async (req) => {
 
     if (!paid && mode === "full") return json({ error: "생기부 예상질문을 결제하면 이용할 수 있어요.", paywall: true }, 402);
 
-    if (!paid) {
+    if (!paid && !viaAgent) {
       // 결제 전 무료 질문 — 계정 1번 + 기기(브라우저) 1번. 둘 중 하나라도 이미 썼으면 새로 뽑지 않는다 (AI 비용 0)
       // 1) 내 계정으로 뽑은 기록 → 그 결과를 다시 보여준다
       if (user) {
@@ -627,7 +629,7 @@ Deno.serve(async (req) => {
           }
         }
       }
-    } else if (!adminRow) {
+    } else if (paid && !adminRow && !viaAgent) {
       const { count } = await admin
         .from("interview_queries").select("id", { count: "exact", head: true })
         .eq("user_id", user.id).eq("preview", false).neq("status", "failed").gte("created_at", todayStartKST());
@@ -663,7 +665,7 @@ Deno.serve(async (req) => {
 
     // 질문 만들기 — 활동 정리 → 대학마다 동시에 질문 → 결과와 활동 저장
     //   결제 전(preview)은 바로 기다려서 돌려주고, 결제 후(full)는 오래 걸려서 뒤에서 돌린다 (다른 화면에 가도 계속)
-    const ctx = { service: "interview", userId: user?.id ?? null, clientId: user ? null : clientId };
+    const ctx = { service: viaAgent ? "agent" : "interview", userId: user?.id ?? null, clientId: user ? null : clientId };
     async function generate(acts: any[]) {
       if (pasted) {
         const raw = await extract(pasted, { service: "interview", userId: user?.id ?? null });

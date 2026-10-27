@@ -16,7 +16,8 @@ import { getClientId } from "../lib/clientId";
  * 오른쪽: 광고가 있는 만큼 + 자리가 남으면 맨 아래 '광고 문의' 칸 하나 → /advertise
  */
 const imgUrl = (path) => supabase.storage.from("ads").getPublicUrl(path).data.publicUrl;
-const track = (id, kind) => supabase.rpc("ad_track", { p_ad: id, p_kind: kind, p_client: getClientId() });
+// .then 을 붙여야 서버로 실제로 보내진다 (안 붙이면 요청이 만들어지기만 하고 안 나간다)
+const track = (id, kind) => supabase.rpc("ad_track", { p_ad: id, p_kind: kind, p_client: getClientId() }).then(() => {});
 
 /* 배너 한 장 — 보이면 노출 1번 */
 function Banner({ ad, ratio, className = "" }) {

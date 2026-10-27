@@ -39,7 +39,14 @@ function keyBytes(base64) {
 const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent);
 const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
 
-const PRODUCT = { one: "탐구 1건", ten: "탐구 10건" };
+const PRODUCT = {
+  agent30: "이용권 한 달 (전체)",
+  agent180: "이용권 6개월 (전체)",
+  agent365: "이용권 1년 (전체)",
+  one: "탐구 1건", ten: "탐구 10건",
+  interview: "예상질문 1곳", interview6: "예상질문 6곳", roadmap: "로드맵",
+  tail10: "꼬리질문 10개", tail30: "꼬리질문 30개", tail50: "꼬리질문 50개", study1: "공부법 1과목", studyall: "공부법 전 과목",
+};
 const STATUS = {
   pending: { label: "확인 대기", cls: "bg-orange-100 text-orange-700" },
   approved: { label: "승인", cls: "bg-green-100 text-green-700" },
@@ -129,7 +136,7 @@ export default function AdminOrders() {
 
   async function decide(o, approve) {
     if (!approve && !window.confirm(`${o.depositor} · ${o.amount.toLocaleString()}원\n입금이 확인되지 않아 주문을 닫을까요?`)) return;
-    if (approve && !window.confirm(`${o.depositor} · ${o.amount.toLocaleString()}원\n입금 확인했어요. 이용권 ${o.product === "ten" ? 10 : 1}개를 줄까요?`)) return;
+    if (approve && !window.confirm(`${o.depositor} · ${o.amount.toLocaleString()}원\n입금 확인했어요. ${String(o.product).startsWith("agent") ? `${PRODUCT[o.product]}을 열까요?` : `${PRODUCT[o.product] ?? "이용권"}을 줄까요?`}`)) return;
     setBusyId(o.id);
     const { error } = await supabase.rpc("admin_decide_order", { p_id: o.id, p_approve: approve });
     setBusyId(null);

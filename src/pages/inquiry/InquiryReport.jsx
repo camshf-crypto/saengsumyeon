@@ -5,6 +5,7 @@ import { useAuth } from "../../lib/AuthContext";
 import { track } from "../../lib/track";
 import StepBar from "./StepBar";
 import Paywall from "./Paywall";
+import { hasPass } from "../../lib/pass";
 import { useStay } from "./useStay";
 import InquirySwitcher from "./InquirySwitcher";
 import { A4, TEMPLATES, renderPages, emptyVoices } from "./templates";
@@ -809,7 +810,8 @@ export default function InquiryReport() {
 
   const [isAdmin, setIsAdmin] = useState(false);
   useEffect(() => {
-    if (user) supabase.rpc("is_admin").then(({ data }) => setIsAdmin(Boolean(data)));
+    // 관리자 또는 이용권이면 결제 없이 연다
+    if (user) Promise.all([supabase.rpc("is_admin"), hasPass()]).then(([{ data }, pass]) => setIsAdmin(Boolean(data) || pass));
   }, [user]);
   // 무료 체험 탐구인지 — 2단계에서 학생이 무료 체험을 쓰기로 한 탐구 (보고서 디자인까지 무료, PDF 저장만 이용권)
   const free = inq ? Boolean(inq.free_trial) : null;

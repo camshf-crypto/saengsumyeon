@@ -2,6 +2,7 @@
 // 배포: npx supabase functions deploy diagnose
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { hasPass } from "../_shared/pass.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -102,7 +103,19 @@ const json = (body: unknown, status = 200) =>
 
 type Msg = { role: "system" | "user" | "assistant"; content: string };
 
-/* GPT-5 호출 → { result, raw } 또는 { error } */
+/* 에이전트가 부른 진단의 비용 기록 (에이전트 주간 사용량에 들어간다) */
+const PRICE: Record<string, [number, number]> = { "gpt-5": [1.25, 10], "gpt-5-mini": [0.25, 2] };
+async function logAgent(userId: string | null, usage: any) {
+  if (!userId || !usage) return;
+  try {
+    const [pi, po] = PRICE[MODEL] ?? [0, 0];
+    const inT = Number(usage.prompt_tokens ?? 0), outT = Number(usage.completion_tokens ?? 0);
+    const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    await db.from("ai_usage").insert({ service: "agent", user_id: userId, model: MODEL, input_tokens: inT, output_tokens: outT, cost_usd: (inT * pi + outT * po) / 1e6, ok: true });
+  } catch (_) { /* 기록 실패는 무시 */ }
+}
+
+/* GPT-5 호출 → { result, raw, usage } 또는 { error } */
 async function ask(messages: Msg[]) {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -122,9 +135,10 @@ async function ask(messages: Msg[]) {
     return { error: "진단에 실패했습니다." };
   }
 
-  const raw: string = JSON.parse(body).choices?.[0]?.message?.content ?? "";
+  const parsed = JSON.parse(body);
+  const raw: string = parsed.choices?.[0]?.message?.content ?? "";
   try {
-    return { result: JSON.parse(raw.replace(/```json|```/g, "").trim()), raw };
+    return { result: JSON.parse(raw.replace(/```json|```/g, "").trim()), raw, usage: parsed.usage };
   } catch {
     console.error("parse failed", raw.slice(0, 1000));
     return { error: "진단 결과를 읽지 못했습니다." };
@@ -180,6 +194,17 @@ Deno.serve(async (req) => {
   try {
     const { department, grade, term, subject, topic, user_id, client_id, focus: rawFocus } = await req.json();
     const focus = rawFocus === "subject" ? "subject" : "career"; // 기본은 진로 연결
+    // 물꼬 입시 에이전트가 부른 요청 — 이 기능의 무료 횟수 대신 에이전트 주간 사용량(토큰)으로 계산한다
+    const viaAgent = req.headers.get("x-agent-key") === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    // 탐구주제 흔한가는 비싸서(gpt-5) 에이전트에서도 하루 3번 — 이용권이 있을 때만 한도 없이 에이전트 사용량으로 센다
+    const agentPass = viaAgent && req.headers.get("x-agent-pass") === "1";
+    // 이용권이면 화면에서도 횟수 제한 없음 — 로그인 토큰의 회원과 같을 때만 (user_id 를 남의 것으로 바꿔 보내도 안 통하게)
+    let pass = agentPass;
+    if (!pass && user_id) {
+      const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+      const { data: me } = await sb.auth.getUser((req.headers.get("Authorization") ?? "").replace("Bearer ", ""));
+      if (me?.user?.id === user_id) pass = await hasPass(sb, user_id);
+    }
     if (!topic || !department || !subject) return json({ error: "입력값이 부족합니다." }, 400);
     // 화면에서 100자로 막지만, 우회한 요청도 걸러 비용을 막는다
     if (String(topic).length > 120 || String(department).length > 40 || String(subject).length > 40) {
@@ -222,7 +247,7 @@ Deno.serve(async (req) => {
     // 하루 한도를 넘었을 때 — 회원이면 친구 추천으로 받은 추가권이 있는지 본다
     let useBonus = false;
     let bonusCredits = 0;
-    if (quota && quota.allowed === false) {
+    if (quota && quota.allowed === false && !pass) {
       if (user_id) {
         const { data: bc } = await supabase
           .from("bonus_credits")
@@ -296,6 +321,7 @@ Deno.serve(async (req) => {
     ];
 
     let ans = await ask(messages);
+    if (agentPass) await logAgent(user_id, ans.usage);
     if (ans.error) return json({ error: ans.error }, 502);
 
     // 규칙을 어겼으면 한 번만 다시 쓰게 한다 (실패하면 첫 결과 사용)
@@ -306,6 +332,7 @@ Deno.serve(async (req) => {
         { role: "assistant", content: ans.raw! },
         { role: "user", content: `고쳐서 같은 JSON 전체를 다시 출력하세요.\n- ${fix.join("\n- ")}` },
       ]);
+      if (agentPass) await logAgent(user_id, retry.usage);
       if (!retry.error) ans = retry;
     }
 

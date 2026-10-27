@@ -10,7 +10,7 @@ import { useAuth } from "../../lib/AuthContext";
  * · 맨 위에는 최근 2주 안에 반영된 소식
  * · [불편해요] 탭 — 지금 서비스에서 불편한 점을 알려준다 (나만 보임 · 고치면 답장 + 조각 +1) · /voice?tab=fix
  */
-const AREAS = ["홈", "나만 그래?", "옥상에서 외쳐!", "합격 생기부 퍼즐", "흔한가 진단", "생기부 예상질문", "내 생기부 노트", "레벨 · 조각", "로그인 · 가입", "기타"];
+const AREAS = ["홈", "물꼬 입시 AI", "수시 면접 준비", "나만 그래?", "옥상에서 외쳐!", "합격 생기부 퍼즐", "흔한가 진단", "생기부 예상질문", "내 생기부 노트", "레벨 · 조각", "로그인 · 가입", "기타"];
 const FB_STATUS = {
   new: { label: "받았어", cls: "bg-gray-100 text-gray-600" },
   checking: { label: "확인 중", cls: "bg-orange-50 text-[#C2410C]" },
@@ -35,7 +35,9 @@ function FixPanel({ uid }) {
   async function send(e) {
     e.preventDefault();
     setErr("");
-    const { error } = await supabase.rpc("feedback_create", { p_area: area, p_body: body, p_path: state?.from ?? null });
+    let { error } = await supabase.rpc("feedback_create", { p_area: area, p_body: body, p_path: state?.from ?? null });
+    // 서버가 새 칸(물꼬 입시 AI 등)을 아직 모르면 '기타'로 보내고 앞에 칸 이름을 붙인다
+    if (error && area !== "기타") ({ error } = await supabase.rpc("feedback_create", { p_area: "기타", p_body: `[${area}] ${body}`, p_path: state?.from ?? null }));
     if (error) return setErr(error.message);
     setBody("");
     setArea("");
@@ -73,7 +75,9 @@ function FixPanel({ uid }) {
           value={body}
           onChange={(e) => setBody(e.target.value.slice(0, 500))}
           rows={3}
-          placeholder="뭐가 불편했어? 한두 줄이면 돼 (예: 댓글 쓰면 화면이 맨 위로 올라가요)"
+          placeholder={area === "물꼬 입시 AI"
+            ? "뭐가 불편했고, 어떻게 바뀌면 좋겠어? (예: 답이 너무 길어요 / 같은 걸 또 물어봐요 / 이런 것도 물어보고 싶어요)"
+            : "뭐가 불편했어? 한두 줄이면 돼 (예: 댓글 쓰면 화면이 맨 위로 올라가요)"}
           className="mt-3 w-full resize-none rounded-xl border border-gray-300 px-4 py-3 text-[14px] outline-none focus:border-sm-navy"
         />
         {err && <p className="mt-1 text-[13px] font-bold text-red-500">{err}</p>}

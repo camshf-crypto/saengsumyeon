@@ -3,13 +3,16 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/AuthContext";
 import { LoginPopup } from "../../components/LoginGate";
+import PassSheet from "../../components/PassSheet";
+import { hasPass } from "../../lib/pass";
 
 /*
  * 🎤 면접 꼬리질문 — /tail
  *   ① 대학 · 학과 · 질문 종류 · 면접 질문 · 내 답변 → [꼬리질문 받기]
  *   ② 그 대학 면접관이 파고드는 방식대로 꼬리질문 1개 (면접관 의도 · 답변 방향)
  *   ③ 꼬리에 답하면 다음 꼬리 → 한 질문에 6개까지
- *   꼬리질문 1개 = 1개 · 처음 5개 무료 (회원) → 10개 4,900원 · 30개 12,000원 · 50개 15,000원
+ *   꼬리질문 1개 = 1개 · 처음 5개 무료 (회원) → 생수면 이용권(12,900원부터)이면 개수 제한 없음 (components/PassSheet)
+ *   예전에 산 꼬리질문 개수(balance)는 그대로 쓴다
  *   생기부 질문 → '생기부 예상질문'에서 뽑은 질문을 가져온다 (안 했으면 하고 오라고 안내 → /interview)
  *   지원동기   → '지원동기 흔한가'에 쓴 지원동기를 내 답변으로 가져온다 (안 했으면 → /motive)
  *   /tail?from=interview · /tail?from=motive 로 들어오면 가져오기 창이 바로 열린다
@@ -20,12 +23,6 @@ import { LoginPopup } from "../../components/LoginGate";
 const NAVY = "#1E2A5A";
 const PINK = "#FD1673";
 const WIDTH = "mx-auto max-w-xl px-4 sm:px-5";
-const BANK = { name: "국민은행", number: "649301-04-159726", holder: "세움러닝(김지윤)" };
-const PACKS = [
-  { qty: 10, price: 4900 },
-  { qty: 30, price: 12000, tag: "인기" },
-  { qty: 50, price: 15000, tag: "1개 300원" },
-];
 const MAIN_TYPES = ["생기부 질문", "지원동기", "자기소개", "공통·인성", "제시문"];
 const MAIN_PH = {
   "생기부 질문": "예: 3학년 화학 세특에 촉매 탐구가 있는데, 어떤 실험을 했는지 설명해 주세요.",
@@ -144,9 +141,14 @@ export default function Tail() {
       nav("/tail", { replace: true });
       return;
     }
+    // 면접 준비 화면(/prep)에서 넘어오면 대학·학과를 채운다 (/tail?univ=…&dept=…)
+    const u = sp.get("univ"), dp = sp.get("dept");
+    if (u) { setSess(null); setUniv(u.slice(0, 30)); }
+    if (dp) setDept(dp.slice(0, 30));
     const from = sp.get("from");
     const t = from === "interview" ? "생기부 질문" : from === "motive" ? "지원동기" : null;
-    if (t) { setMainType(t); openLink(t); nav("/tail", { replace: true }); }
+    if (t) { setMainType(t); openLink(t); }
+    if (t || u) nav("/tail", { replace: true });
   }, [loading, user?.id, loc.search, openLink, nav]);
 
   // 결제 승인 · 반려 알림 (한 번만)
@@ -159,9 +161,11 @@ export default function Tail() {
       : { title: "입금이 확인되지 않았어요", body: "입금자명과 금액을 확인하고 다시 신청해 주세요. 궁금한 점은 문의해 주세요." });
   }, [me?.last_order?.id]);
 
+  const [pass, setPass] = useState(false); // 이용권 — 개수 제한 없음
   const loadMe = useCallback(async () => {
-    const { data } = await supabase.rpc("tail_me");
+    const [{ data }, p] = await Promise.all([supabase.rpc("tail_me"), hasPass()]);
     setMe(data);
+    setPass(p);
   }, []);
   useEffect(() => {
     supabase.rpc("tail_univs").then(({ data }) => setUnivs(data ?? []));
@@ -170,7 +174,7 @@ export default function Tail() {
   useEffect(() => { saveDraft({ univ, dept, mainType, mainQ, answer }); }, [univ, dept, mainType, mainQ, answer]);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [sess?.turns?.length, busy]);
 
-  const left = (me?.free_left ?? 0) + (me?.balance ?? 0);
+  const left = pass ? Infinity : (me?.free_left ?? 0) + (me?.balance ?? 0);
   const hits = univ && focusU ? univs.filter((u) => u.replace(/\s/g, "").includes(univ.replace(/\s/g, ""))).slice(0, 6) : [];
   const known = univs.includes(univ);
   const startOk = univ.trim() && dept.trim() && mainQ.trim().length >= 5 && answer.trim().length >= 15;
@@ -191,6 +195,7 @@ export default function Tail() {
     if (!handle(r)) return;
     setSess({ id: r.id, univ: univ.trim(), department: dept.trim(), main_type: mainType, main_q: mainQ.trim(), turns: r.turns, max: r.max });
     setMe((m) => ({ ...m, free_left: r.left.free, balance: r.left.paid }));
+    if (r.pass) setPass(true);
   };
 
   const next = async () => {
@@ -202,6 +207,7 @@ export default function Tail() {
     setSess((s) => ({ ...s, turns: r.turns }));
     setReply("");
     setMe((m) => ({ ...m, free_left: r.left.free, balance: r.left.paid }));
+    if (r.pass) setPass(true);
   };
 
   const openPast = async (id) => {
@@ -228,12 +234,15 @@ export default function Tail() {
         {/* 남은 개수 */}
         <div className="mt-3 flex items-center justify-between rounded-2xl bg-white px-4 py-3 ring-1 ring-black/5">
           <p className="text-[13px] text-gray-600">
-            {user ? <>남은 꼬리질문 <b className="text-[16px]" style={{ color: PINK }}>{left}개</b>{me?.free_left > 0 && <span className="ml-1 text-[12px] text-gray-400">(무료 {me.free_left}개 포함)</span>}</>
+            {pass ? <b style={{ color: NAVY }}>이용권 사용 중 · 꼬리질문 개수 제한 없음</b>
+              : user ? <>남은 꼬리질문 <b className="text-[16px]" style={{ color: PINK }}>{left}개</b>{me?.free_left > 0 && <span className="ml-1 text-[12px] text-gray-400">(무료 {me.free_left}개 포함)</span>}</>
               : <>로그인하면 <b style={{ color: PINK }}>꼬리질문 5개 무료</b></>}
           </p>
-          <button onClick={() => (user ? setPay(true) : setLogin(true))} className="h-9 rounded-lg px-3 text-[12.5px] font-extrabold text-white" style={{ background: NAVY }}>
-            {user ? "더 받기" : "로그인"}
-          </button>
+          {!pass && (
+            <button onClick={() => (user ? setPay(true) : setLogin(true))} className="h-9 rounded-lg px-3 text-[12.5px] font-extrabold text-white" style={{ background: NAVY }}>
+              {user ? "더 받기" : "로그인"}
+            </button>
+          )}
         </div>
         {me?.pending && (
           <p className="mt-2 rounded-xl bg-[#FFF7ED] px-3 py-2.5 text-[12.5px] font-bold text-[#C2410C]">
@@ -427,7 +436,13 @@ export default function Tail() {
         </Modal>
       )}
 
-      <PaySheet open={pay} me={me} onClose={() => setPay(false)} onDone={() => { setPay(false); loadMe(); }} />
+      <PassSheet
+        open={pay}
+        title="면접 꼬리질문"
+        headline={left <= 0 ? "꼬리질문을 다 썼어요" : "꼬리질문 개수 제한 없이 받기"}
+        onClose={() => setPay(false)}
+        onUnlocked={() => { setPay(false); loadMe(); }}
+      />
       <LoginPopup open={login} onClose={() => setLogin(false)} title="로그인하고 꼬리질문 5개 무료로 받기" desc="닉네임만 보이고, 학교·이름은 받지 않아요." />
     </div>
   );
@@ -443,68 +458,5 @@ function Bubble({ who, tag, text, me, hot }) {
         <p className={`mt-0.5 whitespace-pre-wrap text-[14px] leading-relaxed ${me ? "" : "font-semibold text-gray-900"}`}>{text}</p>
       </div>
     </div>
-  );
-}
-
-/* 더 받기 — 10개 · 30개 · 50개 (계좌이체 → 관리자 확인) */
-function PaySheet({ open, me, onClose, onDone }) {
-  const [qty, setQty] = useState(30);
-  const [dep, setDep] = useState("");
-  const [usePieces, setUsePieces] = useState(false);
-  const [quote, setQuote] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  useEffect(() => {
-    if (!open) return;
-    supabase.rpc("pay_quote", { p_product: `tail${qty}`, p_pieces: usePieces ? 99999 : 0, p_coupon: null }).then(({ data }) => setQuote(data));
-  }, [open, qty, usePieces]);
-  if (!open) return null;
-  const pack = PACKS.find((p) => p.qty === qty);
-  const submit = async () => {
-    setBusy(true); setErr("");
-    const { error } = await supabase.rpc("tail_order", { p_qty: qty, p_depositor: dep.trim(), p_pieces: usePieces ? quote?.pieces ?? 0 : 0 });
-    setBusy(false);
-    if (error) return setErr(errMsg(error));
-    onDone();
-  };
-  return (
-    <Sheet open onClose={onClose} title="꼬리질문 더 받기">
-      <p className="text-[12.5px] text-gray-500">꼬리질문 1개가 나올 때마다 1개를 써요. 산 개수는 기간 없이 계속 쓸 수 있어요.</p>
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        {PACKS.map((p) => (
-          <button key={p.qty} onClick={() => setQty(p.qty)} className={`relative rounded-2xl p-3 text-left ${qty === p.qty ? "ring-[3px]" : "ring-1 ring-gray-200"}`} style={qty === p.qty ? { "--tw-ring-color": PINK } : undefined}>
-            {p.tag && <span className="absolute -top-2 right-2 rounded-full px-1.5 py-0.5 text-[10px] font-extrabold text-white" style={{ background: PINK }}>{p.tag}</span>}
-            <p className="text-[13px] font-bold text-gray-600">{p.qty}개</p>
-            <p className="mt-0.5 text-[16px] font-extrabold text-gray-900">{won(p.price)}</p>
-          </button>
-        ))}
-      </div>
-      {me?.pending ? (
-        <p className="mt-4 rounded-xl bg-[#FFF7ED] px-3 py-3 text-[13px] font-bold text-[#C2410C]">입금 확인 중이에요 ({me.pending.qty}개 · {won(me.pending.amount)} · {me.pending.depositor}). 확인되면 바로 더해져요.</p>
-      ) : (
-        <>
-          {quote?.max_pieces > 0 && (
-            <label className="mt-3 flex items-center gap-2 text-[13px] text-gray-700">
-              <input type="checkbox" checked={usePieces} onChange={(e) => setUsePieces(e.target.checked)} />
-              조각 {quote.max_pieces}개 써서 {won(quote.max_pieces * 50)} 할인 (최대 25%)
-            </label>
-          )}
-          <div className="mt-3 rounded-xl bg-[#F4F5F7] p-3 text-[13px]">
-            <div className="flex justify-between"><span className="text-gray-500">입금할 금액</span><b className="text-[16px] text-gray-900">{won(quote?.total ?? pack.price)}</b></div>
-            <div className="mt-1.5 flex justify-between"><span className="text-gray-500">은행</span><b>{BANK.name}</b></div>
-            <div className="mt-1 flex justify-between"><span className="text-gray-500">계좌번호</span>
-              <button onClick={() => navigator.clipboard?.writeText(BANK.number.replace(/-/g, ""))} className="font-bold underline">{BANK.number} 복사</button></div>
-            <div className="mt-1 flex justify-between"><span className="text-gray-500">예금주</span><b>{BANK.holder}</b></div>
-          </div>
-          <input value={dep} onChange={(e) => setDep(e.target.value.slice(0, 20))} placeholder="입금자명"
-            className="mt-3 h-11 w-full rounded-xl border border-gray-200 px-3 text-[14px] outline-none focus:border-[#1E2A5A]" />
-          {err && <p className="mt-2 text-[13px] font-semibold text-red-500">{err}</p>}
-          <button onClick={submit} disabled={dep.trim().length < 2 || busy} className="mt-3 h-12 w-full rounded-xl text-[15px] font-extrabold text-white disabled:opacity-50" style={{ background: PINK }}>
-            {busy ? "접수 중..." : "입금했어요"}
-          </button>
-          <p className="mt-2 text-center text-[11.5px] text-gray-400">입금이 확인되면 관리자가 바로 더해 드려요</p>
-        </>
-      )}
-    </Sheet>
   );
 }

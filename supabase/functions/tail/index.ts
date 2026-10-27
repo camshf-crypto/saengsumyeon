@@ -10,6 +10,7 @@
 // 대학별 패턴 · 실제 예시는 이 함수 안에서만 쓴다 (학생 화면에는 보내지 않는다)
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { hasPass } from "../_shared/pass.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -51,15 +52,15 @@ const norm = (t: string) => t.replace(/[\s"'“”‘’.,·…!?~()\[\]]/g, "")
 
 /* AI 사용량 기록 — 관리자 'AI 비용' 칸 */
 const PRICE: Record<string, [number, number]> = { "gpt-5-mini": [0.25, 2], "gpt-5": [1.25, 10] };
-async function logUsage(db: any, userId: string, usage: any, ok: boolean) {
+async function logUsage(db: any, userId: string, usage: any, ok: boolean, service = "tail") {
   try {
     const [pi, po] = PRICE[MODEL];
     const inT = Number(usage?.prompt_tokens ?? 0), outT = Number(usage?.completion_tokens ?? 0);
-    await db.from("ai_usage").insert({ service: "tail", user_id: userId, model: MODEL, input_tokens: inT, output_tokens: outT, cost_usd: (inT * pi + outT * po) / 1e6, ok });
+    await db.from("ai_usage").insert({ service, user_id: userId, model: MODEL, input_tokens: inT, output_tokens: outT, cost_usd: (inT * pi + outT * po) / 1e6, ok });
   } catch (_) { /* 기록 실패는 무시 */ }
 }
 
-async function ask(db: any, userId: string, system: string, user: string) {
+async function ask(db: any, userId: string, system: string, user: string, service = "tail") {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")}` },
@@ -72,13 +73,13 @@ async function ask(db: any, userId: string, system: string, user: string) {
     }),
   });
   const body = await res.text();
-  if (!res.ok) { console.error("openai", res.status, body.slice(0, 500)); await logUsage(db, userId, null, false); return null; }
+  if (!res.ok) { console.error("openai", res.status, body.slice(0, 500)); await logUsage(db, userId, null, false, service); return null; }
   try {
     const j = JSON.parse(body);
     const out = JSON.parse(j.choices?.[0]?.message?.content ?? "");
-    await logUsage(db, userId, j.usage, true);
+    await logUsage(db, userId, j.usage, true, service);
     return out;
-  } catch (e) { console.error("parse", e); await logUsage(db, userId, null, false); return null; }
+  } catch (e) { console.error("parse", e); await logUsage(db, userId, null, false, service); return null; }
 }
 
 /* 이번 꼬리 패턴 고르기 — 그 대학 비율 × 메인 질문 종류 비율, 바로 앞과 같은 패턴은 덜 나오게 */
@@ -134,6 +135,8 @@ Deno.serve(async (req) => {
     const user = u?.user;
     if (!user) return json({ error: "로그인하면 꼬리질문 5개를 무료로 받을 수 있어요", need_login: true }, 401);
     const body = await req.json().catch(() => ({}));
+    // 물꼬 입시 에이전트가 부른 요청 — 이 기능의 무료 횟수 대신 에이전트 주간 사용량(토큰)으로 계산한다
+    const viaAgent = req.headers.get("x-agent-key") === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const answer = clean(body.answer, 1200);
     if (answer.length < 15) return json({ error: "답변을 15자 이상 적어 주세요 (실제로 말할 것처럼)" }, 400);
 
@@ -159,8 +162,11 @@ Deno.serve(async (req) => {
     }
 
     // ── 1개 쓰기 (무료 먼저)
-    const { data: use } = await db.rpc("tail_use", { p_user: user.id });
+    const pass = await hasPass(db, user.id); // 이용권이면 꼬리질문 개수 제한 없음
+    const { data: use } = viaAgent || pass ? { data: { ok: true, by: null } } : await db.rpc("tail_use", { p_user: user.id });
     if (!use?.ok) return json({ need_pay: true });
+    const svc = viaAgent ? "agent" : "tail";
+    const refund = () => (viaAgent || pass ? null : db.rpc("tail_refund", { p_user: user.id, p_by: use.by }));
 
     // ── 이 대학 패턴 (목록에 없는 대학이면 전체 평균처럼)
     const { data: un } = await db.from("tail_univ").select("mix,stats").eq("univ", s.univ).maybeSingle();
@@ -246,24 +252,24 @@ ${convo}
       const qt = norm(String(o?.quote ?? ""));
       return o?.off || (qt.length >= 2 && lastA.includes(qt));
     };
-    let out = await ask(db, user.id, system, userMsg);
+    let out = await ask(db, user.id, system, userMsg, svc);
     if (out && !grounded(out)) {
-      const again = await ask(db, user.id, system, userMsg + `\n\n(주의: quote 는 학생 마지막 답변의 구절을 글자 그대로 옮겨야 하고, 질문은 그 구절에 대해서만 묻는다)`);
+      const again = await ask(db, user.id, system, userMsg + `\n\n(주의: quote 는 학생 마지막 답변의 구절을 글자 그대로 옮겨야 하고, 질문은 그 구절에 대해서만 묻는다)`, svc);
       if (again && (grounded(again) || !out?.question)) out = again;
     }
     // '어디서 얻었/알았' 같은 출처만 묻는 질문이면 한 번 더 만든다 (한마디로 끝나서 진짜 했는지 확인이 안 됨)
     const weak = (o: any) => /어디(에서|서)\s*(얻|알|찾|보|접하|들)/.test(String(o?.question ?? "")) || /어떤 (논문|책|자료|영상|사이트)(을|를)\s*(분석|참고|보|읽)/.test(String(o?.question ?? ""));
     if (out && !out.off && weak(out)) {
-      const again = await ask(db, user.id, system, userMsg + `\n\n(주의: 출처·제목만 대면 끝나는 질문은 안 된다. 그 자료·조사에서 알게 된 내용이나, 답변 속 이야기가 넘어가는 이음새를 물어라)`);
+      const again = await ask(db, user.id, system, userMsg + `\n\n(주의: 출처·제목만 대면 끝나는 질문은 안 된다. 그 자료·조사에서 알게 된 내용이나, 답변 속 이야기가 넘어가는 이음새를 물어라)`, svc);
       if (again?.question && !weak(again)) out = again;
     }
     const q = stripLabel(clean(out?.question, 200));
     if (!q) {
-      await db.rpc("tail_refund", { p_user: user.id, p_by: use.by });
+      await refund();
       return json({ error: "질문을 만들지 못했어요. 잠시 뒤 다시 눌러 주세요 (개수는 돌려 드렸어요)" }, 502);
     }
     if (out?.off) {
-      await db.rpc("tail_refund", { p_user: user.id, p_by: use.by }); // 장난 답변이면 개수는 쓰지 않는다
+      await refund(); // 장난 답변이면 개수는 쓰지 않는다
       return json({ error: q, off: true }, 400);
     }
     const turn = { q, pattern, why: clean(out?.why, 80), tip: clean(out?.tip, 100) };
@@ -283,6 +289,7 @@ ${convo}
     return json({
       id, turn, turns: s.turns,
       left: { free: Math.max(5 - Number(c?.free_used ?? 0), 0), paid: Number(c?.balance ?? 0) },
+      pass, // 이용권 — 화면에서 '이용권 사용 중 · 개수 제한 없음'으로 보여 준다
       max: MAX_TAILS,
     });
   } catch (e) {

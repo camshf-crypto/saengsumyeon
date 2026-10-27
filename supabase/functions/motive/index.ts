@@ -7,6 +7,7 @@
 // 횟수: 회원 일주일 2번(다 쓰면 친구 초대 1명당 1번 — motive_bonus), 비회원 일주일 1번
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { hasPass } from "../_shared/pass.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -206,6 +207,8 @@ Deno.serve(async (req) => {
     const user = auth?.user ?? null;
 
     const body = await req.json();
+    // 물꼬 입시 에이전트가 부른 요청 — 이 기능의 무료 횟수 대신 에이전트 주간 사용량(토큰)으로 계산한다
+    const viaAgent = req.headers.get("x-agent-key") === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const university = clean(body.university, 40);
     const department = clean(body.department, 40);
     const useFor = body.use_for === "document" ? "document" : "interview";
@@ -220,6 +223,8 @@ Deno.serve(async (req) => {
       const { data } = await admin.from("admins").select("user_id").eq("user_id", user.id).maybeSingle();
       isAdmin = Boolean(data);
     }
+    if (viaAgent) isAdmin = true; // 에이전트에서 부르면 이 기능 횟수는 쓰지 않는다
+    if (user && !isAdmin && (await hasPass(admin, user.id))) isAdmin = true; // 이용권이면 횟수 제한 없음
 
     // 남은 횟수 — 회원: 이번 주 2번 먼저, 다 쓰면 친구 초대로 받은 추가 횟수 / 비회원: 일주일에 1번
     const credit = await creditsOf(admin, user ? { userId: user.id } : { clientId });
@@ -248,7 +253,7 @@ Deno.serve(async (req) => {
 [지원 학과] ${department}
 [학생이 쓴 지원동기]
 ${motive}${univBlock}`,
-      { service: "motive", userId: user?.id, clientId }
+      { service: viaAgent ? "agent" : "motive", userId: user?.id, clientId }
     );
     if (!ai) return json({ error: "진단하지 못했어요. 잠시 후 다시 시도해 주세요." }, 502);
     if (ai.invalid) return json({ invalid: true, invalid_reason: clean(ai.invalid_reason, 120) });

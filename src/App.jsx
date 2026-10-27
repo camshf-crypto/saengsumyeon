@@ -41,6 +41,9 @@ import NoteDiagnosis from "./pages/note/NoteDiagnosis";
 import NoteRoadmap from "./pages/note/NoteRoadmap";
 import Study from "./pages/study/Study";
 import Tail from "./pages/tail/Tail";
+import Agent from "./pages/agent/Agent";
+import Prep from "./pages/prep/Prep";
+import Plan from "./pages/plan/Plan";
 import Advertise from "./pages/ads/Advertise";
 import { BoardList, BoardPost } from "./pages/board/Board";
 import Level from "./pages/level/Level";
@@ -175,6 +178,11 @@ export default function App() {
             <Route path="/study" element={<Study />} />
             {/* 면접 꼬리질문 */}
             <Route path="/tail" element={<Tail />} />
+            {/* 입시 상담 AI */}
+            <Route path="/agent" element={<Agent />} />
+            <Route path="/prep" element={<Prep />} />
+            {/* 내 입시 플랜 — 학년별 계획 · 이번 주 할 일 체크 */}
+            <Route path="/plan" element={<Plan />} />
             {/* 광고 문의 — 아래쪽 링크(환불 규정 옆)에서 들어온다 */}
             <Route path="/advertise" element={<Advertise />} />
             <Route path="/my/level" element={<Level />} />

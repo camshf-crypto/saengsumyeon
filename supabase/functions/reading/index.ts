@@ -11,6 +11,7 @@
 //   reading_candidates(p_department, p_subject, p_exclude) → [{ title, author, dept_count }]  덜 흔한 책 후보
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { hasPass } from "../_shared/pass.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -175,6 +176,8 @@ Deno.serve(async (req) => {
     const user = auth?.user ?? null; // 비회원이면 null
 
     const body = await req.json();
+    // 물꼬 입시 에이전트가 부른 요청 — 이 기능의 무료 횟수 대신 에이전트 주간 사용량(토큰)으로 계산한다
+    const viaAgent = req.headers.get("x-agent-key") === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const title = clean(body.title, 80);
     const author = clean(body.author, 40);
     const department = clean(body.department, 40);
@@ -190,6 +193,8 @@ Deno.serve(async (req) => {
       const { data } = await admin.from("admins").select("user_id").eq("user_id", user.id).maybeSingle();
       isAdmin = Boolean(data);
     }
+    if (viaAgent) isAdmin = true; // 에이전트에서 부르면 이 기능 횟수는 쓰지 않는다
+    if (user && !isAdmin && (await hasPass(admin, user.id))) isAdmin = true; // 이용권이면 횟수 제한 없음
 
     // 남은 횟수 — 회원: 이번 주 무료 2권 먼저, 다 쓰면 친구 초대로 받은 추가 권수 / 비회원: 1권
     let credit = { weekly: 0, bonus: 0, next: null as string | null };
@@ -243,7 +248,7 @@ Deno.serve(async (req) => {
 [덜 흔한 책 후보] ${
           candidates.length ? candidates.map((c: any) => `${c.title}${c.author ? ` / ${c.author}` : ""} (같은 학과 ${c.dept_count ?? 0}번)`).join("; ") : "(없음)"
         }`,
-        { service: "reading", userId: user?.id, clientId }
+        { service: viaAgent ? "agent" : "reading", userId: user?.id, clientId }
       );
       if (!ai) return json({ error: "진단하지 못했어요. 잠시 후 다시 시도해 주세요." }, 502);
       if (ai.invalid) return json({ invalid: true, invalid_reason: clean(ai.invalid_reason, 120) });

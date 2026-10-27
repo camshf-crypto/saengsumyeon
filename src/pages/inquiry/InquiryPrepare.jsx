@@ -5,6 +5,7 @@ import { useAuth } from "../../lib/AuthContext";
 import { track } from "../../lib/track";
 import StepBar from "./StepBar";
 import Paywall from "./Paywall";
+import { hasPass } from "../../lib/pass";
 import { trialUsedElsewhere } from "./freeInquiry";
 import { useStay } from "./useStay";
 import InquirySwitcher from "./InquirySwitcher";
@@ -668,7 +669,8 @@ export default function InquiryPrepare() {
   const sourceArea = useRef(null); // 팝업에서 '자료 고르러 가기' 누르면 여기로 내려간다
   const [isAdmin, setIsAdmin] = useState(false);
   useEffect(() => {
-    if (user) supabase.rpc("is_admin").then(({ data }) => setIsAdmin(Boolean(data)));
+    // 관리자 또는 이용권이면 결제 없이 연다
+    if (user) Promise.all([supabase.rpc("is_admin"), hasPass()]).then(([{ data }, pass]) => setIsAdmin(Boolean(data) || pass));
   }, [user]);
   // 무료 체험 — 2단계에서 "무료 체험 1건을 사용할게요"를 누른 탐구가 무료 체험 탐구가 된다
   const free = Boolean(inq?.free_trial);

@@ -12,6 +12,7 @@
 //   → 학생이 화면을 닫아도 끝까지 만들어지고, 다시 들어오면 화면이 note_roadmaps 를 보고 이어서 보여 준다
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { hasPass } from "../_shared/pass.ts";
 
 declare const EdgeRuntime: { waitUntil: (p: Promise<unknown>) => void } | undefined;
 
@@ -196,7 +197,7 @@ Deno.serve(async (req) => {
 
     // 결제(승인)했는지
     const { data: access } = await admin.from("note_roadmap_access").select("user_id").eq("user_id", user.id).maybeSingle();
-    if (!access) return json({ need: "pay" }, 403);
+    if (!access && !(await hasPass(admin, user.id))) return json({ need: "pay" }, 403); // 이용권도 열림
 
     // 가장 최근 진단 (전체 결과)
     const { data: diag } = await admin

@@ -9,7 +9,7 @@ import AdSlot from "../../components/AdSlot";
 
 /*
  * 생수면 메인 (/)
- * 왼쪽: 탐구주제 검색창(= 흔한가 진단 입구) → 옥상에서 외쳐! 배너 → 메뉴 8칸 → 지금 많이 보는 글
+ * 왼쪽: 물꼬 입시 에이전트 입력창(흔한가 진단 3종 포함) → 옥상에서 외쳐! 배너 → 메뉴 4칸 → 지금 많이 보는 글
  * 오른쪽: (회원) 내 레벨 + 오늘 할 일 / 오늘의 나만 그래? / (비회원) 가입 카드
  * 회원이 들어오면 출석을 찍고, 단계 보상을 확인해서 레벨업 팝업을 띄운다
  *
@@ -28,23 +28,39 @@ const PATHS = {
   tail: "/tail",
   signup: "/signup",
   myLevel: "/my/level",
+  agent: "/agent",
+  prep: "/prep",
+  plan: "/plan",
 };
+
+// 물꼬 입력창 아래 흔한가 진단 3종 — 누르면 물꼬 채팅에서 바로 진단을 시작한다
+const AGENT_CHECKS = [
+  { label: "내 탐구주제 흔한가?", q: "내 탐구주제 흔한가 진단해 줘" },
+  { label: "지원동기 흔한가?", q: "내 지원동기 흔한가 진단해 줘" },
+  { label: "독서 흔한가?", q: "내가 읽은 책 흔한가 진단해 줘" },
+  { label: "생기부 예상질문", q: "내 생기부로 면접 예상질문 뽑아 줘" },
+  { label: "면접 꼬리질문 연습", q: "면접 꼬리질문 연습하고 싶어" },
+];
+
+// 물꼬 입력창 아래 예시 — 누르면 바로 그 질문으로 물꼬에게 간다
+const AGENT_EXAMPLES = [
+  "내 생기부로 어떤 학과가 맞을까?",
+  "가천대 2028 바뀐 점 알려줘",
+];
 
 // 흔한가 진단 타일을 누르면 펼쳐지는 메뉴
 const SERIES = [
   { to: "/topic", label: "탐구주제 흔한가" },
-  { to: "/reading", label: "독서 흔한가" },
   { to: "/motive", label: "지원동기 흔한가" },
+  { to: "/reading", label: "독서 흔한가" },
 ];
 
+// 메뉴 4칸 — 공부법 · 흔한가 · 예상질문 · 꼬리질문은 타일에서 뺐다 (물꼬 입력창 아래 버튼 · 채팅으로 들어간다)
 const TILES = [
-  { key: "study", title: "전국 공부법", sub: "다음 등급 공부법", icon: "book", badge: "NEW" },
-  { key: "topic", title: "흔한가 진단", sub: "탐구주제 · 독서 외", icon: "scan", menu: true },
-  { key: "interview", title: "생기부 예상질문", sub: "대학별 면접 기준", icon: "mic", badge: "5개 무료" },
-  { key: "tail", title: "면접 꼬리질문", sub: "내 답변에 압박질문", icon: "mic", badge: "5개 무료" },
+  { key: "prep", title: "수시 면접 준비", sub: "지원 대학별 면접 4단계", icon: "mic", badge: "NEW" },
   { key: "puzzle", title: "선배 생기부 보기", sub: "대학별 합격 사례", icon: "puzzle" },
   { key: "note", title: "내 생기부 진단", sub: "다 적으면 AI 입시 진단", icon: "note", badge: "AI 진단" },
-  { key: "ladder", title: "대학 사다리", sub: "내 성적 위치", icon: "ladder", badge: "준비 중", muted: true },
+  { key: "plan", title: "내 입시 플랜", sub: "학년별 · 이번 주 할 일", icon: "check", badge: "NEW" },
 ];
 
 const HOT_TABS = [
@@ -66,6 +82,7 @@ function Icon({ name, className = "h-[22px] w-[22px]" }) {
     note: <><path d="M6 3h11a2 2 0 012 2v14a2 2 0 01-2 2H6z" /><path d="M6 3v18M4 7h4M4 12h4M4 17h4M11 8h5M11 12h5" /></>,
     chat: <path d="M21 12a8 8 0 01-11.6 7.1L4 20l1-4.6A8 8 0 1121 12z" />,
     ladder: <path d="M7 3v18M17 3v18M7 7h10M7 12h10M7 17h10" />,
+    check: <><rect x="4" y="4" width="16" height="16" rx="3" /><path d="M8.5 12.5l2.5 2.5 4.5-5" /></>,
     clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
     user: <><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0113 0M16 4.5a3.5 3.5 0 010 7M18 20a6.5 6.5 0 00-2.5-5.1" /></>,
     down: <path d="M6 9l6 6 6-6" />,
@@ -94,10 +111,9 @@ export default function Home() {
   const uid = user?.id ?? null; // 로그인한 사람이 바뀔 때만 다시 불러온다
   const nav = useNavigate();
 
-  const [topic, setTopic] = useState("");
+  const [ask, setAsk] = useState(""); // 물꼬에게 물어볼 말
   const [members, setMembers] = useState(null);
   const [shout, setShout] = useState(null); // 물꼬의 오늘의 외침
-  const [topShout, setTopShout] = useState(null); // 이번 주 가장 큰 외침
   const [hot, setHot] = useState([]);
   const [hotTab, setHotTab] = useState(null);
   const [qs, setQs] = useState([]);
@@ -113,7 +129,6 @@ export default function Home() {
   useEffect(() => {
     supabase.rpc("main_numbers").then(({ data }) => data && setMembers(data.members));
     supabase.rpc("shout_today").then(({ data }) => setShout(data || null));
-    supabase.rpc("post_list", { p_sort: "hot", p_limit: 1 }).then(({ data }) => setTopShout(data?.[0] ?? null));
     supabase.rpc("mg_stats").then(({ data }) => setQs(data || []));
   }, [uid]);
 
@@ -202,10 +217,10 @@ export default function Home() {
     if (to) nav(to);
   }
 
-  function search(e) {
-    e.preventDefault();
-    const v = topic.trim();
-    nav(v ? `${PATHS.topic}?q=${encodeURIComponent(v)}` : PATHS.topic);
+  // 물꼬 입력창 — 에이전트 화면으로 넘어가서 바로 답한다
+  function goAgent(text) {
+    const v = String(text ?? "").trim();
+    nav(v ? `${PATHS.agent}?q=${encodeURIComponent(v)}` : PATHS.agent);
   }
 
   function openHot(h) {
@@ -354,26 +369,55 @@ export default function Home() {
           {/* 광고 — 맨 위 3칸 (광고가 없으면 안 보임) */}
           <AdSlot slot="home_top" className="mb-4" />
 
-          {/* 검색 = 탐구주제 흔한가 진단 */}
-          <form
-            onSubmit={search}
-            className="flex h-14 items-center gap-3 rounded-[14px] border border-gray-200 bg-white pl-4 pr-2.5 focus-within:border-sm-navy sm:h-16 sm:pl-5 sm:pr-3"
-          >
-            <Icon name="search" className="h-[22px] w-[22px] flex-none text-gray-400" />
-            <input
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              placeholder="탐구주제를 입력하면 얼마나 흔한지 분석해요"
-              enterKeyHint="search"
-              className="min-w-0 flex-1 bg-transparent text-[15px] text-gray-900 outline-none placeholder:text-gray-400 sm:text-[16.5px]"
-            />
-            {/* 엔터로 진단 — 글자를 쓰면 작은 화살표만 나온다 (휴대폰에서 누를 곳) */}
-            {topic.trim() && (
-              <button aria-label="흔한가 진단" className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-sm-navy text-white sm:h-10 sm:w-10">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+          {/* 물꼬 입시 에이전트 — 입시 궁금한 건 여기서 물어보기 */}
+          <div className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-5">
+            <div className="mb-3 flex items-baseline gap-2 pl-0.5">
+              <b className="flex-none whitespace-nowrap text-[16.5px] font-bold tracking-tight text-gray-900 sm:text-[18px]">물꼬 입시 AI</b>
+              <small className="hidden truncate text-[12.5px] text-gray-500 sm:inline">모집요강 · 내 생기부 · 면접 · 탐구주제까지</small>
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                goAgent(ask);
+              }}
+              className="flex h-14 items-center gap-3 rounded-[12px] border-2 border-sm-navy bg-white pl-4 pr-2"
+            >
+              <input
+                value={ask}
+                onChange={(e) => setAsk(e.target.value)}
+                placeholder="입시 궁금한 걸 물어보세요"
+                enterKeyHint="send"
+                className="min-w-0 flex-1 bg-transparent text-[15px] text-gray-900 outline-none placeholder:text-gray-400 sm:text-[16px]"
+              />
+              <button aria-label="물꼬에게 물어보기" className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-sm-navy text-white">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5M6 11l6-6 6 6" /></svg>
               </button>
-            )}
-          </form>
+            </form>
+            <div className="-mx-4 mt-3 flex gap-1.5 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0">
+              {/* 흔한가 진단 3종 — 물꼬 채팅에서 바로 진단 */}
+              {AGENT_CHECKS.map((c) => (
+                <button
+                  key={c.label}
+                  type="button"
+                  onClick={() => goAgent(c.q)}
+                  className="flex-none whitespace-nowrap rounded-full border border-gray-200 bg-[#F8F9FB] px-3 py-1.5 text-[12.5px] font-medium text-gray-600 hover:border-sm-navy hover:text-sm-navy"
+                >
+                  {c.label}
+                </button>
+              ))}
+              {AGENT_EXAMPLES.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => goAgent(t)}
+                  className="flex-none whitespace-nowrap rounded-full border border-gray-200 bg-[#F8F9FB] px-3 py-1.5 text-[12.5px] font-medium text-gray-600 hover:border-sm-navy hover:text-sm-navy"
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="mt-2.5 flex flex-wrap gap-x-3.5 gap-y-1 pl-1 text-[12.5px] text-gray-500">
             <span className="flex items-center gap-1.5"><i className="h-[5px] w-[5px] rounded-full bg-sm-orange" />탐구주제 데이터 <b className="text-gray-700">9,780건</b></span>
             <span className="flex items-center gap-1.5"><i className="h-[5px] w-[5px] rounded-full bg-sm-orange" />대학 면접 분석 <b className="text-gray-700">140개교</b></span>
@@ -398,26 +442,16 @@ export default function Home() {
             </Link>
           )}
 
-          {/* 옥상에서 외쳐! 배너 — 물꼬의 오늘의 외침 + 이번 주 가장 큰 외침 */}
+          {/* 옥상에서 외쳐! 배너 — 물꼬의 오늘의 외침 (두 줄만) */}
           <Link
             to={PATHS.board}
-            className="relative mt-6 flex min-h-[132px] flex-col gap-4 overflow-hidden rounded-2xl bg-sm-navy px-6 py-6 text-white sm:flex-row sm:items-center sm:px-8"
+            className="relative mt-6 flex flex-col gap-3 overflow-hidden rounded-2xl bg-sm-navy px-6 py-4 text-white sm:flex-row sm:items-center sm:px-8 sm:py-5"
           >
             <div className="relative min-w-0 flex-1">
               <small className="text-[12px] font-bold text-orange-300">📣 옥상에서 외쳐! · 물꼬의 오늘의 외침</small>
-              <b className="mt-2 block text-[19px] font-bold leading-snug tracking-tight sm:text-[22px]">
+              <b className="mt-1.5 block text-[19px] font-bold leading-snug tracking-tight sm:text-[22px]">
                 {shout ? `“${shout.text}”` : "학교에서 못 한 말, 여기서 외쳐!"}
               </b>
-              {topShout ? (
-                <span className="mt-2 block truncate text-[13px] text-slate-300">
-                  가장 큰 외침 · “{topShout.title}”
-                  <span className="ml-1.5 text-slate-400">
-                    {topShout.author?.grade ? `${topShout.author.grade} · ` : ""}익명
-                  </span>
-                </span>
-              ) : (
-                <span className="mt-2 block text-[13px] text-slate-300">완전 익명 · 한 줄만 외쳐도 돼</span>
-              )}
             </div>
             <span className="relative shrink-0 self-start rounded-xl bg-white px-4 py-2.5 text-[14px] font-extrabold text-sm-navy sm:self-center">
               나도 외치기 ›

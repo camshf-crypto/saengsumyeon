@@ -5,7 +5,8 @@ import { useAuth } from "../../lib/AuthContext";
 import { track } from "../../lib/track";
 import { getClientId } from "../../lib/clientId";
 import { UNIVERSITIES, DEPARTMENTS } from "../motive/Motive";
-import Paywall from "../inquiry/Paywall";
+import InterviewPay from "./InterviewPay";
+import { StudyView } from "../prep/Prep";
 
 /*
  * 내 생기부 면접 예상 질문 — /interview
@@ -15,7 +16,10 @@ import Paywall from "../inquiry/Paywall";
  *   회원: 전부 보이고 + [전체 열기] 결제
  * 결제 후: 질문 만들기는 서버가 뒤에서 돌린다 — job 번호를 받아 3초마다 확인 (다른 화면에 다녀와도 이어서 기다린다)
  * 결제 후: 가이드 PDF(Supabase 비공개 버킷 guides — 서버가 10분짜리 링크를 준다)로 생기부를 ChatGPT에 넣어 엑셀로 정리 → 엑셀 올리기(화면에서 바로 읽음) → 활동마다 질문 1개
- *   1곳 상품(19,000원): 처음 뽑은 대학으로 고정 / 6곳 상품(24,000원): 대학 6곳까지, 대학마다 질문 따로
+ *   결제 = 24,000원 (InterviewPay · 상품 interview6) — 대학 6곳까지, 대학마다 질문 따로 · 이용권(12,900원)으로는 안 열림
+ *   (예전 1곳 상품 19,000원을 산 학생은 그대로 쓴다)
+ * 나온 질문을 누르면 기출문제와 같은 5단계 학습 (prep/Prep.jsx 의 StudyView — 답변 → AI 피드백 → 2차 → 최종 → 꼬리질문)
+ *   결제한 학생만 · 답은 prep_answers 에 저장되어 수시 면접 준비(/prep)의 '예상' 문제와 같이 보인다
  *   하루 3번, 대학별 PDF
  * 쓰는 내용은 이 브라우저에 자동 저장 (로그인하러 다녀와도 남는다)
  */
@@ -332,18 +336,31 @@ function Waiting({ university, done, full }) {
 }
 
 /* 질문 목록 */
-function Questions({ groups, start = 0 }) {
+/* 질문 목록 — onPick 이 있으면 질문을 눌러 5단계 학습 (done: 답을 써 본 질문) */
+function Questions({ groups, start = 0, onPick, done }) {
   let n = start;
   return groups.map((g) => (
     <section key={g.title} className="mt-4">
       <h2 className="rounded-lg bg-indigo-50 px-3 py-2 text-[14.5px] font-extrabold text-sm-navy">{g.title}</h2>
       <ol className="mt-1">
-        {g.questions.map((q) => (
-          <li key={q} className="flex gap-2.5 border-b border-gray-100 px-1 py-3 text-[14.5px] leading-relaxed text-gray-800">
-            <span className="w-6 shrink-0 font-extrabold text-sm-orange">{++n}</span>
-            {q}
-          </li>
-        ))}
+        {g.questions.map((q) =>
+          onPick ? (
+            <li key={q}>
+              <button type="button" onClick={() => onPick(q, g.title)} className="flex w-full items-start gap-2.5 border-b border-gray-100 px-1 py-3 text-left text-[14.5px] leading-relaxed text-gray-800 hover:bg-gray-50">
+                <span className="w-6 shrink-0 font-extrabold text-sm-orange">{++n}</span>
+                <span className="flex-1">{q}</span>
+                <span className={`mt-0.5 shrink-0 rounded-full px-2.5 py-1 text-[11.5px] font-extrabold ${done?.has(q) ? "bg-emerald-50 text-emerald-600" : "bg-sm-navy text-white"}`}>
+                  {done?.has(q) ? "✓ 연습함" : "답변 연습 ›"}
+                </span>
+              </button>
+            </li>
+          ) : (
+            <li key={q} className="flex gap-2.5 border-b border-gray-100 px-1 py-3 text-[14.5px] leading-relaxed text-gray-800">
+              <span className="w-6 shrink-0 font-extrabold text-sm-orange">{++n}</span>
+              {q}
+            </li>
+          )
+        )}
       </ol>
     </section>
   ));
@@ -418,6 +435,8 @@ export default function Interview() {
   const [paid, setPaid] = useState(false);
   const [plan, setPlan] = useState({ plan: "one", max: 1, used: [] }); // 결제 상품 · 이미 뽑은 대학
   const [payOpen, setPayOpen] = useState(false);
+  const [study, setStudy] = useState(null); // 질문 5단계 학습 { item, target, row }
+  const [practiced, setPracticed] = useState(new Set()); // 답을 써 본 질문
   const [univInfo, setUnivInfo] = useState(null); // 고른 대학의 생기부 면접 성향 (결제 전 화면 위에 보여준다)
   const [isAdmin, setIsAdmin] = useState(false); // 관리자 — 화면 맨 아래에 대학 예시 만들기 버튼
   const [genLog, setGenLog] = useState(""); // 예시 만들기 진행 상황
@@ -475,7 +494,7 @@ export default function Interview() {
         supabase.from("interview_queries").select("result").eq("preview", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
       ]).then(([a, b, prev]) => {
         if (!alive) return;
-        const p = Boolean(a.data) || Boolean(b.data);
+        const p = Boolean(a.data) || Boolean(b.data); // 24,000원 결제(또는 관리자)만 — 이용권으로는 안 열림
         setPaid(p);
         setIsAdmin(Boolean(b.data));
         if (p) {
@@ -486,6 +505,21 @@ export default function Interview() {
           } catch {
             // 무시
           }
+          // 예전에 뽑아 둔 예상질문이 있으면 바로 보여 준다 (질문마다 답변 연습)
+          supabase.from("interview_queries").select("result").eq("preview", false).eq("status", "done").order("created_at", { ascending: false }).limit(1).maybeSingle()
+            .then(({ data: last }) => {
+              const rs = last?.result?.results;
+              if (!alive || !rs?.length) return;
+              let job = null;
+              try { job = localStorage.getItem(JOB_KEY); } catch { /* 무시 */ }
+              if (job) return; // 지금 새로 뽑는 중이면 그걸 기다린다
+              setResults(rs);
+              // 수시 면접 준비에서 학교를 골라 넘어왔으면 그 학교 질문부터
+              const k = (u) => String(u ?? "").replace(/\(.*?\)|\s/g, "").replace(/대학교$|대학$/, "대");
+              setRi(Math.max(0, rs.findIndex((x) => state?.university && k(x.university) === k(state.university))));
+              setIsPreview(false);
+              setView("result");
+            });
           return loadPlan();
         }
         const r = prev.data?.result?.results?.[0];
@@ -753,7 +787,61 @@ export default function Interview() {
     setPayOpen(true);
   };
 
+  // 수시 면접 준비의 친구 초대 창에서 '기출 + 생기부 예상질문 24,000원'을 누르고 왔으면 결제 창부터
+  useEffect(() => {
+    if (state?.openPay && user && !authLoading && !paid) setPayOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, authLoading]);
+
+  // 써 본 질문 표시 (prep_answers — 수시 면접 준비와 같은 표)
+  useEffect(() => {
+    if (!user || !paid) return;
+    supabase.from("prep_answers").select("question").limit(2000).then(({ data }) => setPracticed(new Set((data ?? []).map((x) => x.question))));
+  }, [user, paid]);
+
+  // 질문을 누르면 — 결제했으면 5단계 학습, 아니면 결제 창
+  async function pickQuestion(q, title, univ, dept) {
+    if (!paid) return openPay();
+    track("interview_study", univ);
+    const { data } = await supabase.from("prep_answers").select("*").eq("university", univ).eq("question", q).maybeSingle();
+    setStudy({ item: { q, kind: "생기부 질문", tail_type: "생기부 질문", badge: "예상", sub: title }, target: { university: univ, department: dept }, row: data ?? null });
+  }
+
   if (authLoading) return <div className="py-40 text-center text-gray-400">불러오는 중…</div>;
+
+  const pay = (
+    <InterviewPay
+      open={payOpen}
+      onClose={() => setPayOpen(false)}
+      onUnlocked={() => {
+        setPaid(true);
+        setPayOpen(false);
+        setStudy(null);
+        loadPlan();
+        // 결제가 확인되면 붙여 넣기 화면으로 — 생기부 전체를 넣을수록 질문이 늘어난다
+        goFullInput("결제가 확인됐어요! 가이드 PDF로 생기부를 엑셀로 정리해서 올리면, 활동마다 예상 질문을 뽑아 드려요.");
+      }}
+    />
+  );
+
+  // 질문 5단계 학습 (기출문제 학습과 같은 화면)
+  if (study) {
+    return (
+      <>
+        <StudyView
+          key={`${study.target.university}|${study.item.q}`}
+          source="interview"
+          item={study.item}
+          target={study.target}
+          row={study.row}
+          onSaved={(row) => { setStudy((x) => (x ? { ...x, row } : x)); setPracticed((m) => new Set([...m, study.item.q])); }}
+          onBack={() => setStudy(null)}
+          onNeedPay={openPay}
+        />
+        {pay}
+      </>
+    );
+  }
 
   const field = "w-full rounded-xl border-[1.5px] border-gray-200 px-3.5 py-3 text-[15px] outline-none focus:border-sm-navy";
   const area = `${field} mt-2 min-h-[76px] resize-y leading-relaxed text-[14.5px]`;
@@ -833,8 +921,8 @@ export default function Interview() {
               내 엑셀에 질문 채워서 받기{results.length > 1 ? ` (${results.length}개 대학)` : ""}
             </button>
           )}
-          <Questions groups={r.groups} />
-          <button onClick={() => nav("/tail?from=interview")} className="mt-4 flex h-12 w-full items-center justify-center gap-1.5 rounded-xl bg-[#FFF0F5] text-[14.5px] font-extrabold text-[#FD1673]">이 질문으로 압박 꼬리질문 연습하기 →</button>
+          <p className="mt-5 rounded-xl bg-orange-50 px-4 py-3 text-[13px] font-bold leading-relaxed text-orange-800">질문을 누르면 답변 → AI 피드백 → 2차 답변 → 꼬리질문까지 연습할 수 있어요.</p>
+          <Questions groups={r.groups} done={practiced} onPick={(q, title) => pickQuestion(q, title, r.university, r.department)} />
           <button
             onClick={() => {
               setErr("");
@@ -883,8 +971,7 @@ export default function Interview() {
             </>
           ) : (
             <>
-              <Questions groups={result.groups} />
-              <button onClick={() => nav("/tail?from=interview")} className="mt-4 flex h-12 w-full items-center justify-center gap-1.5 rounded-xl bg-[#FFF0F5] text-[14.5px] font-extrabold text-[#FD1673]">이 질문으로 압박 꼬리질문 연습하기 →</button>
+              <Questions groups={result.groups} done={practiced} onPick={(q, title) => pickQuestion(q, title, result.university, result.department)} />
 
               {/* 결제 전 — 아래는 흐리게 */}
               <div className="relative mt-2">
@@ -903,7 +990,7 @@ export default function Interview() {
                     </button>
                   ) : (
                     <button onClick={openPay} className="mt-3 rounded-xl bg-sm-orange px-6 py-3.5 text-[15px] font-extrabold text-white">
-                      19,000원부터 · 전체 열기
+                      24,000원 · 전체 열기
                     </button>
                   )}
                   <p className="mt-2 text-[12.5px] text-gray-500">활동마다 예상 질문 1개 · 대학별 PDF 저장</p>
@@ -911,7 +998,7 @@ export default function Interview() {
               </div>
 
               <p className="mt-5 rounded-xl bg-violet-50 px-4 py-3 text-[13px] leading-relaxed text-violet-900">
-                💡 결제하면 <b>생기부 정리 가이드</b>로 고1~고3 활동을 한 번에 넣을 수 있어요. 활동 하나마다 예상 질문이 하나씩 나오고, <b>수시 6곳 상품</b>은 대학마다 질문을 따로 뽑아 드려요.
+                💡 결제하면 <b>생기부 정리 가이드</b>로 고1~고3 활동을 한 번에 넣을 수 있어요. 활동 하나마다 예상 질문이 하나씩 나오고, <b>대학 6곳까지</b> 대학마다 질문을 따로 뽑아 드려요. 나온 질문마다 <b>답변 → AI 피드백 → 꼬리질문</b>까지 연습해요.
               </p>
             </>
           )}
@@ -927,7 +1014,7 @@ export default function Interview() {
             면접 예상 질문 뽑기
           </h1>
           <p className="mt-2 text-[14px] leading-relaxed text-gray-600">
-            {plan.plan === "six" ? "수시 6곳 상품" : "지원 대학 1곳 상품"}이에요. 활동 하나마다 예상 질문이 하나씩 나와요.
+            {plan.plan === "six" ? "대학 6곳까지 뽑을 수 있어요" : "지원 대학 1곳 상품이에요"}. 활동 하나마다 예상 질문이 하나씩 나와요.
           </p>
           {notice && <p className="mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-[13.5px] font-bold leading-relaxed text-emerald-700">{notice}</p>}
 
@@ -1316,18 +1403,7 @@ export default function Interview() {
         </section>
       )}
 
-      <Paywall
-        kind="interview"
-        open={payOpen}
-        onClose={() => setPayOpen(false)}
-        onUnlocked={() => {
-          setPaid(true);
-          setPayOpen(false);
-          loadPlan();
-          // 결제가 확인되면 붙여 넣기 화면으로 — 생기부 전체를 넣을수록 질문이 늘어난다
-          goFullInput("결제가 확인됐어요! 가이드 PDF로 생기부를 엑셀로 정리해서 올리면, 활동마다 예상 질문을 뽑아 드려요.");
-        }}
-      />
+      {pay}
     </div>
   );
 }

@@ -15,6 +15,7 @@
 //   { action: "report", inquiry_id }           → 보고서 칸별 내용 만들기 (탐구당 3번)
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { hasPass } from "../_shared/pass.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -394,7 +395,8 @@ Deno.serve(async (req) => {
 
     // 정식 오픈 — 회원이면 누구나. 관리자는 결제·횟수 제한 없이 통과
     const { data: isAdmin } = await admin.from("admins").select("user_id").eq("user_id", user.id).maybeSingle();
-    const admin_ok = Boolean(isAdmin);
+    // 이용권이 있으면 관리자처럼 결제 없이 탐구를 연다 (하루 3건 제한은 그대로)
+    const admin_ok = Boolean(isAdmin) || (await hasPass(admin, user.id));
 
     // 쓸 수 있는 탐구인지 — 결제된 탐구, 관리자, 또는 무료 체험 탐구
     // 무료 체험 = 학생이 2단계에서 "무료 체험 1건을 사용할게요"를 누른 탐구 1건 (free_trial)

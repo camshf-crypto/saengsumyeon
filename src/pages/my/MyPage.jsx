@@ -34,14 +34,18 @@ const PRODUCT = {
   one: "탐구보고서 1건",
   roadmap: "생기부 로드맵",
   tail: "압박 꼬리질문",
-  agent30: "입시 상담 AI 30일 이용권",
+  agent30: "이용권 · 한 달",
+  agent180: "이용권 · 수시 시즌 6개월",
+  agent365: "이용권 · 입시 1년",
 };
 // 결제 완료된 상품 옆 버튼 — 누르면 그 상품을 쓰는 화면으로 간다 [주소, 버튼 글씨]
 const PRODUCT_GO = {
   interview: ["/interview", "질문 보기"],
   interview6: ["/interview", "질문 보기"],
   tail: ["/tail", "연습하기"],
-  agent30: ["/agent", "상담하기"],
+  agent30: ["/agent", "물꼬 상담하기"],
+  agent180: ["/agent", "물꼬 상담하기"],
+  agent365: ["/agent", "물꼬 상담하기"],
   roadmap: ["/my/note", "로드맵 보기"],
   ten: ["/inquiry", "탐구 시작"],
   one: ["/inquiry", "탐구 시작"],

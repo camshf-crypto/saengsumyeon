@@ -3,6 +3,8 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import LoginGate, { NoteIcon } from "../../components/LoginGate";
+import PassSheet from "../../components/PassSheet";
+import { hasPass, PASS_PRICE } from "../../lib/pass";
 
 /*
  * 내 생기부 노트 · AI 진단 (/my/note/diagnosis)
@@ -169,29 +171,11 @@ function Locked({ n, what, next = "고2" }) {
   );
 }
 
-/* 고2 로드맵 (유료 · 정가 14,900원 → 출시 할인 9,900원)
- * [결제하기] → 계좌이체 팝업 → '입금했어요' → 관리자 입금 승인(/admin/orders)에 'roadmap' 주문으로 뜬다
- * 승인되면 note_roadmap_access 에 들어가고, 이 카드가 '결제 완료'로 바뀐다 (관리자가 승인하는 순간 저절로)
- * 주문은 DB 함수 roadmap_order 가 받는다 — 금액은 서버(sm_price)가 정한다 */
-const BANK = { name: "국민은행", number: "649301-04-159726", holder: "세움러닝(김지윤)" };
-const ROADMAP_PRICE = 9900;
-
-function CopyBtn({ text }) {
-  const [done, setDone] = useState(false);
-  return (
-    <button
-      type="button"
-      onClick={() => navigator.clipboard?.writeText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1500); }).catch(() => window.prompt("복사해 주세요", text))}
-      className="shrink-0 rounded-md border border-sm-navy px-2.5 py-1 text-[12px] font-bold text-sm-navy"
-    >
-      {done ? "복사됨" : "복사"}
-    </button>
-  );
-}
-
+/* 고2 로드맵 — 생수면 이용권(12,900원부터)으로 열린다 (components/PassSheet)
+ * 예전에 로드맵만 따로 산 학생(note_roadmap_access)도 그대로 열린다 · 이용권이 승인되는 순간 저절로 로드맵 화면으로 */
 function Roadmap({ main, next = "고2" }) {
   const g3 = next === "고3";
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const [state, setState] = useState(null); // null 확인 중 · "none" · "pending" · "paid"
   const [pending, setPending] = useState(null);
   const [open, setOpen] = useState(false);
@@ -199,11 +183,12 @@ function Roadmap({ main, next = "고2" }) {
   const nav = useNavigate();
 
   async function load() {
-    const [{ data: acc }, { data: ord }] = await Promise.all([
+    const [{ data: acc }, { data: ord }, pass] = await Promise.all([
       supabase.from("note_roadmap_access").select("user_id").maybeSingle(),
       supabase.from("pay_orders").select("id, amount, depositor, created_at").eq("product", "roadmap").eq("status", "pending").order("created_at", { ascending: false }).limit(1),
+      hasPass(),
     ]);
-    if (acc) {
+    if (acc || pass) {
       // 이 화면을 보는 동안 승인됐으면 로드맵 화면으로 바로 넘어간다
       if (waitingRef.current) return nav("/my/note/roadmap");
       return setState("paid");
@@ -247,7 +232,6 @@ function Roadmap({ main, next = "고2" }) {
         ["이어갈 탐구 5개 + 흔함 지수", "생수면 탐구주제 데이터로 탐구마다 흔한지 표시"],
         ["약한 역량 채우는 학기별 계획", "고2 1학기 · 2학기 과목별로 무엇을 할지"],
       ];
-  const name = (profile?.name ?? user?.user_metadata?.name ?? user?.user_metadata?.full_name ?? "").replace(/\s/g, "").slice(0, 5);
 
   // 결제 승인됐으면 — 로드맵 화면으로 가는 카드
   if (state === "paid")
@@ -282,11 +266,10 @@ function Roadmap({ main, next = "고2" }) {
           ))}
         </ul>
         <div className="mt-4">
-          <span className="rounded bg-orange-400 px-1.5 py-0.5 text-[11px] font-bold text-sm-navy">출시 할인</span>
+          <span className="rounded bg-orange-400 px-1.5 py-0.5 text-[11px] font-bold text-sm-navy">생수면 이용권</span>
           <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2">
-            <s className="text-[14px] text-slate-400">14,900원</s>
-            <b className="text-[24px] font-black">9,900원</b>
-            <span className="text-[12px] text-slate-300">한 번 결제 · {g3 ? "고3 1학기 계획" : "고2 1년 계획"}</span>
+            <b className="text-[24px] font-black">{PASS_PRICE.toLocaleString()}원부터</b>
+            <span className="text-[12px] text-slate-300">로드맵 + 예상질문 · 꼬리질문 · 물꼬 입시 AI까지 전부</span>
           </div>
         </div>
         {state === "paid" ? (
@@ -297,144 +280,27 @@ function Roadmap({ main, next = "고2" }) {
           </p>
         ) : state === "pending" ? (
           <p className="mt-3 rounded-[10px] bg-white/10 px-3 py-3 text-center text-[14px] font-bold leading-relaxed text-orange-200">
-            입금 확인 중이에요 · {pending?.depositor} {Number(pending?.amount ?? ROADMAP_PRICE).toLocaleString()}원
+            입금 확인 중이에요 · {pending?.depositor} {Number(pending?.amount ?? 0).toLocaleString()}원
             <br />
             <span className="text-[12px] font-normal text-slate-300">확인되면 이 화면이 저절로 바뀌어요</span>
           </p>
         ) : (
           <button onClick={() => setOpen(true)} disabled={state === null} className="mt-3 h-12 w-full rounded-[10px] bg-orange-400 text-[15px] font-bold text-sm-navy disabled:opacity-60">
-            9,900원으로 로드맵 받기
+            이용권으로 로드맵 받기
           </button>
         )}
       </div>
-      {open && (
-        <RoadmapPay
-          main={main}
-          next={next}
-          name={name}
-          onClose={() => setOpen(false)}
-          onDone={(o) => {
-            setPending(o);
-            if (o.status === "approved") return nav("/my/note/roadmap");
-            waitingRef.current = true;
-            setState("pending");
-          }}
-        />
-      )}
+      <PassSheet
+        open={open}
+        title={g3 ? "고3 1학기 로드맵" : "고2 로드맵"}
+        headline={`${main} 쪽 ${g3 ? "고3 1학기" : "고2"} 로드맵 받기`}
+        onClose={() => setOpen(false)}
+        onUnlocked={() => nav("/my/note/roadmap")}
+      />
     </section>
   );
 }
 
-/* 결제 팝업 — 면접 예상질문과 같은 흐름: ① 상품 ② 계좌로 입금 ③ 입금했어요 */
-function RoadmapPay({ main, next = "고2", name, onClose, onDone }) {
-  const g3 = next === "고3";
-  const code = useState(() => String(Math.floor(1000 + Math.random() * 9000)))[0];
-  const [depositor, setDepositor] = useState(`${name || "생수면"}${code}`);
-  const [paid, setPaid] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const [done, setDone] = useState(null);
-  const eta = new Date().getHours() < 6 ? "오늘 오전 8시에" : "2시간 안에";
-
-  async function submit() {
-    setBusy(true);
-    setErr("");
-    const { data, error } = await supabase.rpc("roadmap_order", { p_depositor: depositor.trim() });
-    setBusy(false);
-    if (error || !data) return setErr(error?.message?.includes("입금자명") ? "입금자명을 적어 주세요." : "주문을 접수하지 못했어요. 잠시 후 다시 시도해 주세요.");
-    const o = { ...data, depositor: data.depositor ?? depositor.trim() };
-    setDone(o);
-    onDone(o);
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 text-left" onClick={onClose}>
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 text-gray-800" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-[12px] font-bold text-sm-orange">{g3 ? "고3 1학기 로드맵" : "고2 로드맵"}</p>
-            <p className="mt-1 text-[19px] font-extrabold text-sm-navy">{main} 쪽 {g3 ? "고3 1학기" : "고2 1년"} 계획 받기</p>
-            <p className="mt-1 text-[13px] leading-relaxed text-gray-500">
-              <b>{g3 ? "고3 선택과목 · 마무리 탐구 3개와 흔함 지수 · 1학기 계획 · 면접에서 물어볼 활동" : "선택과목 조합 · 탐구 5개와 흔함 지수 · 학기별 계획"}</b>가 열려요. 한 번 결제하면 계속 볼 수 있어요.
-            </p>
-          </div>
-          <button onClick={onClose} className="text-[22px] leading-none text-gray-400" aria-label="닫기">×</button>
-        </div>
-
-        {err && <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-[13px] font-bold text-red-600">{err}</p>}
-
-        {done ? (
-          <div className="mt-5 rounded-xl bg-orange-50 p-5 text-center">
-            <p className="text-[16px] font-extrabold text-orange-800">{done.status === "approved" ? "이미 결제했어요" : "입금 확인 중이에요"}</p>
-            {done.status !== "approved" && (
-              <>
-                <p className="mt-2 text-[13.5px] leading-relaxed text-orange-900">
-                  {done.depositor} · {Number(done.amount ?? ROADMAP_PRICE).toLocaleString()}원
-                  <br />
-                  <b>{eta}</b> 확인하고 열어 드려요.
-                </p>
-                <p className="mt-2 text-[12px] text-orange-700">밤 12시~아침 6시에 입금하면 오전 8시에 한꺼번에 확인해요.</p>
-              </>
-            )}
-            <button onClick={onClose} className="mt-4 h-11 w-full rounded-lg bg-sm-navy text-[14px] font-bold text-white">확인</button>
-          </div>
-        ) : (
-          <div className="mt-5 space-y-5">
-            {/* ① 상품 */}
-            <div>
-              <p className="text-[13px] font-extrabold text-sm-navy">① 상품</p>
-              <div className="relative mt-2 rounded-xl border-2 border-sm-navy bg-indigo-50 p-3">
-                <span className="absolute -top-2 right-2 rounded-full bg-sm-orange px-2 py-0.5 text-[10.5px] font-bold text-white">출시 할인</span>
-                <p className="text-[14px] font-extrabold text-sm-navy">{g3 ? "고3 1학기 로드맵" : "고2 로드맵"} · {main}</p>
-                <p className="text-[17px] font-black text-sm-navy">
-                  <s className="mr-1.5 text-[13px] font-normal text-gray-400">14,900원</s>
-                  {ROADMAP_PRICE.toLocaleString()}원
-                </p>
-                <p className="text-[11.5px] text-gray-500">한 번 결제 · {g3 ? "고3 1학기 계획 + 면접 대비" : "고2 1학기 · 2학기 계획"}</p>
-              </div>
-            </div>
-
-            {/* ② 입금 */}
-            <div>
-              <p className="text-[13px] font-extrabold text-sm-navy">② 이 계좌로 입금해 주세요</p>
-              <div className="mt-2 space-y-2 rounded-xl bg-gray-50 p-4 text-[13.5px]">
-                <div className="flex items-center justify-between gap-2"><span className="text-gray-500">은행</span><b className="text-sm-navy">{BANK.name}</b></div>
-                <div className="flex items-center justify-between gap-2"><span className="text-gray-500">계좌번호</span><span className="flex items-center gap-2"><b className="text-sm-navy">{BANK.number}</b><CopyBtn text={BANK.number.replace(/-/g, "")} /></span></div>
-                <div className="flex items-center justify-between gap-2"><span className="text-gray-500">예금주</span><b className="text-sm-navy">{BANK.holder}</b></div>
-                <div className="flex items-center justify-between gap-2"><span className="text-gray-500">금액</span><b className="text-[16px] text-sm-orange">{ROADMAP_PRICE.toLocaleString()}원</b></div>
-              </div>
-              <label className="mt-3 block text-[13px] font-bold text-sm-navy">
-                입금자명 <span className="font-normal text-sm-orange">꼭 이대로 입금해 주세요</span>
-                <div className="mt-1 flex gap-2">
-                  <input value={depositor} onChange={(e) => setDepositor(e.target.value)} className="w-full rounded-lg border-2 border-sm-orange px-3 py-2 text-[16px] font-extrabold text-sm-navy outline-none" />
-                  <CopyBtn text={depositor} />
-                </div>
-              </label>
-              <p className="mt-1 text-[11.5px] leading-relaxed text-gray-500">부모님이 입금해도 괜찮아요. 입금자명만 똑같이 적어 주세요. 이 이름으로 누구의 입금인지 확인해요.</p>
-            </div>
-
-            {/* ③ 입금했어요 */}
-            <div>
-              <p className="text-[13px] font-extrabold text-sm-navy">③ 입금을 마쳤으면 눌러 주세요</p>
-              <label className="mt-2 flex items-center gap-2 text-[13.5px] text-gray-700">
-                <input type="checkbox" checked={paid} onChange={(e) => setPaid(e.target.checked)} className="h-5 w-5" />
-                {ROADMAP_PRICE.toLocaleString()}원을 <b>{depositor || "입금자명"}</b>으로 입금했어요
-              </label>
-              <button onClick={submit} disabled={!paid || busy || depositor.trim().length < 2} className="mt-3 h-[52px] w-full rounded-xl bg-sm-navy text-[15px] font-extrabold text-white disabled:opacity-40">
-                {busy ? "접수하는 중…" : "입금했어요"}
-              </button>
-              <p className="mt-2 text-center text-[12px] leading-relaxed text-gray-500">
-                입금을 확인하면 열어 드려요 · 지금 누르면 <b>{eta}</b> 확인해요
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* 진단 결과 */
 function Result({ r, unsure, next = "고2" }) {
   const strong = r.cells.filter((c) => c.link === "강함").length;
   return (

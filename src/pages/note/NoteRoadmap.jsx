@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import LoginGate, { NoteIcon } from "../../components/LoginGate";
+import { hasPass } from "../../lib/pass";
 
 /*
  * 내 로드맵 (/my/note/roadmap) — 고2 로드맵 · 고3 1학기 로드맵 (결제 승인된 학생만)
@@ -306,9 +307,9 @@ export default function NoteRoadmap() {
 
   useEffect(() => {
     if (!user) return;
-    Promise.all([supabase.from("note_roadmap_access").select("user_id").maybeSingle(), supabase.rpc("note_list")]).then(([acc, notes]) => {
+    Promise.all([supabase.from("note_roadmap_access").select("user_id").maybeSingle(), supabase.rpc("note_list"), hasPass()]).then(([acc, notes, pass]) => {
       setNext(nextGrade(notes.data));
-      setState(acc.data ? "paid" : "none");
+      setState(acc.data || pass ? "paid" : "none"); // 이용권도 열림
     });
   }, [user]);
 
