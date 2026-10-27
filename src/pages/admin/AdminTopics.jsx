@@ -12,6 +12,7 @@ import SbAdminPanel from "./SbAdminPanel";
 import StudyPanel from "./StudyPanel";
 import TailPanel from "./TailPanel";
 import AdsPanel from "./AdsPanel";
+import AgentPrepPanel from "./AgentPrepPanel";
 import { StudyAdminBox } from "../study/Study";
 
 /* "YYYY-MM-DD"에서 n일 앞뒤 */
@@ -601,6 +602,7 @@ const TABS = [
   { k: "tail", label: "꼬리질문", color: "#FD1673" },
   { k: "growth", label: "가입 · 추천 · 결제", color: "#18224F" },
   { k: "ads", label: "광고", color: "#18224F" },
+  { k: "agentprep", label: "물꼬 · 면접", color: "#18224F" },
 ];
 // 탭 묶음 — 위에서 묶음을 고르고, 아래에서 그 안의 탭을 고른다
 const GROUPS = [
@@ -608,6 +610,7 @@ const GROUPS = [
   { k: "community", label: "커뮤니티", desc: "나만 그래? · 게시판 · 칼럼 · 노트 · 레벨 · 퍼즐", tabs: ["community", "mulgyeol", "sb"] },
   { k: "learn", label: "공부", desc: "공부법 도감 · 쿠폰 보상 · 모의고사 인증", tabs: ["study", "studyreward", "studyverify"] },
   { k: "diag", label: "흔한가 진단", desc: "진단 서비스별 이용 · AI 비용", tabs: ["sum", "topic", "reading", "motive", "interview", "inquiry", "tail"] },
+  { k: "agent", label: "물꼬 · 면접", desc: "물꼬 입시 AI · 수시 면접 준비 · 학습 플랜 · 결제 전환", tabs: ["agentprep"] },
   { k: "money", label: "가입 · 결제", desc: "가입 경로 · 친구 추천 · 매출 · 광고", tabs: ["growth", "ads"] },
 ];
 const groupOf = (k) => GROUPS.find((g) => g.tabs.includes(k)) ?? GROUPS[0];
@@ -1785,6 +1788,12 @@ export default function AdminTopics() {
       {tab === "tail" && (
         <div className="mt-6">
           <TailPanel from={from} to={to} />
+        </div>
+      )}
+      {/* ── 물꼬 · 면접 묶음: 물꼬 입시 AI · 수시 면접 준비 · 학습 플랜 (sql/sm_95) */}
+      {tab === "agentprep" && (
+        <div className="mt-6">
+          <AgentPrepPanel from={from} to={to} />
         </div>
       )}
       {/* ── 가입 · 결제 묶음: 광고 */}

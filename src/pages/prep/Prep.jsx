@@ -766,6 +766,7 @@ export default function Prep() {
   // 처음 — 목표 학교 · 내 예상질문 · 답변 · 이용권
   useEffect(() => {
     if (!user) return;
+    track("prep_view"); // 관리자 '물꼬 · 면접' 탭의 들어온 학생 수
     // 자동 완성 — 기출 표에 있는 대학 + 꼬리질문 자료가 있는 대학
     Promise.all([supabase.from("univ_interview_univs").select("university").limit(500), supabase.rpc("tail_univs")]).then(([a, t]) => {
       const names = (a.data ?? []).map((r) => r.university);

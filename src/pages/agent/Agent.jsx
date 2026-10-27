@@ -7,6 +7,7 @@ import AdSlot from "../../components/AdSlot";
 import { refLink } from "../../lib/referral";
 import PassSheet from "../../components/PassSheet"; // 이용권 결제 (모든 유료 기능 공통)
 import { PASS_PRICE, PASS_PRODUCTS } from "../../lib/pass";
+import { track } from "../../lib/track";
 
 /*
  * 🤖 입시 상담 AI — /agent
@@ -627,6 +628,7 @@ export default function Agent() {
 
   useEffect(() => {
     if (!user) return;
+    track("agent_view"); // 관리자 '물꼬 · 면접' 탭의 들어온 학생 수
     supabase.functions.invoke("agent", { body: { action: "status" } }).then(({ data }) => data?.usage && setUsage(data.usage));
     supabase.from("pay_orders").select("id,amount,depositor,created_at").in("product", PASS_PRODUCTS).eq("status", "pending").order("created_at", { ascending: false }).limit(1)
       .then(({ data }) => setPending(data?.[0] ?? null));
