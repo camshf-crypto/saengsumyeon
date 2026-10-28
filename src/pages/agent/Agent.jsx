@@ -106,8 +106,11 @@ function splitChoices(text) {
   const routine = /\[\[\s*루틴저장\s*\]\]/.test(rest2);
   // 물꼬가 제안한 일 — [[할일:번호]] → 해 줄까요? 카드
   const senior = /\[\[\s*선배\s*\]\]/.test(rest2); // 선배 사례를 보여 준 답 → 원본 보기 버튼
+  const prep = /\[\[\s*면접준비\s*\]\]/.test(rest2); // 면접 기출 · 예상질문 → 수시 면접 준비(/prep) 버튼
+  const note = /\[\[\s*노트\s*\]\]/.test(rest2); // 지난 학년 활동이 없을 때 → 생기부 노트(/my/note) 버튼
+  const voice = /\[\[\s*건의함\s*\]\]/.test(rest2); // 없는 자료 → 생수면 의견함(/voice) 버튼
   const acts = [...new Set([...rest2.matchAll(/\[\[\s*할일\s*[:：]\s*(\d+)\s*\]\]/g)].map((x) => Number(x[1])))].slice(0, 3);
-  return { body: rest2.replace(/\[\[\s*할일\s*[:：]\s*\d+\s*\]\]/g, "").replace(/\[\[\s*(이용권|친구초대|플랜|루틴저장|선배)\s*\]\]/g, "").trim(), questions: qs.slice(0, 3), pass, form, invite, univReq, plan, routine, acts, senior };
+  return { body: rest2.replace(/\[\[\s*할일\s*[:：]\s*\d+\s*\]\]/g, "").replace(/\[\[\s*(이용권|친구초대|플랜|루틴저장|선배|면접준비|노트|건의함)\s*\]\]/g, "").trim(), questions: qs.slice(0, 3), pass, form, invite, univReq, plan, routine, acts, senior, prep, note, voice };
 }
 
 /* 입력 카드 — 원래 흔한가 화면처럼 학과·과목·주제를 직접 적어서 한 번에 보낸다 */
@@ -730,6 +733,7 @@ export default function Agent() {
   const [startedAt, setStartedAt] = useState(0);
   const [err, setErr] = useState("");
   const [usage, setUsage] = useState(null); // { pct, reset_at, paid_until, invite }
+  const [grade, setGrade] = useState(null); // 물꼬가 보는 학년 (마이페이지 내 정보 → 가입 학년) · "" 이면 모름
   const [needPay, setNeedPay] = useState(false);
   const [buy, setBuy] = useState(false); // 이용권 사기 창
   const [closedCard, setClosedCard] = useState(false); // 질문 카드를 닫았는지 (새 답이 오면 다시 열림)
@@ -772,7 +776,10 @@ export default function Agent() {
   useEffect(() => {
     if (!user) return;
     track("agent_view"); // 관리자 '물꼬 · 면접' 탭의 들어온 학생 수
-    supabase.functions.invoke("agent", { body: { action: "status" } }).then(({ data }) => data?.usage && setUsage(data.usage));
+    supabase.functions.invoke("agent", { body: { action: "status" } }).then(({ data }) => {
+      if (data?.usage) setUsage(data.usage);
+      if (data && "grade" in data) setGrade(data.grade || "");
+    });
     supabase.from("pay_orders").select("id,amount,depositor,created_at").in("product", PASS_PRODUCTS).eq("status", "pending").order("created_at", { ascending: false }).limit(1)
       .then(({ data }) => setPending(data?.[0] ?? null));
     loadChats();
@@ -936,14 +943,21 @@ export default function Agent() {
               <b className="font-extrabold text-gray-900">안녕하세요, 물꼬예요.</b>
               <br />
               모집요강·입결부터 내 생기부, 면접, 탐구주제까지 편하게 물어보세요.
+              {grade !== null && (
+                <Link to="/my" className="mt-2 flex items-center gap-1.5 text-[12.5px] font-bold" style={{ color: NAVY }}>
+                  {grade
+                    ? <>📌 {grade} 기준으로 답해요{({ 고1: " (2029학년도)", 고2: " (2028학년도)", 고3: " (2027학년도)" })[grade] ?? ""} <span className="font-semibold text-gray-400">· 학년 바꾸기 ›</span></>
+                    : <>📌 학년을 알려 주면 학년에 맞춰 답해요 <span className="font-semibold text-gray-400">· 학년 정하기 ›</span></>}
+                </Link>
+              )}
             </div>
 
             {/* 바로 가기 — 생수면 주황 · 휴대폰은 옆으로 밀어서 보는 한 줄 (☰ 메뉴 '입시 준비'에도 같은 4개) */}
             {/* 가운데 정렬 — 한 줄에 다 들어가면 가운데, 넘치면 옆으로 밀어서 본다 */}
             <div className="-mx-4 mt-4 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] sm:mx-0 sm:px-0">
-             <div className="mx-auto flex w-max gap-1.5">
+             <div className="mx-auto flex w-max gap-2">
               {SHORTCUTS.map((t) => (
-                <Link key={t.to} to={t.to} className="flex flex-none items-center gap-1 whitespace-nowrap rounded-full bg-sm-orange px-3 py-2 text-[12.5px] font-extrabold text-white hover:bg-sm-orange-d">
+                <Link key={t.to} to={t.to} className="flex flex-none items-center gap-1.5 whitespace-nowrap rounded-full bg-sm-orange px-4 py-2.5 text-[14px] font-extrabold text-white shadow-sm hover:bg-sm-orange-d sm:px-5 sm:py-3 sm:text-[15px]">
                   {t.title}
                   {t.badge && <small className="rounded-full bg-white/20 px-1.5 text-[10px] font-bold">{t.badge}</small>}
                   <span className="text-white/60">›</span>
@@ -985,7 +999,7 @@ export default function Agent() {
           ) : (
             <div key={i} ref={i === msgs.length - 1 ? lastBotRef : undefined} className="mr-4 scroll-mt-24">
               {(() => {
-                const { body, questions, pass, form, invite: inv, univReq, plan, routine, acts, senior } = splitChoices(m.content);
+                const { body, questions, pass, form, invite: inv, univReq, plan, routine, acts, senior, prep, note, voice } = splitChoices(m.content);
                 const last = i === msgs.length - 1;
                 return (
                   <>
@@ -1001,6 +1015,33 @@ export default function Agent() {
                           <small className="text-[12.5px] text-gray-500">물꼬가 참고한 선배 생기부를 직접 열어 볼 수 있어요</small>
                         </span>
                         <span className="flex h-9 flex-none items-center rounded-xl px-3.5 text-[13px] font-extrabold text-white" style={{ background: NAVY }}>보러 가기 ›</span>
+                      </Link>
+                    )}
+                    {voice && (
+                      <Link to="/voice" state={{ from: "/agent" }} className="mt-2 flex items-center justify-between gap-3 rounded-2xl bg-white p-4 ring-1 ring-black/10 hover:ring-black/20">
+                        <span>
+                          <b className="block text-[14.5px] font-extrabold text-gray-900">건의함에 자료 요청하기</b>
+                          <small className="text-[12.5px] text-gray-500">필요한 대학 · 자료를 남기면 먼저 넣어 드려요</small>
+                        </span>
+                        <span className="flex h-9 flex-none items-center rounded-xl bg-sm-orange px-3.5 text-[13px] font-extrabold text-white">남기러 가기 ›</span>
+                      </Link>
+                    )}
+                    {note && (
+                      <Link to="/my/note" state={{ from: "agent" }} className="mt-2 flex items-center justify-between gap-3 rounded-2xl bg-white p-4 ring-1 ring-black/10 hover:ring-black/20">
+                        <span>
+                          <b className="block text-[14.5px] font-extrabold text-gray-900">내 생기부 노트에 활동 적기</b>
+                          <small className="text-[12.5px] text-gray-500">지난 학년 활동을 적어 두면 물꼬가 이어서 맞춰 줘요</small>
+                        </span>
+                        <span className="flex h-9 flex-none items-center rounded-xl bg-sm-orange px-3.5 text-[13px] font-extrabold text-white">적으러 가기 ›</span>
+                      </Link>
+                    )}
+                    {prep && (
+                      <Link to="/prep" state={{ from: "agent" }} className="mt-2 flex items-center justify-between gap-3 rounded-2xl bg-white p-4 ring-1 ring-black/10 hover:ring-black/20">
+                        <span>
+                          <b className="block text-[14.5px] font-extrabold text-gray-900">수시 면접 준비</b>
+                          <small className="text-[12.5px] text-gray-500">지원 대학별 기출문제 · 생기부 예상질문 연습</small>
+                        </span>
+                        <span className="flex h-9 flex-none items-center rounded-xl bg-sm-orange px-3.5 text-[13px] font-extrabold text-white">연습하러 가기 ›</span>
                       </Link>
                     )}
                     {plan && myPlan !== true && last && !busy && (
