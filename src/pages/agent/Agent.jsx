@@ -744,7 +744,7 @@ export default function Agent() {
   const [params, setParams] = useSearchParams();
   const endRef = useRef(null);
   const lastBotRef = useRef(null); // 마지막 AI 답의 첫머리 — 답이 오면 여기부터 보이게
-  const askedRef = useRef(false); // 홈에서 넘어온 질문을 한 번만 보내기
+  const askedRef = useRef(false); // 홈에서 넘어온 질문을 입력창에 한 번만 적기
   // 물꼬가 새로 기억한 것 — 답 아래 '물꼬가 기억했어요' 한 줄 (ChatGPT '메모리 업데이트됨'처럼)
   const memRef = useRef(null); // 마지막으로 본 물꼬 노트
   const [memNote, setMemNote] = useState(null); // { at: 답 번호, items: [...] }
@@ -779,10 +779,11 @@ export default function Agent() {
     const c = Number(params.get("c"));
     const q = (params.get("q") || "").trim();
     if (q && !askedRef.current) {
-      // 홈 화면 물꼬 입력창에서 넘어온 질문 — 주소에서 지우고 바로 물어본다 (새로고침해도 두 번 안 감)
+      // 홈 화면 물꼬 입력창에서 넘어온 질문 — 바로 보내지 않고 아래 입력창에 다시 적어 둔다
+      //   (처음 화면의 바로 가기 · 할 수 있는 일을 먼저 보고, 보내기를 누르면 그때 물어본다 · 주소에서 지워서 새로고침해도 두 번 안 감)
       askedRef.current = true;
       setParams({}, { replace: true });
-      send(q);
+      setInput(q);
     } else if (c) openChat(c); // 새로고침해도 보던 대화 그대로
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
