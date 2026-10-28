@@ -9,7 +9,7 @@ import AdSlot from "../../components/AdSlot";
 
 /*
  * 생수면 메인 (/)
- * 왼쪽: 물꼬 입시 에이전트 입력창(흔한가 진단 3종 포함) → 옥상에서 외쳐! 배너 → 메뉴 4칸 → 지금 많이 보는 글
+ * 왼쪽: 물꼬 입시 에이전트 입력창(흔한가 진단 버튼 포함) → 옥상에서 외쳐! 배너 → 지금 많이 보는 글
  * 오른쪽: (회원) 내 레벨 + 오늘 할 일 / 오늘의 나만 그래? / (비회원) 가입 카드
  * 회원이 들어오면 출석을 찍고, 단계 보상을 확인해서 레벨업 팝업을 띄운다
  *
@@ -46,21 +46,6 @@ const AGENT_CHECKS = [
 const AGENT_EXAMPLES = [
   "내 생기부로 어떤 학과가 맞을까?",
   "가천대 2028 바뀐 점 알려줘",
-];
-
-// 흔한가 진단 타일을 누르면 펼쳐지는 메뉴
-const SERIES = [
-  { to: "/topic", label: "탐구주제 흔한가" },
-  { to: "/motive", label: "지원동기 흔한가" },
-  { to: "/reading", label: "독서 흔한가" },
-];
-
-// 메뉴 4칸 — 공부법 · 흔한가 · 예상질문 · 꼬리질문은 타일에서 뺐다 (물꼬 입력창 아래 버튼 · 채팅으로 들어간다)
-const TILES = [
-  { key: "prep", title: "수시 면접 준비", sub: "지원 대학별 면접 4단계", icon: "mic", badge: "NEW" },
-  { key: "puzzle", title: "선배 생기부 보기", sub: "대학별 합격 사례", icon: "puzzle" },
-  { key: "note", title: "내 생기부 진단", sub: "다 적으면 AI 입시 진단", icon: "note", badge: "AI 진단" },
-  { key: "plan", title: "내 입시 플랜", sub: "학년별 · 이번 주 할 일", icon: "check", badge: "NEW" },
 ];
 
 const HOT_TABS = [
@@ -120,7 +105,6 @@ export default function Home() {
   const [lv, setLv] = useState(null);
   const [today, setToday] = useState(null);
   const [nick, setNick] = useState("");
-  const [seriesOpen, setSeriesOpen] = useState(false);
   const [toastMsg, setToastMsg] = useState("");
   const [answering, setAnswering] = useState(false);
   const [photo, setPhoto] = useState(null);
@@ -209,12 +193,6 @@ export default function Home() {
       setLv(chk.info);
       if (!chk.level_up && !(chk.rewards || []).length) toast("+1점");
     }
-  }
-
-  function goTile(t) {
-    if (t.menu) return setSeriesOpen((v) => !v);
-    const to = PATHS[t.key];
-    if (to) nav(to);
   }
 
   // 물꼬 입력창 — 에이전트 화면으로 넘어가서 바로 답한다
@@ -457,44 +435,6 @@ export default function Home() {
               나도 외치기 ›
             </span>
           </Link>
-
-          {/* 메뉴 8칸 */}
-          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {TILES.map((t) => (
-              <div key={t.key} className="relative">
-              <button
-                onClick={() => goTile(t)}
-                disabled={!PATHS[t.key]}
-                className="relative flex h-[112px] w-full flex-col justify-between rounded-[14px] border border-gray-200 bg-white p-[18px] text-left transition hover:border-gray-300 hover:shadow-[0_6px_16px_rgba(20,27,61,.06)] disabled:cursor-default disabled:hover:border-gray-200 disabled:hover:shadow-none"
-              >
-                <span className="flex h-[38px] w-[38px] items-center justify-center rounded-[10px] bg-[#F4F5F7] text-sm-navy">
-                  <Icon name={t.icon} />
-                </span>
-                {t.badge && (
-                  <span className={`absolute right-3.5 top-3.5 rounded px-1.5 py-0.5 text-[10.5px] font-bold ${t.muted ? "bg-gray-100 text-gray-500" : "bg-orange-50 text-sm-orange"}`}>
-                    {t.badge}
-                  </span>
-                )}
-                <div>
-                  <b className="block text-[15.5px] font-bold text-gray-900">{t.title}</b>
-                  <small className="mt-0.5 block text-[12px] text-gray-500">{t.sub}</small>
-                </div>
-              </button>
-                {t.menu && seriesOpen && (
-                  <>
-                    <div className="fixed inset-0 z-20" onClick={() => setSeriesOpen(false)} />
-                    <div className="absolute left-0 top-full z-30 mt-2 w-full min-w-[180px] overflow-hidden rounded-xl border border-gray-200 bg-white py-1.5 shadow-[0_10px_30px_rgba(20,27,61,.12)]">
-                      {SERIES.map((m) => (
-                        <Link key={m.to} to={m.to} className="block px-4 py-3 text-[14.5px] font-semibold text-gray-800 hover:bg-[#F4F5F7] hover:text-sm-orange">
-                          {m.label}
-                        </Link>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
 
           {/* 지금 많이 보는 글 */}
           <section className="mt-9">

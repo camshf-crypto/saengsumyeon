@@ -313,6 +313,43 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "find_seniors",
+      description: "생수면 '선배 생기부 보기'의 실제 합격 선배 생기부(이름·학교를 지운 정제본)에서 비슷한 선배 사례를 찾는다. 학생이 학과·계열에 맞춰 학년별로 뭘 해야 하는지, 합격생은 어떤 세특·창체·동아리·활동을 했는지, 생기부 방향을 물을 때 먼저 쓴다. 대학 · 학과는 계속 늘어난다 (없으면 found 0).",
+      parameters: {
+        type: "object",
+        properties: {
+          track: { type: "string", enum: ["hss", "nat", "eng", "med"], description: "학과로 고른다 — hss 인문·사회(경영·교육·법·언어 등) · nat 자연(수학·물리·화학·생명 등 이학) · eng 공학(컴퓨터·전자·기계·건축 등) · med 의약·보건(의예·간호·약학·보건 등)" },
+          grade: { type: "integer", enum: [1, 2, 3], description: "학년 (학생 학년이나 물어본 학년, 모르면 비움)" },
+          area: { type: "string", enum: ["cc", "sp", "hb", "gr"], description: "cc 창체(자율·동아리·진로) · sp 세특(과목별) · hb 행특 · gr 성적. 모르면 비움" },
+          keyword: { type: "string", description: "찾을 과목·활동 단어 하나 (예: 생명과학, 동아리, 실험). 없으면 비움" },
+          university: { type: "string", description: "한 대학만 볼 때 (예: 가톨릭대)" },
+          department: { type: "string", description: "학생이 말한 학과 (예: 간호학과) — 같은 학과 선배를 먼저 보여 준다" },
+        },
+        required: ["track"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "propose_action",
+      description: "말로만 안내하지 않고 물꼬가 직접 해 줄 일을 학생에게 제안한다 (학생이 [네]를 눌러야 실행된다). prep_school = 수시 면접 준비 화면에 지원 학교 등록 (학생이 그 대학·학과 면접을 준비·연습하고 싶다고 할 때). study_test = 공부법 효과 시험 만들기 (학생이 특정 과목의 약한 단원을 말하고 공부법·루틴을 물을 때 — 지금 10문제 풀고 일주일 뒤 비슷한 문제로 효과 확인). 돌려받은 card 를 답 맨 끝에 그대로 붙인다.",
+      parameters: {
+        type: "object",
+        properties: {
+          kind: { type: "string", enum: ["prep_school", "study_test"] },
+          university: { type: "string", description: "prep_school 때 — 대학 이름" },
+          department: { type: "string", description: "prep_school 때 — 학과 이름 (모르면 비움)" },
+          subject: { type: "string", enum: ["국어", "수학", "영어", "사회탐구", "과학탐구", "한국사"], description: "study_test 때 — 과목" },
+          unit: { type: "string", description: "study_test 때 — 단원 (예: 미적분 극한, 비문학 과학 지문)" },
+        },
+        required: ["kind"],
+      },
+    },
+  },
 ];
 
 /* 생수면의 다른 서버 기능(진단)을 학생 로그인 그대로 부른다 */
@@ -424,6 +461,8 @@ async function findStudyTips(db: any, args: any, n = 8) {
 }
 
 async function runTool(db: any, userId: string, name: string, args: any, token = "", paid = false) {
+  if (name === "propose_action") return proposeAction(db, userId, args);
+  if (name === "find_seniors") return findSeniors(db, args);
   if (name === "interview_questions") {
     let acts = (Array.isArray(args?.activities) ? args.activities : [])
       .map((a: any) => ({ subject: clean(a?.subject, 30), content: String(a?.content ?? "").replace(/\s+/g, " ").trim().slice(0, 600) }))
@@ -682,12 +721,86 @@ async function studentContext(db: any, userId: string, meta: any = {}) {
   if (pl?.data) L.push(`[내 입시 플랜] 있음 — ${pl.data.grade}${pl.data.department ? ` · ${pl.data.department}` : ""} (${String(pl.data.created_at).slice(0, 10)} 만듦)`);
   const tl = tails.data ?? [];
   if (tl.length) L.push("[꼬리질문 연습한 대학] " + [...new Set(tl.map((r: any) => `${r.univ} ${r.department ?? ""}`.trim()))].join(", "));
-  return L.join("\n").slice(0, 7000);
+  const mem = memoryText(await memoryOf(db, userId).catch(() => ({ facts: {}, notes: [] })));
+  return `${mem}\n\n${L.join("\n")}`.slice(0, 8000);
+}
+
+/* ───────── 물꼬 노트 (sql/sm_96 agent_memory) — 학생에 대해 기억하는 것 ─────────
+ * 대화가 끝날 때마다 학생이 한 말에서 오래 기억할 것만 뽑아 고친다 (뒤에서 · 학생 사용량에 안 들어감)
+ * 학생은 '물꼬가 기억하는 나'에서 보고 지울 수 있다
+ */
+const MEM_KEYS = ["학년", "계열", "목표 대학", "목표 학과", "성적", "약한 과목", "약한 단원", "틀리는 이유", "공부 습관", "지원 대학", "면접 일정", "고민"];
+async function memoryOf(db: any, userId: string) {
+  const { data } = await db.from("agent_memory").select("facts,notes,updated_at").eq("user_id", userId).maybeSingle();
+  return { facts: (data?.facts ?? {}) as Record<string, string>, notes: (Array.isArray(data?.notes) ? data.notes : []) as any[], updated_at: data?.updated_at ?? null };
+}
+function memoryText(m: { facts: Record<string, string>; notes: any[] }) {
+  const L: string[] = [];
+  for (const k of MEM_KEYS) if (m.facts?.[k]) L.push(`- ${k}: ${clean(m.facts[k], 120)}`);
+  for (const n of (m.notes ?? []).slice(-12)) if (n?.t) L.push(`- ${clean(n.t, 80)}${n.at ? ` (${String(n.at).slice(5, 10)})` : ""}`);
+  return L.length ? `[물꼬 노트 — 지난 대화에서 이 학생에 대해 기억한 것. 아래 다른 정보와 다르면 더 최근 것을 따른다]\n${L.join("\n")}` : "[물꼬 노트] 아직 기억한 것 없음 (처음 이야기하는 학생)";
+}
+async function updateMemory(db: any, userId: string, message: string, answer: string) {
+  const said = String(message ?? "").replace(/\s+/g, " ").trim();
+  if (said.replace(/\s/g, "").length < 4) return;
+  const cur = await memoryOf(db, userId);
+  const sys = `너는 입시 상담 AI '물꼬'의 기억 담당이다. 학생이 이번에 한 말에서 다음 상담에도 쓸 '오래 가는 사실'만 뽑아 물꼬 노트를 고친다. JSON만 출력.
+- 학생이 직접 말한 것만. 물꼬 답에 나온 추천 · 추측 · 예시는 넣지 않는다 (물꼬 답은 학생 말이 무엇에 대한 답인지 이해하는 데만 쓴다).
+- facts: 바뀌거나 새로 알게 된 칸만. 칸 이름은 이것만: ${MEM_KEYS.join(" · ")}. 값은 짧게 (60자 안). 학생이 더 이상 아니라고 하면 그 칸을 "" 로.
+  · 성적은 과목과 함께 (예: "수학 4등급(모의) · 국어 2등급"). 면접 일정은 대학과 날짜 (예: "가천대 11/22").
+- notes_add: 칸에 안 맞지만 오래 기억할 것 (최대 2개, 40자 안). 예: "인강보다 문제집으로 공부하는 걸 좋아함"
+- notes_remove: 이제 맞지 않는 기존 노트의 번호.
+- 넣지 않는 것: 오늘 기분 · 한 번 묻고 끝나는 궁금증 · 인사 · 건강 · 질병 · 가족 사정 · 연애 · 종교 · 정치 같은 민감한 개인 이야기 · 다른 사람의 개인 정보.
+- 바뀐 게 없으면 {"facts":{},"notes_add":[],"notes_remove":[]}
+{"facts":{},"notes_add":[],"notes_remove":[]}`;
+  const prompt = `[지금 물꼬 노트]\n${JSON.stringify(cur.facts)}\n${cur.notes.map((n: any, i: number) => `${i}. ${n.t}`).join("\n") || "(노트 없음)"}\n\n[물꼬가 바로 앞에 한 말 (참고만)]\n${String(answer ?? "").replace(/\[\[[^\]]*\]\]/g, "").slice(0, 600)}\n\n[학생이 이번에 한 말]\n${said.slice(0, 1500)}`;
+  const res = await openai({ model: "gpt-5-mini", max_completion_tokens: 1500, reasoning_effort: "minimal", response_format: { type: "json_object" }, messages: [{ role: "system", content: sys }, { role: "user", content: prompt }] });
+  const raw = await res.text();
+  let out: any = null, inT = 0, outT = 0;
+  try {
+    const j = JSON.parse(raw);
+    inT = Number(j.usage?.prompt_tokens ?? 0); outT = Number(j.usage?.completion_tokens ?? 0);
+    out = JSON.parse(j.choices?.[0]?.message?.content ?? "");
+  } catch { console.error("memory", res.status, raw.slice(0, 300)); }
+  await logUsage(db, userId, inT, outT, Boolean(out), "agent_mem"); // 회사 비용 — 학생 사용량에는 안 들어감
+  if (!out) return;
+  const facts = { ...cur.facts };
+  let changed = false;
+  for (const [k, v] of Object.entries(out.facts ?? {})) {
+    if (!MEM_KEYS.includes(k)) continue;
+    const val = clean(v, 80);
+    if (val === (facts[k] ?? "")) continue;
+    if (val) facts[k] = val; else delete facts[k];
+    changed = true;
+  }
+  const drop = new Set((Array.isArray(out.notes_remove) ? out.notes_remove : []).map(Number));
+  let notes = cur.notes.filter((_: any, i: number) => !drop.has(i));
+  if (notes.length !== cur.notes.length) changed = true;
+  const now = new Date().toISOString();
+  for (const t of (Array.isArray(out.notes_add) ? out.notes_add : []).slice(0, 2)) {
+    const tt = clean(t, 60);
+    if (tt && !notes.some((n: any) => n.t === tt)) { notes.push({ t: tt, at: now }); changed = true; }
+  }
+  notes = notes.slice(-20);
+  if (!changed) return;
+  await db.from("agent_memory").upsert({ user_id: userId, facts, notes, updated_at: now }, { onConflict: "user_id" });
 }
 
 function systemPrompt(student: string) {
   const today = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10); // 한국 날짜
   return `너는 생수면의 '물꼬 입시 AI'다. 학생이 이름을 물으면 '물꼬 입시 AI'라고 말한다. 오늘은 ${today} (한국 시간)이다. 한국 고등학생(주로 고1~고3)과 학부모의 대입 질문에 답한다.
+
+[기억과 행동 — 너는 이 학생의 개인 입시 에이전트다]
+- [학생 정보] 맨 위 '물꼬 노트'는 지난 대화에서 이 학생에 대해 기억한 것이다. 이미 아는 것(학년 · 목표 · 성적 · 약한 과목 등)은 다시 묻지 말고 바로 쓴다. 필요하면 "지난번에 수학 미적분이 약하다고 했지?"처럼 자연스럽게 이어 간다. 학생이 이번에 다르게 말하면 이번 말을 따른다.
+- 노트에 있는 걸 일부러 다 늘어놓지 않는다. 지금 질문에 필요한 것만 쓴다.
+- 말로만 "○○ 화면에 가서 해 보세요"라고 하지 말고, 직접 해 줄 수 있으면 propose_action 도구로 제안한다:
+  · prep_school — 학생이 어느 대학 · 학과 면접을 준비하겠다 / 연습하고 싶다고 하면: 수시 면접 준비에 그 학교 넣기
+  · study_test — 학생이 약한 과목 · 단원을 말하며 공부법 · 루틴을 물으면 (공부법을 알려 준 뒤): 그 단원 공부법 효과 시험 만들기
+  도구가 돌려준 card(예: [[할일:12]])를 답 맨 끝에 그대로 붙인다. 학생이 [네]를 눌러야 실행되니 "넣어 둘까요?"처럼 묻는다 ("넣어 뒀어요" 금지).
+  한 답에 제안은 2개까지. 도구가 already 를 돌려주면 이미 되어 있다고 짧게 말하고 카드는 붙이지 않는다.
+- 학생이 학과 · 계열에 맞춰 뭘 해야 하는지, 합격생은 어떻게 했는지, 세특 · 창체 · 동아리 · 활동 방향을 물으면 find_seniors 로 실제 합격 선배 사례를 먼저 찾는다.
+  찾으면 "실제 가천대 의약·보건 합격 선배 생기부를 보니"처럼 근거(대학 · 계열 · 학년)를 밝히고, 선배가 한 것을 요약해 2~4개 보여 준 뒤 이 학생에게 맞게 바꿔 제안한다. 문장을 길게 그대로 옮기지 않는다.
+  선배 사례를 지어내지 않는다. found 가 0이면 "아직 이 계열 선배 사례가 없어서 일반 정보로 알려 줄게"라고 나눠 말한다.
 
 [물꼬 입시 AI 이용 안내 — 학생이 사용량·광고·결제를 물으면 이걸로 답한다]
 - 무료 회원: 매주 정해진 사용량(화면 위 '이번 주 사용량 %')을 쓸 수 있고, 매주 월요일 0시에 다시 채워진다. 무료로 받은 답 아래에는 광고가 나온다.
@@ -1317,6 +1430,165 @@ function judge(pre: number, post: number, total: number, round: number, kept: nu
   return { result: "한주더", message: `아직 차이가 크지 않아요(${diff >= 0 ? "+" : ""}${diff}개). 공부법이 몸에 붙는 데 2주쯤 걸려요. 같은 방법으로 한 주 더 해요.` };
 }
 
+/* ───────── 해 줄까요? (sql/sm_96 agent_actions) ─────────
+ * 물꼬가 제안 → 카드 [[할일:번호]] → 학생이 [네]를 누르면 action: "agent_action" 으로 실행
+ */
+async function proposeAction(db: any, userId: string, a: any) {
+  const kind = String(a?.kind ?? "");
+  let title = "", payload: any = {};
+  if (kind === "prep_school") {
+    const raw = clean(a?.university, 40);
+    if (raw.length < 2) return { error: "대학 이름이 필요해요" };
+    const university = (await matchUniv(db, raw).catch(() => null)) ?? raw;
+    const department = clean(a?.department, 40);
+    const { data: has } = await db.from("prep_targets").select("id").eq("user_id", userId).eq("university", university).eq("department", department).maybeSingle();
+    if (has) return { already: true, note: `${university} ${department} 는 이미 수시 면접 준비에 들어가 있어요 (/prep)` };
+    title = `수시 면접 준비에 ${university}${department ? ` ${department}` : ""} 넣기`;
+    payload = { university, department };
+  } else if (kind === "study_test") {
+    const subject = TEST_SUBJECTS.includes(a?.subject) ? a.subject : "";
+    const unit = clean(a?.unit, 40);
+    if (!subject || unit.length < 2) return { error: "과목과 단원이 필요해요" };
+    const { data: open } = await db.from("study_tests").select("id,unit,status").eq("user_id", userId).eq("subject", subject).neq("status", "done").maybeSingle();
+    if (open) return { already: true, note: `${subject} 효과 시험이 이미 진행 중이에요 (${open.unit} · /plan 학습 플랜 ${subject} 탭)` };
+    title = `${subject} '${unit}' 공부법 효과 시험 만들기 (지금 10문제 → 일주일 뒤 다시)`;
+    payload = { subject, unit };
+  } else return { error: "모르는 일이에요" };
+  // 같은 제안이 아직 대기 중이면 그걸 다시 쓴다
+  const { data: same } = await db.from("agent_actions").select("id").eq("user_id", userId).eq("kind", kind).eq("status", "pending").eq("title", title).maybeSingle();
+  const row = same ?? (await db.from("agent_actions").insert({ user_id: userId, kind, title, payload }).select("id").single()).data;
+  if (!row?.id) return { error: "제안을 저장하지 못했어요" };
+  return { proposed: true, id: row.id, title, card: `[[할일:${row.id}]]` };
+}
+
+/* 공부법 효과 시험 만들기 — test_make · 해 줄까요? 둘 다 쓴다 */
+async function createTest(db: any, user: any, subject: string, unit: string, round = 1) {
+  const [{ data: my }, { data: prof }] = await Promise.all([
+    db.from("sm_my").select("grade").eq("user_id", user.id).maybeSingle(),
+    db.from("profiles").select("grade").eq("id", user.id).maybeSingle(),
+  ]);
+  const grade = String(my?.grade || user.user_metadata?.grade || prof?.grade || "").match(/고\s*[123]/)?.[0]?.replace(/\s/g, "") ?? "";
+  const t: any = await makeTest(db, user.id, subject, unit, grade);
+  if (t.error) return { error: t.error };
+  const { data: row, error } = await db.from("study_tests").insert({ user_id: user.id, subject, unit, grade, round, blueprint: t.blueprint, set_a: t.set_a, set_b: t.set_b }).select("*").single();
+  if (error) { console.error("test save", error); return { error: "시험지를 저장하지 못했어요. 잠시 후 다시 해 주세요" }; }
+  return { row };
+}
+
+/* ───────── 선배 사례 (sql/sm_97 senior_cases · 테스트) ─────────
+ * '선배 생기부 보기'에 올린 PDF(정제본)에서 글을 뽑아 두고, 물꼬가 답할 때 근거로 쓴다
+ * 학생에게는 공개(live)된 생기부 · 판에서 뽑은 것만 보여 준다
+ */
+const TRACK_LABEL: Record<string, string> = { hss: "인문·사회", nat: "자연", eng: "공학", med: "의약·보건" };
+const AREA_LABEL: Record<string, string> = { cc: "창체", sp: "세특", hb: "행특", gr: "성적" };
+async function liveBoards(db: any) {
+  const { data: recs } = await db.from("sb_records").select("id").eq("status", "live");
+  const ids = (recs ?? []).map((r: any) => r.id);
+  if (!ids.length) return new Set<number>();
+  const { data: bs } = await db.from("sb_boards").select("id").in("record_id", ids).eq("status", "live");
+  return new Set<number>((bs ?? []).map((b: any) => Number(b.id)));
+}
+async function findSeniors(db: any, a: any) {
+  const track = TRACK_LABEL[a?.track] ? a.track : "";
+  if (!track) return { error: "계열이 필요해요" };
+  const [live, { data: profs }] = await Promise.all([
+    liveBoards(db),
+    db.from("senior_profiles").select("key,university,department,interest,school_type,metrics,summary,books").eq("track", track).eq("live", true).limit(500),
+  ]);
+  const profOf = new Map((profs ?? []).map((p: any) => [p.key, p]));
+  const dept = clean(a?.department, 20).replace(/학과|학부|과$/g, "");
+  const u = clean(a?.university, 10).replace(/대학교|대학/g, "대").replace(/대$/, "");
+  const run = async (kw: string) => {
+    let q = db.from("senior_cases").select("board_id,profile_key,university,track,grade,area,label,body,sort").eq("track", track);
+    if ([1, 2, 3].includes(Number(a?.grade))) q = q.in("grade", [Number(a.grade), 0]);
+    if (AREA_LABEL[a?.area]) q = q.in("area", [a.area, "gr"]);
+    if (u) q = q.ilike("university", `%${u}%`);
+    if (kw) q = q.or(`body.ilike.%${kw}%,label.ilike.%${kw}%`);
+    const { data } = await q.order("sort").limit(400);
+    // 퍼즐 판에서 온 줄은 공개된 판만 · 선배 카드에서 온 줄은 공개된 카드만
+    return (data ?? []).filter((r: any) => (r.profile_key ? profOf.has(r.profile_key) : live.has(Number(r.board_id))));
+  };
+  const kw = clean(a?.keyword, 20).replace(/[%,()]/g, "");
+  let rows = await run(kw);
+  let widened = false;
+  if (!rows.length && kw) { rows = await run(""); widened = true; }
+  if (!rows.length) return { found: 0, note: `아직 ${TRACK_LABEL[track]} 계열 선배 사례가 없어요. 사례가 없다고 밝히고 일반 정보로 답한다.` };
+  // 같은 학과 선배를 앞으로
+  // 학과 이름 또는 관심 분야(예: 자유전공 선배의 '심리학')가 맞으면 앞으로
+  const deptHit = (r: any) => {
+    const p: any = profOf.get(r.profile_key);
+    return dept && p && (String(p.department ?? "").includes(dept) || String(p.interest ?? "").includes(dept)) ? 0 : 1;
+  };
+  rows.sort((x: any, y: any) => deptHit(x) - deptHit(y));
+  // 선배(또는 판)마다 고르게 — 한 사람에서 최대 4줄, 모두 14줄
+  const per: Record<string, number> = {};
+  const pick: any[] = [];
+  for (const r of rows) {
+    if (r.area === "gr") continue; // 성적 지표는 아래 seniors 에 따로
+    const k = r.profile_key ?? `b${r.board_id}`;
+    if ((per[k] ?? 0) >= 4) continue;
+    per[k] = (per[k] ?? 0) + 1;
+    const pf: any = profOf.get(r.profile_key);
+    pick.push({ who: pf ? `${pf.university} ${pf.department}${pf.interest ? `(관심: ${pf.interest})` : ""} 선배` : `${r.university} ${TRACK_LABEL[r.track]} 선배`, grade: `${r.grade}학년`, area: AREA_LABEL[r.area] ?? r.area, label: r.label, text: clean(r.body, 220) });
+    if (pick.length >= 14) break;
+  }
+  // 이번에 나온 선배 카드 — 합격 학과 · 학교 유형 · 성적 지표 · 한 줄 특징
+  const keys = [...new Set(rows.map((r: any) => r.profile_key).filter(Boolean))].slice(0, 5);
+  const seniors = keys.map((k: any) => {
+    const p: any = profOf.get(k); const m = p.metrics ?? {};
+    return {
+      who: `${p.university} ${p.department} 합격 선배`, interest: p.interest || undefined, school_type: p.school_type,
+      grades: [m.gpa_all ? `5등급 환산 전 과목 ${m.gpa_all}(${m.gpa_all_band})` : "", m.gpa_main ? `국영수사과 ${m.gpa_main}` : "", m.trend ? `추이 ${m.trend}${m.trend_word ? ` · ${m.trend_word}` : ""}` : "", m.elective ? `진로선택 ${m.elective}` : "", m.grade_note ?? ""].filter(Boolean).join(" · ") || "성적 정보 없음",
+      major_subjects: m.major_subjects ?? "", summary: p.summary, books: (p.books ?? []).slice(0, 4),
+    };
+  });
+  return {
+    found: pick.length + seniors.length, total_matches: rows.length, keyword_widened: widened,
+    schools: [...new Set([...seniors.map((s: any) => s.who.split(" ")[0]), ...pick.map((p) => p.who.split(" ")[0])])],
+    seniors, cases: pick,
+    note: "실제 합격 선배 생기부를 정제한 것. 성적은 선배 때의 9등급제 성적을 5등급제로 환산한 추정치다(누적 비율 기준). 지금 학생(5등급제)과 대략 비교할 수 있지만 정확한 값이 아니라고 함께 말한다. 근거로 쓰되 문장을 길게 그대로 옮기지 말고 흐름(1학년 관심 → 2학년 연결 → 3학년 심화)을 요약한다. 선배가 했다고 지어내지 않는다. 선배 활동을 그대로 따라 하라고 하지 말고 이 학생에게 맞게 비튼다 (똑같이 하면 흔해진다).",
+  };
+}
+
+/* PDF 판 → 글 (관리자 '선배 사례 가져오기') — 이미 정제한 PDF를 칸별 글로 옮긴다 */
+function toB64(buf: Uint8Array) {
+  let s = "";
+  for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+async function importBoard(db: any, userId: string, b: any) {
+  const { data: blob, error } = await db.storage.from("sb-files").download(`boards/${b.id}/full.pdf`);
+  if (error || !blob) return { error: "PDF를 찾지 못했어요" };
+  const b64 = toB64(new Uint8Array(await blob.arrayBuffer()));
+  const sys = `이 PDF는 대학 합격생 학교생활기록부의 한 영역(${AREA_LABEL[b.area] ?? b.area}) ${b.grade}학년 부분이다. 이름 · 학교는 이미 지운 정제본이다. JSON만 출력.
+- 적힌 내용을 칸(항목)별로 그대로 옮긴다. 요약하거나 고치거나 지어내지 않는다. 읽을 수 없는 부분은 뺀다.
+- label: 칸 이름 (창체면 자율활동 · 동아리활동 · 진로활동 등, 세특이면 과목 이름, 행특이면 '행동특성', 성적이면 과목 이름)
+- text: 그 칸의 글 전체 (성적이면 '1학기 2등급 · 2학기 2등급' 처럼 숫자를 글로)
+- 사람 이름 · 학교 이름 · 지역 · 선생님 이름이 남아 있으면 ○○로 바꾼다.
+{"items":[{"label":"","text":""}]}`;
+  const res = await openai({
+    model: "gpt-5-mini", max_completion_tokens: 12000, reasoning_effort: "minimal", response_format: { type: "json_object" },
+    messages: [{ role: "system", content: sys }, { role: "user", content: [{ type: "file", file: { filename: `board_${b.id}.pdf`, file_data: `data:application/pdf;base64,${b64}` } }, { type: "text", text: "이 PDF의 글을 칸별로 옮겨 줘." }] }],
+  });
+  const raw = await res.text();
+  let out: any = null, inT = 0, outT = 0;
+  try {
+    const j = JSON.parse(raw);
+    inT = Number(j.usage?.prompt_tokens ?? 0); outT = Number(j.usage?.completion_tokens ?? 0);
+    out = JSON.parse(j.choices?.[0]?.message?.content ?? "");
+  } catch { console.error("senior import", res.status, raw.slice(0, 400)); }
+  await logUsage(db, userId, inT, outT, Boolean(out), "senior_import");
+  const items = (Array.isArray(out?.items) ? out.items : []).map((x: any, i: number) => ({
+    board_id: b.id, record_id: b.record_id, university: b.university, track: b.track, grade: b.grade, area: b.area,
+    label: clean(x?.label, 40), body: String(x?.text ?? "").replace(/\s+/g, " ").trim().slice(0, 3000), sort: i,
+  })).filter((x: any) => x.body.length >= 5);
+  if (!items.length) return { error: res.ok ? "글을 뽑지 못했어요" : `AI 오류 ${res.status}` };
+  await db.from("senior_cases").delete().eq("board_id", b.id);
+  const { error: e2 } = await db.from("senior_cases").insert(items);
+  if (e2) { console.error("senior save", e2); return { error: "저장하지 못했어요" }; }
+  return { lines: items.length };
+}
+
 /* 화면에 보여 줄 '지금 하는 일' — 도구마다 우리말로 */
 function stepLabel(name: string, a: any) {
   const u = clean(a?.university, 20), d = clean(a?.department, 20);
@@ -1338,6 +1610,8 @@ function stepLabel(name: string, a: any) {
     case "interview_questions": return `${who || "대학"} 면접 기준으로 예상질문 뽑는 중 (30초쯤 걸려요)`;
     case "tail_practice": return a?.action === "next" ? "내 답변 듣고 다음 꼬리질문 만드는 중" : `${u || "대학"} 면접관처럼 꼬리질문 만드는 중`;
     case "check_reading": return `'${clean(a?.title, 20) || "책"}' 독서 흔한가 진단하는 중 (10초쯤 걸려요)`;
+    case "find_seniors": return `${TRACK_LABEL[a?.track] ?? ""} 합격 선배 생기부에서 비슷한 사례 찾는 중`;
+    case "propose_action": return a?.kind === "study_test" ? "효과 시험 준비해 둘지 정하는 중" : "면접 준비에 넣을지 정하는 중";
     default: return "자료 찾는 중";
   }
 }
@@ -1585,6 +1859,65 @@ ${PLAN_GUIDE}
     //   { action: "test_status" } → { open: [시험], done: [끝난 시험] }  (AI 안 부름)
     //   { action: "test_make", subject, unit, from_id? } → { test }  (AI · 주간 사용량)  · 같은 과목 진행 중 시험이 있으면 그것을 준다
     //   { action: "test_submit", id, answers: [0~3 …] } → 시작 시험이면 { test, review, tips } · 다시 시험이면 { test, review, result, message, kept, tips? }
+    // ───────── 선배 사례 가져오기 (관리자) ─────────
+    //   { action: "senior_import", force_board? } → 아직 안 가져온 PDF 판을 2개씩 글로 옮긴다 → { done_now, left, total, errors }
+    if (body.action === "senior_import") {
+      const { data: adm } = await db.from("admins").select("user_id").eq("user_id", user.id).maybeSingle();
+      if (!adm) return json({ error: "관리자만 할 수 있어요" }, 403);
+      const [{ data: boards }, { data: recs }, { data: tiers }, { data: had }] = await Promise.all([
+        db.from("sb_boards").select("id,record_id,grade,area,kind").eq("kind", "pdf"),
+        db.from("sb_records").select("id,track_id,tier_id"),
+        db.from("sb_tiers").select("id,schools"),
+        db.from("senior_cases").select("board_id").limit(100000),
+      ]);
+      const recOf = new Map((recs ?? []).map((r: any) => [r.id, r]));
+      const tierOf = new Map((tiers ?? []).map((t: any) => [t.id, t]));
+      const done = new Set((had ?? []).map((r: any) => Number(r.board_id)));
+      const all = (boards ?? []).map((b: any) => {
+        const r: any = recOf.get(b.record_id) ?? {};
+        const t: any = tierOf.get(r.tier_id) ?? {};
+        return { ...b, track: r.track_id, university: String(t.schools ?? "").split(" · ")[0] };
+      }).filter((b: any) => b.track && b.university);
+      const todo = body.force_board ? all.filter((b: any) => Number(b.id) === Number(body.force_board)) : all.filter((b: any) => !done.has(Number(b.id)));
+      const errors: string[] = [];
+      let n = 0;
+      for (const b of todo.slice(0, 2)) {
+        const r: any = await importBoard(db, user.id, b);
+        if (r.error) errors.push(`${b.university} ${TRACK_LABEL[b.track]} ${b.grade}학년 ${AREA_LABEL[b.area]}: ${r.error}`);
+        else { n++; done.add(Number(b.id)); }
+      }
+      return json({ done_now: n, left: all.filter((b: any) => !done.has(Number(b.id))).length, total: all.length, errors });
+    }
+
+    // ───────── 해 줄까요? 카드 ─────────
+    //   { action: "agent_action", id, decide: "run" | "cancel" } → { status, message, link }
+    if (body.action === "agent_action") {
+      const { data: act } = await db.from("agent_actions").select("*").eq("id", Number(body.id)).eq("user_id", user.id).maybeSingle();
+      if (!act) return json({ error: "할 일을 찾지 못했어요" }, 404);
+      if (act.status !== "pending") return json({ status: act.status, ...(act.result ?? {}) });
+      const finish = async (status: string, result: any) => {
+        await db.from("agent_actions").update({ status, result, done_at: new Date().toISOString() }).eq("id", act.id);
+        return json({ status, ...result });
+      };
+      if (body.decide === "cancel") return finish("cancelled", { message: "알겠어요. 안 할게요." });
+      const p = act.payload ?? {};
+      if (act.kind === "prep_school") {
+        const { error } = await db.from("prep_targets").upsert({ user_id: user.id, university: p.university, department: p.department ?? "", track: "학생부종합" }, { onConflict: "user_id,university,department" });
+        if (error) { console.error("prep_school", error); return json({ error: "넣지 못했어요. 잠시 후 다시 해 주세요" }, 500); }
+        return finish("done", { message: `${p.university}${p.department ? ` ${p.department}` : ""}를 수시 면접 준비에 넣었어요. 기출문제부터 연습해 봐요.`, link: "/prep", link_label: "면접 준비하러 가기" });
+      }
+      if (act.kind === "study_test") {
+        const { data: open } = await db.from("study_tests").select("id").eq("user_id", user.id).eq("subject", p.subject).neq("status", "done").maybeSingle();
+        const link = `/plan?tab=study&subject=${encodeURIComponent(p.subject)}`;
+        if (open) return finish("done", { message: `${p.subject} 효과 시험이 이미 있어요. 학습 플랜에서 이어서 풀어요.`, link, link_label: "시험 보러 가기" });
+        if (usage.pct >= 100) return json(paid ? { error: "이번 주 사용량을 다 썼어요. 월요일 0시에 다시 채워져요" } : { need_pay: true, usage });
+        const r: any = await createTest(db, user, p.subject, p.unit);
+        if (r.error) return json({ error: r.error }, 502);
+        return finish("done", { message: `${p.subject} '${p.unit}' 시작 시험 ${(r.row.set_a ?? []).length}문제를 만들었어요. 지금 풀고, 일주일 뒤 비슷한 문제로 다시 풀어 봐요.`, link, link_label: "시작 시험 풀기" });
+      }
+      return finish("failed", { message: "할 수 없는 일이에요" });
+    }
+
     if (body.action === "test_status") {
       const { data: rows } = await db.from("study_tests").select("*").eq("user_id", user.id).order("created_at", { ascending: false }).limit(20);
       const open = (rows ?? []).filter((r: any) => r.status !== "done");
@@ -1607,16 +1940,9 @@ ${PLAN_GUIDE}
         const { data: prev } = await db.from("study_tests").select("round,result,unit,subject").eq("id", Number(body.from_id)).eq("user_id", user.id).maybeSingle();
         if (prev && prev.subject === subject && prev.unit === unit && prev.result === "한주더") round = (prev.round ?? 1) + 1;
       }
-      const [{ data: my }, { data: prof }] = await Promise.all([
-        db.from("sm_my").select("grade").eq("user_id", user.id).maybeSingle(),
-        db.from("profiles").select("grade").eq("id", user.id).maybeSingle(),
-      ]);
-      const grade = String(my?.grade || user.user_metadata?.grade || prof?.grade || "").match(/고\s*[123]/)?.[0]?.replace(/\s/g, "") ?? "";
-      const t: any = await makeTest(db, user.id, subject, unit, grade);
-      if (t.error) return json({ error: t.error }, 502);
-      const { data: row, error } = await db.from("study_tests").insert({ user_id: user.id, subject, unit, grade, round, blueprint: t.blueprint, set_a: t.set_a, set_b: t.set_b }).select("*").single();
-      if (error) { console.error("test save", error); return json({ error: "시험지를 저장하지 못했어요. 잠시 후 다시 해 주세요" }, 500); }
-      return json({ test: testView(row), usage: await usageOf(db, user.id, paid) });
+      const r: any = await createTest(db, user, subject, unit, round);
+      if (r.error) return json({ error: r.error }, 502);
+      return json({ test: testView(r.row), usage: await usageOf(db, user.id, paid) });
     }
 
     if (body.action === "test_submit") {
@@ -1738,6 +2064,8 @@ ${PLAN_GUIDE}
       }
 
       let inT = 0, outT = 0, answer = quick ?? "", retried = false;
+      const proposed: number[] = []; // 이번 답에서 물꼬가 제안한 일 (해 줄까요? 카드)
+      let seniorShown = 0; // 이번 답에서 보여 준 선배 사례 줄 수
       for (let round = 0; !quick && round <= MAX_ROUNDS; round++) {
         if (round > 0) emit(round === 1 ? "찾은 자료 맞춰 보는 중" : round === 2 ? "빠진 부분 더 찾아보는 중" : "자료 한 번 더 확인하는 중");
         const r = await chat(msgs, round < MAX_ROUNDS);
@@ -1755,6 +2083,8 @@ ${PLAN_GUIDE}
             let out: any;
             try { out = await runTool(db, user.id, tc.function?.name, args, token, !!paid); } catch (e) { console.error("tool", e); out = { error: "찾다가 문제가 생겼어요" }; }
             msgs.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify(out).slice(0, 24000) });
+            if (tc.function?.name === "propose_action" && out?.id) proposed.push(Number(out.id));
+            if (tc.function?.name === "find_seniors" && out?.found > 0) seniorShown += Number(out.found);
             const ck = { check_topic: "topic", check_motive: "motive", check_reading: "reading" }[String(tc.function?.name)];
             if (ck && out && typeof out.score === "number" && !fixed) fixed = formatCheck(ck, out, { ...args, __paid: !!paid });
             if (ck === "topic" && out?.quota_exceeded && !fixed) {
@@ -1812,6 +2142,16 @@ ${PLAN_GUIDE}
         break;
       }
       if (!quick) await logUsage(db, user.id, inT, outT, !!answer);
+      // 해 줄까요? 카드 — 이번에 제안한 것만 남기고, 빠뜨렸으면 맨 끝에 붙인다
+      if (answer) {
+        answer = answer.replace(/\[\[\s*할일\s*[:：]\s*(\d+)\s*\]\]/g, (w: string, id: string) => (proposed.includes(Number(id)) ? `[[할일:${id}]]` : "")).trim();
+        for (const id of [...new Set(proposed)].slice(0, 2)) if (!answer.includes(`[[할일:${id}]]`)) answer += `\n\n[[할일:${id}]]`;
+        // 선배 사례를 보여 줬으면 — 원본 보기 버튼 + 기록 (다음 날 다시 오는지 보려고)
+        if (seniorShown > 0) {
+          if (!/\[\[\s*선배\s*\]\]/.test(answer)) answer += "\n\n[[선배]]";
+          await db.from("senior_events").insert({ user_id: user.id, cases: seniorShown }).then(() => {}, () => {});
+        }
+      }
       if (!answer) return { status: 502, body: { error: "답을 만들지 못했어요. 잠시 뒤 다시 물어봐 주세요" } };
 
       emit(/\[\[\s*질문/.test(answer) ? "물어볼 것 고르는 중" : "답 정리하는 중");
@@ -1825,6 +2165,10 @@ ${PLAN_GUIDE}
         if (error) throw error;
         chatId = row.id;
       }
+      // 물꼬 노트 고치기 — 답을 먼저 보내고 뒤에서 (기다리지 않게)
+      const memJob = updateMemory(db, user.id, message, answer).catch((e) => console.error("memory", e));
+      const rt = (globalThis as any).EdgeRuntime;
+      if (rt?.waitUntil) rt.waitUntil(memJob); else await memJob;
       return { status: 200, body: { chat_id: chatId, answer, usage: await usageOf(db, user.id, paid) } };
     };
 

@@ -19,6 +19,7 @@ import { track } from "../../lib/track";
  *   대화는 agent_chats 에 저장 — 왼쪽 대화 목록(휴대폰은 '대화 목록' 버튼)에서 다시 연다 · 주소 ?c=번호 로 새로고침해도 이어짐
  *   이용권 12,900원부터 — 계좌 입금 → '입금했어요' → 관리자 승인되면 바로 열림 (rpc agent_order, components/PassSheet)
  *   면접 예상질문 · 꼬리질문은 처음 화면 타일에서 뺐다 — 수시 면접 준비(/prep)에서 한다
+ *   에이전트 (sql/sm_96): 물꼬가 기억하는 나(물꼬 노트 — 대화마다 물꼬가 스스로 고침) · 해 줄까요? 카드 [[할일:번호]] (면접 준비에 학교 넣기 · 효과 시험 만들기)
  * DB: sql/sm_76 · sm_77 · sm_78_agent.sql · sm_80_agent_order.sql · 서버 함수: supabase/functions/agent
  */
 
@@ -40,8 +41,16 @@ const FEATURES = [
 // 수행평가는 준비 중 — 타일을 누르거나 채팅으로 물으면 서버에 보내지 않고 바로 안내 (AI 비용 없음)
 //   '수행평가 주제' · '수행평가 탐구'처럼 주제를 찾는 질문은 그대로 물꼬가 답한다 (탐구주제로 돕기)
 const SOON_TEXT = "**수행평가 도우미는 지금 준비 중이에요.**\n과목별 양식에 맞춰 도와줄 수 있게 만들고 있어요. 열리면 이 화면 타일에서 바로 쓸 수 있어요.\n\n수행평가 **주제**를 찾는 중이라면 지금도 도와줄 수 있어요. '수행평가 탐구주제 추천해 줘'처럼 물어봐 주세요.";
+// 바로 가기 4개 — 메인 화면에 있던 타일(면접 준비 · 선배 생기부 · 생기부 진단 · 입시 플랜)을 물꼬 화면으로 옮겼다 · 누르면 그 화면으로 이동
+const SHORTCUTS = [
+  { to: "/prep", title: "수시 면접 준비", desc: "지원 대학별 면접 4단계", badge: "NEW" },
+  { to: "/sb", title: "선배 생기부 보기", desc: "대학별 합격 사례" },
+  { to: "/my/note", title: "내 생기부 진단", desc: "다 적으면 AI 입시 진단", badge: "AI 진단" },
+  { to: "/plan", title: "내 입시 플랜", desc: "학년별 · 이번 주 할 일", badge: "NEW" },
+];
 const isSoon = (q) => /수행\s*평가/.test(q) && !/주제|탐구|발표/.test(q);
 const EXAMPLES = [
+  "간호학과 합격 선배는 고1 때 뭐 했어?",
   "내 생기부로 학종 쓰기 좋은 학교 추천해 줘",
   "수학 미적분 어떻게 공부해야 돼?",
   "수능최저 없는 학종으로 컴퓨터공학과 뽑는 학교 알려 줘",
@@ -95,7 +104,10 @@ function splitChoices(text) {
   });
   const plan = /\[\[\s*플랜\s*\]\]/.test(rest2);
   const routine = /\[\[\s*루틴저장\s*\]\]/.test(rest2);
-  return { body: rest2.replace(/\[\[\s*(이용권|친구초대|플랜|루틴저장)\s*\]\]/g, "").trim(), questions: qs.slice(0, 3), pass, form, invite, univReq, plan, routine };
+  // 물꼬가 제안한 일 — [[할일:번호]] → 해 줄까요? 카드
+  const senior = /\[\[\s*선배\s*\]\]/.test(rest2); // 선배 사례를 보여 준 답 → 원본 보기 버튼
+  const acts = [...new Set([...rest2.matchAll(/\[\[\s*할일\s*[:：]\s*(\d+)\s*\]\]/g)].map((x) => Number(x[1])))].slice(0, 3);
+  return { body: rest2.replace(/\[\[\s*할일\s*[:：]\s*\d+\s*\]\]/g, "").replace(/\[\[\s*(이용권|친구초대|플랜|루틴저장|선배)\s*\]\]/g, "").trim(), questions: qs.slice(0, 3), pass, form, invite, univReq, plan, routine, acts, senior };
 }
 
 /* 입력 카드 — 원래 흔한가 화면처럼 학과·과목·주제를 직접 적어서 한 번에 보낸다 */
@@ -204,6 +216,117 @@ function RoutineSaveCard({ text }) {
         {state === "busy" ? "다이어리에 옮기는 중… (10초쯤)" : "학습 다이어리에 넣고 보러 가기 ›"}
       </button>
       {state && state !== "busy" && <p className="mt-2 text-[12.5px] font-bold text-red-500">{state}</p>}
+    </div>
+  );
+}
+
+/*
+ * 해 줄까요? — 물꼬가 직접 해 주겠다고 제안한 일 (sql/sm_96 agent_actions · 서버 agent_action)
+ * [네, 해 줘]를 눌러야 실행된다 · 한 번 정하면 대화를 다시 열어도 결과가 그대로 보인다
+ */
+const ACT_LABEL = { prep_school: "면접 준비", study_test: "효과 시험" };
+function ActionCard({ id }) {
+  const nav = useNavigate();
+  const [row, setRow] = useState(null);
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    supabase.from("agent_actions").select("id,kind,title,status,result").eq("id", id).maybeSingle().then(({ data }) => setRow(data ?? false));
+  }, [id]);
+  async function decide(d) {
+    setBusy(d); setErr("");
+    const { data, error } = await supabase.functions.invoke("agent", { body: { action: "agent_action", id, decide: d } });
+    let r = data;
+    if (error) { try { r = await error.context?.json?.(); } catch { r = null; } }
+    setBusy("");
+    if (r?.need_pay) return setErr("이번 주 물꼬 사용량을 다 썼어요. 월요일 0시에 다시 채워져요.");
+    if (!r || r.error) return setErr(r?.error ?? "잠시 후 다시 해 주세요");
+    setRow((x) => ({ ...x, status: r.status, result: r }));
+  }
+  if (!row) return null;
+  const res = row.result ?? {};
+  return (
+    <div className={`mt-2 rounded-2xl p-4 ring-1 ${row.status === "done" ? "bg-[#ECFBF3] ring-[#0B8A5E]/20" : row.status === "pending" ? "bg-white ring-black/10" : "bg-[#F8F9FB] ring-black/5"}`}>
+      <div className="flex items-start gap-2.5">
+        <span className="mt-0.5 flex-none rounded-md px-2 py-0.5 text-[11px] font-extrabold text-white" style={{ background: row.status === "done" ? "#0B8A5E" : NAVY }}>{ACT_LABEL[row.kind] ?? "할 일"}</span>
+        <div className="min-w-0 flex-1">
+          <b className={`block text-[14px] font-extrabold leading-snug ${row.status === "cancelled" ? "text-gray-400 line-through" : "text-gray-900"}`}>{row.title}</b>
+          {row.status === "pending" && <small className="mt-0.5 block text-[12px] text-gray-500">물꼬가 대신 해 둘까요?</small>}
+          {row.status !== "pending" && res.message && <small className={`mt-0.5 block text-[12.5px] ${row.status === "done" ? "text-[#0B6B4A]" : "text-gray-400"}`}>{res.message}</small>}
+        </div>
+      </div>
+      {row.status === "pending" && (
+        <div className="mt-3 flex gap-2">
+          <button onClick={() => decide("run")} disabled={Boolean(busy)} className="h-10 flex-1 rounded-xl text-[13.5px] font-extrabold text-white disabled:opacity-50" style={{ background: NAVY }}>
+            {busy === "run" ? (row.kind === "study_test" ? "문제 만드는 중… (30초~1분)" : "하는 중…") : "네, 해 줘"}
+          </button>
+          <button onClick={() => decide("cancel")} disabled={Boolean(busy)} className="h-10 rounded-xl bg-white px-4 text-[13.5px] font-bold text-gray-500 ring-1 ring-gray-200 disabled:opacity-50">아니요</button>
+        </div>
+      )}
+      {row.status === "done" && res.link && (
+        <button onClick={() => nav(res.link)} className="mt-3 h-10 w-full rounded-xl bg-white text-[13.5px] font-extrabold ring-1 ring-[#0B8A5E]/30" style={{ color: "#0B6B4A" }}>{res.link_label ?? "보러 가기"} ›</button>
+      )}
+      {err && <p className="mt-2 text-[12.5px] font-bold text-red-500">{err}</p>}
+    </div>
+  );
+}
+
+/*
+ * 물꼬가 기억하는 나 — 물꼬 노트 (sql/sm_96 agent_memory)
+ * 대화하면서 물꼬가 스스로 적는다 · 학생은 보고 지울 수 있다 (자기 것만)
+ */
+const MEM_KEYS = ["학년", "계열", "목표 대학", "목표 학과", "성적", "약한 과목", "약한 단원", "틀리는 이유", "공부 습관", "지원 대학", "면접 일정", "고민"];
+function MemoryBox({ refreshKey = 0 }) {
+  const [m, setM] = useState(null);
+  const [open, setOpen] = useState(false);
+  const load = () => supabase.from("agent_memory").select("facts,notes").maybeSingle().then(({ data }) => setM({ facts: data?.facts ?? {}, notes: Array.isArray(data?.notes) ? data.notes : [] }));
+  // 답이 온 뒤 물꼬가 뒤에서 노트를 고치니 조금 기다렸다가 다시 읽는다
+  useEffect(() => { const t = setTimeout(load, refreshKey ? 6000 : 0); return () => clearTimeout(t); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [refreshKey]);
+  if (!m) return null;
+  const facts = MEM_KEYS.filter((k) => m.facts[k]).map((k) => ({ k, v: m.facts[k] }));
+  const total = facts.length + m.notes.length;
+  async function save(next) {
+    setM(next);
+    await supabase.from("agent_memory").update({ facts: next.facts, notes: next.notes, updated_at: new Date().toISOString() }).not("user_id", "is", null);
+  }
+  const dropFact = (k) => { const f = { ...m.facts }; delete f[k]; save({ ...m, facts: f }); };
+  const dropNote = (i) => save({ ...m, notes: m.notes.filter((_, j) => j !== i) });
+  async function forgetAll() {
+    if (!window.confirm("물꼬가 기억한 것을 모두 지울까요?")) return;
+    await supabase.from("agent_memory").delete().not("user_id", "is", null);
+    setM({ facts: {}, notes: [] });
+  }
+  return (
+    <div className="mt-3 rounded-2xl bg-white px-4 py-3 ring-1 ring-black/5">
+      <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between gap-2 text-left">
+        <span className="text-[12.5px] font-bold text-gray-800">물꼬가 기억하는 나</span>
+        <span className="text-[11.5px] font-bold text-gray-400">{total ? `${total}개 ${open ? "▲" : "▼"}` : "아직 없음"}</span>
+      </button>
+      {!open && facts.length > 0 && (
+        <p className="mt-1.5 line-clamp-2 text-[11.5px] leading-relaxed text-gray-500">{facts.slice(0, 4).map((f) => f.v).join(" · ")}</p>
+      )}
+      {!total && <p className="mt-1 text-[11.5px] leading-relaxed text-gray-400">목표 대학 · 성적 · 약한 단원을 말해 주면 기억해 두고 다음에 이어서 도와줘요.</p>}
+      {open && total > 0 && (
+        <div className="mt-2">
+          <ul className="grid gap-1">
+            {facts.map((f) => (
+              <li key={f.k} className="group flex items-start gap-2 text-[12px] leading-relaxed">
+                <b className="w-[70px] flex-none text-gray-400">{f.k}</b>
+                <span className="min-w-0 flex-1 text-gray-800">{f.v}</span>
+                <button onClick={() => dropFact(f.k)} className="flex-none px-1 text-gray-300 hover:text-red-500" aria-label={`${f.k} 지우기`}>×</button>
+              </li>
+            ))}
+            {m.notes.map((n, i) => (
+              <li key={`n${i}`} className="flex items-start gap-2 text-[12px] leading-relaxed">
+                <b className="w-[70px] flex-none text-gray-400">기억</b>
+                <span className="min-w-0 flex-1 text-gray-800">{n.t}</span>
+                <button onClick={() => dropNote(i)} className="flex-none px-1 text-gray-300 hover:text-red-500" aria-label="지우기">×</button>
+              </li>
+            ))}
+          </ul>
+          <button onClick={forgetAll} className="mt-2 text-[11.5px] font-semibold text-gray-400 underline">모두 잊어 줘</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -622,6 +745,26 @@ export default function Agent() {
   const endRef = useRef(null);
   const lastBotRef = useRef(null); // 마지막 AI 답의 첫머리 — 답이 오면 여기부터 보이게
   const askedRef = useRef(false); // 홈에서 넘어온 질문을 한 번만 보내기
+  // 물꼬가 새로 기억한 것 — 답 아래 '물꼬가 기억했어요' 한 줄 (ChatGPT '메모리 업데이트됨'처럼)
+  const memRef = useRef(null); // 마지막으로 본 물꼬 노트
+  const [memNote, setMemNote] = useState(null); // { at: 답 번호, items: [...] }
+  const readMem = () => supabase.from("agent_memory").select("facts,notes").maybeSingle().then(({ data }) => ({ facts: data?.facts ?? {}, notes: Array.isArray(data?.notes) ? data.notes : [] }));
+  useEffect(() => { if (user) readMem().then((m) => { memRef.current = m; }); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [user]);
+  function watchMemory(at) {
+    // 서버가 답을 보낸 뒤 뒤에서 노트를 고친다 → 5초 · 10초 뒤에 달라진 것만 찾는다
+    const before = memRef.current ?? { facts: {}, notes: [] };
+    const check = async (last) => {
+      const now = await readMem();
+      const items = [
+        ...MEM_KEYS.filter((k) => now.facts[k] && now.facts[k] !== before.facts?.[k]).map((k) => now.facts[k]),
+        ...now.notes.filter((n) => n?.t && !(before.notes ?? []).some((b) => b.t === n.t)).map((n) => n.t),
+      ];
+      if (items.length) { memRef.current = now; setMemNote({ at, items: items.slice(0, 4) }); return; }
+      if (!last) setTimeout(() => check(true), 5000);
+      else memRef.current = now;
+    };
+    setTimeout(() => check(false), 5000);
+  }
 
   const loadChats = () =>
     supabase.from("agent_chats").select("id,title,updated_at").order("updated_at", { ascending: false }).limit(30).then(({ data }) => setChats(data ?? []));
@@ -699,11 +842,13 @@ export default function Agent() {
     setChatId(data.chat_id);
     if (String(data.chat_id) !== params.get("c")) setParams({ c: String(data.chat_id) }, { replace: true });
     setMsgs((m) => [...m, { role: "assistant", content: data.answer }]);
+    watchMemory(msgs.length + 1); // 방금 받은 답의 번호 (내 질문 다음 칸)
     setClosedCard(false);
     loadChats();
   }
 
   async function openChat(id) {
+    setMemNote(null);
     setShowList(false);
     const { data } = await supabase.from("agent_chats").select("id,messages").eq("id", id).maybeSingle();
     if (!data) return;
@@ -715,6 +860,7 @@ export default function Agent() {
     setParams({ c: String(data.id) }, { replace: true });
   }
   function newChat() {
+    setMemNote(null);
     setChatId(null);
     setMsgs([]);
     setErr("");
@@ -738,14 +884,14 @@ export default function Agent() {
       {/* 컴퓨터: 왼쪽 대화 목록 */}
       <aside className="hidden w-[260px] shrink-0 border-r border-gray-200 px-3 py-5 md:block">
         <div className="sticky top-20 h-[calc(100vh-7rem)]">
-          <ChatList chats={chats} chatId={chatId} onOpen={openChat} onNew={newChat} onDelete={deleteChat} top={<UsageBar usage={usage} pending={pending} />} />
+          <ChatList chats={chats} chatId={chatId} onOpen={openChat} onNew={newChat} onDelete={deleteChat} top={<><UsageBar usage={usage} pending={pending} /><MemoryBox refreshKey={msgs.length} /></>} />
         </div>
       </aside>
       {/* 휴대폰: 버튼을 누르면 왼쪽에서 열림 */}
       {showList && (
         <div className="fixed inset-0 z-50 bg-black/40 md:hidden" onClick={() => setShowList(false)}>
           <div className="h-full w-[82%] max-w-[300px] bg-[#F4F5F7] px-3 py-5" onClick={(e) => e.stopPropagation()}>
-            <ChatList chats={chats} chatId={chatId} onOpen={(id) => { setShowList(false); openChat(id); }} onNew={newChat} onDelete={deleteChat} />
+            <ChatList chats={chats} chatId={chatId} onOpen={(id) => { setShowList(false); openChat(id); }} onNew={newChat} onDelete={deleteChat} top={<MemoryBox refreshKey={msgs.length} />} />
           </div>
         </div>
       )}
@@ -784,24 +930,43 @@ export default function Agent() {
 
         {msgs.length === 0 && (
           <div className="mt-5">
-            <p className="text-[15px] font-extrabold text-gray-900">물꼬가 할 수 있는 일</p>
-            <div className="mt-2.5 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {/* 물꼬 첫인사 — 채팅 화면처럼 말풍선으로 시작 */}
+            <div className="mr-4 rounded-2xl rounded-bl-md bg-white px-4 py-3 text-[14px] leading-relaxed text-gray-800 ring-1 ring-black/5">
+              <b className="font-extrabold text-gray-900">안녕하세요, 물꼬예요.</b>
+              <br />
+              모집요강·입결부터 내 생기부, 면접, 탐구주제까지 편하게 물어보세요.
+            </div>
+
+            {/* 바로 가기 — 옆으로 밀어서 보는 한 줄 */}
+            <div className="-mx-4 mt-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0">
+              {SHORTCUTS.map((t) => (
+                <Link key={t.to} to={t.to} className="flex flex-none items-center gap-1 whitespace-nowrap rounded-full px-3 py-2 text-[12.5px] font-extrabold text-white" style={{ background: NAVY }}>
+                  {t.title}
+                  {t.badge && <small className="rounded-full bg-white/20 px-1.5 text-[10px] font-bold">{t.badge}</small>}
+                  <span className="text-white/60">›</span>
+                </Link>
+              ))}
+            </div>
+
+            {/* 물꼬가 할 수 있는 일 — 휴대폰에서는 제목만 작게 */}
+            <p className="mt-5 text-[13.5px] font-extrabold text-gray-900">물꼬가 할 수 있는 일</p>
+            <div className="mt-2 grid grid-cols-3 gap-1.5 sm:grid-cols-3 sm:gap-2">
               {FEATURES.map((f) => (
                 <button key={f.title} onClick={() => (f.soon ? setMsgs([{ role: "user", content: "수행평가 도와줄 수 있어?" }, { role: "assistant", content: SOON_TEXT }]) : send(f.q))}
-                  className={`rounded-2xl p-3.5 text-left ring-1 ring-black/5 ${f.soon ? "bg-white/60" : "bg-white hover:ring-gray-300"}`}>
-                  <p className={`flex items-center gap-1.5 text-[13.5px] font-extrabold ${f.soon ? "text-gray-400" : "text-gray-900"}`}>
+                  className={`rounded-xl px-2.5 py-2.5 text-left ring-1 ring-black/5 sm:rounded-2xl sm:p-3.5 ${f.soon ? "bg-white/60" : "bg-white hover:ring-gray-300"}`}>
+                  <p className={`flex flex-wrap items-center gap-1 text-[12.5px] font-extrabold sm:text-[13.5px] ${f.soon ? "text-gray-400" : "text-gray-900"}`}>
                     {f.title}
-                    {f.soon && <small className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10.5px] font-bold text-gray-500">준비 중</small>}
+                    {f.soon && <small className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold text-gray-500">준비 중</small>}
                   </p>
-                  <p className={`mt-0.5 text-[11.5px] leading-snug ${f.soon ? "text-gray-400" : "text-gray-500"}`}>{f.desc}</p>
+                  <p className={`mt-0.5 hidden text-[11.5px] leading-snug sm:block ${f.soon ? "text-gray-400" : "text-gray-500"}`}>{f.desc}</p>
                 </button>
               ))}
             </div>
 
             <p className="mt-5 text-[12.5px] font-bold text-gray-500">이렇게 물어보세요</p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
+            <div className="-mx-4 mt-2 flex gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0">
               {EXAMPLES.map((e) => (
-                <button key={e} onClick={() => send(e)} className="rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-gray-600 ring-1 ring-gray-200 hover:ring-gray-400">{e}</button>
+                <button key={e} onClick={() => send(e)} className="flex-none whitespace-nowrap rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-gray-600 ring-1 ring-gray-200 hover:ring-gray-400">{e}</button>
               ))}
             </div>
             <p className="mt-4 text-[11.5px] leading-relaxed text-gray-400">
@@ -816,7 +981,7 @@ export default function Agent() {
           ) : (
             <div key={i} ref={i === msgs.length - 1 ? lastBotRef : undefined} className="mr-4 scroll-mt-24">
               {(() => {
-                const { body, questions, pass, form, invite: inv, univReq, plan, routine } = splitChoices(m.content);
+                const { body, questions, pass, form, invite: inv, univReq, plan, routine, acts, senior } = splitChoices(m.content);
                 const last = i === msgs.length - 1;
                 return (
                   <>
@@ -824,6 +989,16 @@ export default function Agent() {
                     {inv && !paid && last && <InviteCard invite={invite} topic />}
                     {univReq && <UnivRequestCard key={`u${i}`} req={univReq} question={msgs[i - 1]?.content} />}
                     {routine && body && <RoutineSaveCard key={`r${i}`} text={body} />}
+                    {acts.map((id) => <ActionCard key={`a${id}`} id={id} />)}
+                    {senior && (
+                      <Link to="/sb" className="mt-2 flex items-center justify-between gap-3 rounded-2xl bg-white p-4 ring-1 ring-black/10 hover:ring-black/20">
+                        <span>
+                          <b className="block text-[14.5px] font-extrabold text-gray-900">합격 선배 생기부 원본 보기</b>
+                          <small className="text-[12.5px] text-gray-500">물꼬가 참고한 선배 생기부를 직접 열어 볼 수 있어요</small>
+                        </span>
+                        <span className="flex h-9 flex-none items-center rounded-xl px-3.5 text-[13px] font-extrabold text-white" style={{ background: NAVY }}>보러 가기 ›</span>
+                      </Link>
+                    )}
                     {plan && myPlan !== true && last && !busy && (
                       <button onClick={() => send("내 입시 플랜 짜 줘")} className="mt-2 flex w-full items-center justify-between gap-3 rounded-2xl bg-white p-4 text-left ring-1 ring-black/10 hover:ring-black/20">
                         <span>
@@ -855,6 +1030,15 @@ export default function Agent() {
                 );
               })()}
               {/* 무료 사용자: 답 아래 광고 (이용권이면 없음) · 광고가 없으면 칸도 안 보인다 */}
+              {memNote?.at === i && (
+                <button onClick={() => setShowList(true)} className="mt-2 flex w-full items-start gap-2 rounded-xl bg-[#EEF2FF] px-3.5 py-2.5 text-left">
+                  <span className="text-[13px]">📝</span>
+                  <span className="min-w-0 flex-1 text-[12.5px] leading-relaxed text-gray-700">
+                    <b style={{ color: NAVY }}>물꼬가 기억했어요</b> · {memNote.items.join(" · ")}
+                    <small className="mt-0.5 block text-[11.5px] text-gray-400">다음에 다시 안 물어봐요 · 틀린 건 「물꼬가 기억하는 나」에서 지울 수 있어요</small>
+                  </span>
+                </button>
+              )}
               {!paid && <AdSlot slot="home_top" className="mt-2" />}
             </div>
           )))}

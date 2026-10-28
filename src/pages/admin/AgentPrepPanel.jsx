@@ -93,6 +93,49 @@ function Rank({ title, rows, unit, color }) {
   );
 }
 
+/* 선배 사례 (테스트 · sql/sm_97) — PDF 판에서 글 가져오기 · 본 학생이 다음 날 다시 오는지 (퍼즐은 5%) */
+function SeniorBox({ from, to }) {
+  const [s, setS] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const load = () => supabase.rpc("admin_senior_stats", { p_from: from || null, p_to: to || null }).then(({ data, error }) => setS(error ? { error: error.message } : data));
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [from, to]);
+  async function runImport() {
+    setBusy(true); setMsg("");
+    const errs = [];
+    for (let k = 0; k < 60; k++) {
+      const { data, error } = await supabase.functions.invoke("agent", { body: { action: "senior_import" } });
+      let r = data;
+      if (error) { try { r = await error.context?.json?.(); } catch { r = null; } }
+      if (!r || r.error) { setMsg(r?.error ?? "가져오다 멈췄어요. 다시 눌러 주세요"); break; }
+      errs.push(...(r.errors ?? []));
+      setMsg(`가져오는 중… ${r.total - r.left}/${r.total}판`);
+      if (!r.left || !r.done_now) { setMsg(`${r.total - r.left}/${r.total}판 가져왔어요${errs.length ? ` · 못 가져온 판 ${errs.length}개: ${errs.slice(0, 3).join(" / ")}` : ""}`); break; }
+    }
+    setBusy(false);
+    load();
+  }
+  if (!s) return null;
+  if (s.error) return <p className="rounded-lg bg-red-50 px-4 py-3 text-[13px] font-bold text-red-600">선배 사례 숫자를 못 불러왔어요 · {s.error} (sm_97 SQL을 실행했는지 확인)</p>;
+  const rate = s.ready ? Math.round((s.came_back / s.ready) * 100) : null;
+  return (
+    <section className="border-t border-gray-200 pt-6">
+      <h2 className="mb-1 text-lg font-extrabold text-sm-navy">선배 사례 (테스트)</h2>
+      <p className="mb-3 text-[12.5px] text-gray-500">물꼬가 답할 때 '선배 생기부 보기' PDF에서 뽑은 실제 합격 선배 사례를 근거로 써요. 퍼즐의 '처음 온 다음 날 다시 옴'(5%)과 비교해 보세요.</p>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Tile label="가져온 판 · 줄" value={`${n(s.boards)}판 · ${n(s.cases)}줄`} sub={(s.by_school ?? []).map((x) => `${x.k} ${x.boards}판`).join(" · ") || "아직 없음"} />
+        <Tile label="선배 사례 본 학생" value={`${n(s.users)}명`} sub={`보여 준 답 ${n(s.shown)}번`} color="#FD1673" />
+        <Tile label="다음 날 다시 옴" value={rate === null ? "-" : `${rate}%`} sub={`다음 날이 지난 ${n(s.ready)}명 중 ${n(s.came_back)}명 · 퍼즐은 5%`} color="#EA580C" />
+        <div className="flex flex-col justify-center rounded-xl border border-dashed border-gray-300 bg-white p-4">
+          <button onClick={runImport} disabled={busy} className="h-10 rounded-lg bg-sm-navy px-3 text-[13px] font-bold text-white disabled:opacity-50">{busy ? "가져오는 중…" : "새 PDF 판 가져오기"}</button>
+          <p className="mt-1.5 text-[11.5px] leading-snug text-gray-400">퍼즐에 새 생기부를 올린 뒤 누르면 물꼬도 쓸 수 있게 돼요</p>
+        </div>
+      </div>
+      {msg && <p className="mt-2 text-[12.5px] font-bold text-sm-navy">{msg}</p>}
+    </section>
+  );
+}
+
 export default function AgentPrepPanel({ from, to }) {
   const [d, setD] = useState(null);
   const [err, setErr] = useState("");
@@ -175,6 +218,8 @@ export default function AgentPrepPanel({ from, to }) {
         </div>
         <p className="mt-2 text-[11.5px] text-gray-400">기능은 학생이 쓴 말로 나눠요 (예: '공부법', '루틴', '흔한가', '탐구', '입결'). 여러 기능이 섞인 질문은 먼저 맞는 하나로만 세요.</p>
       </section>
+
+      <SeniorBox from={from} to={to} />
 
       {/* ───── 학습 플랜 · 공부법 효과 시험 ───── */}
       <section className="border-t border-gray-200 pt-6">

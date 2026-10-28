@@ -9,9 +9,10 @@ import { useAuth } from "../lib/AuthContext";
  * 조각이 1개 이상 있으면 어느 화면에서든 "조각 N개 · 깨러 가기"를 보여준다.
  * 누르면 /sb?auto=1 → 하던 퍼즐로 바로 가서 조각을 자동으로 깬다.
  * ✕ 를 누르면 이번 접속(탭) 동안만 숨긴다.
+ * 물꼬 채팅(/agent)에서는 입력창을 가려서 안 보인다.
  */
 
-const HIDE = ["/sb", "/admin", "/login", "/signup", "/auth", "/inquiry/", "/voice"];
+const HIDE = ["/sb", "/agent", "/admin", "/login", "/signup", "/auth", "/inquiry/", "/voice"];
 const OFF_KEY = "sm_piece_nudge_off";
 
 export default function PieceNudge() {

@@ -303,7 +303,7 @@ function TestBox({ subject }) {
   );
 }
 
-function Diary({ userId, focus }) {
+function Diary({ userId, focus, initSubject = "" }) {
   const nav = useNavigate();
   const today = kst();
   const [day, setDay] = useState(today);
@@ -314,7 +314,7 @@ function Diary({ userId, focus }) {
   const [saved, setSaved] = useState("");
   const [edit, setEdit] = useState(false);
   const [open, setOpen] = useState(-1);
-  const [tab, setTab] = useState(""); // 과목 탭 (비어 있으면 첫 과목)
+  const [tab, setTab] = useState(initSubject); // 과목 탭 (비어 있으면 첫 과목) · 물꼬 카드에서 오면 그 과목
   const box = useRef(null);
   const monday = addDay(day, 1 - wdOf(day));
   const week = Array.from({ length: 7 }, (_, i) => addDay(monday, i));
@@ -344,7 +344,8 @@ function Diary({ userId, focus }) {
   const doneN = todays.filter((r) => logs[`${r.id}|${day}`]).length;
   const subOf = (r) => (r.subject && r.subject !== "전과목" ? r.subject : "매일 습관");
   const TAB_ORDER = ["국어", "수학", "영어", "사회탐구", "과학탐구", "한국사", "매일 습관"];
-  const tabs = TAB_ORDER.filter((t) => (routines ?? []).some((r) => subOf(r) === t));
+  // 루틴이 있는 과목 + 물꼬 카드로 온 과목 (루틴이 없어도 효과 시험은 볼 수 있게)
+  const tabs = TAB_ORDER.filter((t) => (routines ?? []).some((r) => subOf(r) === t) || t === initSubject);
   const cur = tabs.includes(tab) ? tab : (tabs[0] ?? "");
   const shown = todays.filter((r) => subOf(r) === cur);
   const rate = (d) => {
@@ -588,7 +589,7 @@ export default function Plan() {
         </div>
 
         {/* ───── 학습 플랜 — 학습 다이어리 (입시 플랜이 없어도 매일 루틴은 체크할 수 있다) ───── */}
-        {view === "study" && <Diary userId={user.id} focus={Boolean(loc.state?.diary)} />}
+        {view === "study" && <Diary userId={user.id} focus={Boolean(loc.state?.diary) || Boolean(new URLSearchParams(loc.search).get("subject"))} initSubject={new URLSearchParams(loc.search).get("subject") || ""} />}
 
         {/* ───── 입시 플랜 ───── */}
         {view === "exam" && (
