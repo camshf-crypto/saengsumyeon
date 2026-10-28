@@ -43,10 +43,10 @@ const FEATURES = [
 const SOON_TEXT = "**수행평가 도우미는 지금 준비 중이에요.**\n과목별 양식에 맞춰 도와줄 수 있게 만들고 있어요. 열리면 이 화면 타일에서 바로 쓸 수 있어요.\n\n수행평가 **주제**를 찾는 중이라면 지금도 도와줄 수 있어요. '수행평가 탐구주제 추천해 줘'처럼 물어봐 주세요.";
 // 바로 가기 4개 — 메인 화면에 있던 타일(면접 준비 · 선배 생기부 · 생기부 진단 · 입시 플랜)을 물꼬 화면으로 옮겼다 · 누르면 그 화면으로 이동
 const SHORTCUTS = [
-  { to: "/prep", title: "수시 면접 준비", desc: "지원 대학별 면접 4단계", badge: "NEW" },
+  { to: "/prep", title: "수시 면접 준비", desc: "지원 대학별 면접 4단계" },
   { to: "/sb", title: "선배 생기부 보기", desc: "대학별 합격 사례" },
-  { to: "/my/note", title: "내 생기부 진단", desc: "다 적으면 AI 입시 진단", badge: "AI 진단" },
-  { to: "/plan", title: "내 입시 플랜", desc: "학년별 · 이번 주 할 일", badge: "NEW" },
+  { to: "/my/note", title: "내 생기부 진단", desc: "다 적으면 AI 입시 진단" },
+  { to: "/plan", title: "내 입시 플랜", desc: "학년별 · 이번 주 할 일" },
 ];
 const isSoon = (q) => /수행\s*평가/.test(q) && !/주제|탐구|발표/.test(q);
 const EXAMPLES = [
@@ -907,8 +907,8 @@ export default function Agent() {
           </div>
         </div>
 
-        {/* 휴대폰은 왼쪽 목록이 숨어 있어서 제목 밑에 */}
-        <div className="md:hidden"><UsageBar usage={usage} pending={pending} /></div>
+        {/* 사용량 — 컴퓨터는 왼쪽 목록 위 · 휴대폰은 위쪽 ☰ 전체 서비스 안 (components/Header) · 그 사이 폭(태블릿)만 여기 */}
+        <div className="hidden sm:block md:hidden"><UsageBar usage={usage} pending={pending} /></div>
         <PassSheet
           open={buy}
           title="생수면 이용권"
@@ -938,15 +938,18 @@ export default function Agent() {
               모집요강·입결부터 내 생기부, 면접, 탐구주제까지 편하게 물어보세요.
             </div>
 
-            {/* 바로 가기 — 옆으로 밀어서 보는 한 줄 */}
-            <div className="-mx-4 mt-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0">
+            {/* 바로 가기 — 생수면 주황 · 휴대폰은 옆으로 밀어서 보는 한 줄 (☰ 메뉴 '입시 준비'에도 같은 4개) */}
+            {/* 가운데 정렬 — 한 줄에 다 들어가면 가운데, 넘치면 옆으로 밀어서 본다 */}
+            <div className="-mx-4 mt-4 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] sm:mx-0 sm:px-0">
+             <div className="mx-auto flex w-max gap-1.5">
               {SHORTCUTS.map((t) => (
-                <Link key={t.to} to={t.to} className="flex flex-none items-center gap-1 whitespace-nowrap rounded-full px-3 py-2 text-[12.5px] font-extrabold text-white" style={{ background: NAVY }}>
+                <Link key={t.to} to={t.to} className="flex flex-none items-center gap-1 whitespace-nowrap rounded-full bg-sm-orange px-3 py-2 text-[12.5px] font-extrabold text-white hover:bg-sm-orange-d">
                   {t.title}
                   {t.badge && <small className="rounded-full bg-white/20 px-1.5 text-[10px] font-bold">{t.badge}</small>}
                   <span className="text-white/60">›</span>
                 </Link>
               ))}
+             </div>
             </div>
 
             {/* 물꼬가 할 수 있는 일 — 휴대폰에서는 제목만 작게 */}

@@ -8,7 +8,7 @@ import Avatar from "./Avatar";
 /*
  * 헤더
  *   컴퓨터: 로고 | (오른쪽) 관리자 · 결제 승인 · 사진·레벨·닉네임(→ 마이페이지) · 로그아웃 — 서비스 메뉴는 메인 타일이 대신한다
- *   휴대폰: 로고 | ☰ → 당근 '전체 서비스'처럼 화면 전체에 서비스 목록이 열린다
+ *   휴대폰: 로고 | ☰ → 당근 '전체 서비스'처럼 화면 전체에 서비스 목록이 열린다 (맨 위: 물꼬 사용량 · 입시 준비 4개)
  */
 
 /* 결제 승인 메뉴 — 대기 건수가 있으면 주황 숫자 */
@@ -45,36 +45,21 @@ const ICON = {
   user: <><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0116 0" /></>,
   out: <><path d="M15 4h3a2 2 0 012 2v12a2 2 0 01-2 2h-3" /><path d="M10 17l-5-5 5-5M5 12h11" /></>,
   shield: <path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z" />,
+  check: <><rect x="4" y="4" width="16" height="16" rx="3" /><path d="M8.5 12l2.5 2.5 4.5-5" /></>,
   card: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 10h18M7 15h4" /></>,
 };
 
-/* 전체 서비스 묶음 — 당근처럼 제목 + 두 줄 목록 */
+/* 전체 서비스 묶음 — 휴대폰 ☰ 메뉴에는 '입시 준비' 4개만 (나머지 서비스는 메뉴에서 뺐다) + 아래 나의 생수면 */
 const SECTIONS = [
   {
-    title: "생기부 · 진단",
+    // 물꼬 입시 AI 화면 '바로 가기' 4개와 같은 것 — 휴대폰은 여기서 들어간다
+    title: "입시 준비",
     items: [
-      { to: "/topic", label: "탐구주제 흔한가", icon: "scan", color: "#E8590C" },
-      { to: "/reading", label: "독서 흔한가", icon: "book", color: "#0F9D58" },
-      { to: "/motive", label: "지원동기 흔한가", icon: "mail", color: "#D97706" },
-      { to: "/interview", label: "생기부 예상질문", icon: "mic", color: "#2563EB" },
-      { to: "/my/note", label: "내 생기부 노트", icon: "note", color: "#4F46E5", login: true },
-      { to: "/cards", label: "물병 단어장", icon: "bottle", color: "#2563EB" },
-      { to: "/inquiry", label: "탐구보고서", icon: "doc", color: "#7C3AED" },
-    ],
-  },
-  {
-    title: "커뮤니티",
-    items: [
-      { to: "/mulgyeol", label: "나만 그래?", icon: "poll", color: "#1A5E9A" },
-      { to: "/board", label: "옥상에서 외쳐!", icon: "chat", color: "#0D9488" },
-      { to: "/columns", label: "입시 칼럼", icon: "news", color: "#18224F" },
+      { to: "/prep", label: "수시 면접 준비", icon: "mic", color: "#E8590C" },
       { to: "/sb", label: "선배 생기부 보기", icon: "puzzle", color: "#DB2777" },
-      { to: "/voice", label: "생수면 의견함", icon: "mail", color: "#0D9488" },
+      { to: "/my/note", label: "내 생기부 진단", icon: "note", color: "#4F46E5", login: true },
+      { to: "/plan", label: "내 입시 플랜", icon: "check", color: "#0F9D58" },
     ],
-  },
-  {
-    title: "준비 중",
-    items: [{ to: null, label: "대학 사다리", icon: "ladder", color: "#9CA3AF" }],
   },
 ];
 
@@ -105,6 +90,17 @@ function AllServices({ onClose, user, isAdmin, pendingOrders, displayName, lv, a
       document.body.style.overflow = prev;
     };
   }, []);
+
+  // 물꼬 입시 AI 이번 주 사용량 — 휴대폰은 물꼬 화면 위 대신 여기서 본다 (열 때 한 번 불러옴 · AI 비용 없음)
+  const [usage, setUsage] = useState(null);
+  useEffect(() => {
+    if (!user) return;
+    let alive = true;
+    supabase.functions.invoke("agent", { body: { action: "status" } }).then(({ data }) => alive && data?.usage && setUsage(data.usage));
+    return () => {
+      alive = false;
+    };
+  }, [user]);
 
   const mine = [
     { to: "/my/level", label: "내 레벨 · 뱃지", icon: "star", color: "#E8590C" },
@@ -142,6 +138,27 @@ function AllServices({ onClose, user, isAdmin, pendingOrders, displayName, lv, a
               </Link>
             </div>
           </div>
+        )}
+
+        {/* 회원 — 물꼬 입시 AI 이번 주 사용량 (누르면 물꼬로) */}
+        {user && usage && (
+          <Link to="/agent" onClick={onClose} className="mt-4 block rounded-2xl bg-[#F4F5F7] px-4 py-3.5">
+            <div className="flex items-center justify-between gap-2 whitespace-nowrap text-[13px]">
+              <b className="font-bold text-gray-800">물꼬 입시 AI · 이번 주 사용량</b>
+              <b className={`font-extrabold ${usage.pct >= 100 ? "text-[#FD1673]" : "text-sm-navy"}`}>{usage.pct}% 사용됨</b>
+            </div>
+            {usage.paid_until && (
+              <span className="mt-1 inline-block rounded-md bg-[#EEF2FF] px-1.5 py-0.5 text-[11px] font-bold text-sm-navy">
+                이용권 · {new Date(usage.paid_until).toLocaleDateString("ko-KR", { month: "long", day: "numeric" })}까지
+              </span>
+            )}
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
+              <i className="block h-full rounded-full" style={{ width: `${Math.max(usage.pct, 2)}%`, background: usage.pct >= 100 ? "#FD1673" : "#3D6BEF" }} />
+            </div>
+            <small className="mt-1.5 block text-[11.5px] text-gray-500">
+              {usage.reset_at ? `${"일월화수목금토"[new Date(usage.reset_at).getDay()]}요일 0시에 초기화` : "매주 월요일 0시에 초기화"}
+            </small>
+          </Link>
         )}
 
         {SECTIONS.map((s) => (

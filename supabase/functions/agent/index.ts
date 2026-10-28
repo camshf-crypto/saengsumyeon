@@ -132,6 +132,22 @@ const TOOLS = [
   {
     type: "function",
     function: {
+      name: "get_jeongsi_results",
+      description: "정시 입결(2026학년도 정시 최종 결과 · 수능 누적 백분위 %)을 가져온다. 대학·학과로 찾거나, 학생의 누적 백분위(예: 3.5)로 그 근처에서 합격선이 나온 대학·학과를 찾는다. 수시 내신 입결은 get_results. 학과 이름은 표의 줄임말이라(사복 · 국교 · 컴퓨터공) 학과로 못 찾으면 대학만 넣어 다시 찾는다.",
+      parameters: {
+        type: "object",
+        properties: {
+          university: { type: "string", description: "대학 이름 (예: 연세대, 한양대). 비우면 전체" },
+          department: { type: "string", description: "학과 이름 일부 (예: 경영, 컴퓨터, 의예)" },
+          track: { type: "string", enum: ["인문", "자연"], description: "계열 (모르면 비움)" },
+          percentile: { type: "number", description: "학생의 수능 누적 백분위 % (상위 몇 %인지 · 예: 3.5). 이 근처 합격선을 찾을 때" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "get_interview_style",
       description: "한 대학의 학종 면접 스타일(면접관 관점·질문 스타일·좋은 답변·질문 유형 비율·꼬리질문 특징)을 가져온다. 면접 준비 질문일 때.",
       parameters: { type: "object", properties: { university: { type: "string" } }, required: ["university"] },
@@ -663,6 +679,44 @@ async function runTool(db: any, userId: string, name: string, args: any, token =
     const rows = (data ?? []).map((r: any) => ({ 구분: `${r.year - 1}→${r.year}`, 항목: r.item, [`${r.year - 1}`]: r.before, [`${r.year}`]: r.after }));
     return { university: univ, changes: rows, note: "구분이 '2026→2027'인 줄은 올해 고3 입시가 작년과 달라진 점, '2027→2028'인 줄은 고2 입시가 올해와 달라질 점이다. 학생이 2027과 2028 차이를 물으면 '2027→2028' 줄만 쓴다." };
   }
+  if (name === "get_jeongsi_results") {
+    // 정시 입결 (sql/sm_99) — 표의 대학 이름은 짧은 이름(연세대 · 서울시립대 · 한국외대)
+    const COLS = "track,university,campus,gun,department,tag,band,pct_low,pct_high,exact,unclear,note";
+    let q = db.from("univ_jeongsi_results").select(COLS).limit(80);
+    const ur = clean(args?.university, 40).replace(/\s/g, "");
+    if (ur) {
+      const SHORT: Record<string, string> = { 외대: "한국외대", 한국외국어대: "한국외대", 시립대: "서울시립대", 과기대: "서울과기대", 서울과학기술대: "서울과기대", 성대: "성균관대", 이대: "이화여대", 숙대: "숙명여대", 고대: "고려대", 연대: "연세대", 건대: "건국대", 동대: "동국대", 홍대: "홍익대", 단대: "단국대", 에리카: "한양대", 한양대에리카: "한양대" };
+      const u = ur.replace(/여자대학교$/, "여대").replace(/대학교$/, "대").replace(/\(.*\)|ERICA/gi, "");
+      const name = SHORT[u] ?? (u.endsWith("대") ? u : `${u}대`);
+      const { count } = await db.from("univ_jeongsi_results").select("id", { count: "exact", head: true }).eq("university", name);
+      q = count ? q.eq("university", name) : q.ilike("university", `%${name.replace(/대$/, "")}%`);
+      if (/에리카|ERICA/i.test(ur)) q = q.eq("campus", "에리카");
+    }
+    // 표는 줄임말 (컴퓨터공 · 경영 · 의예) — '컴퓨터공학과' → '컴퓨터공', '경영학과' → '경영'
+    if (args?.department) {
+      const d0 = clean(args.department, 30).replace(/\s/g, "");
+      let d = d0.replace(/(학과|학부|전공|과)$/, "").replace(/공학$/, "공");
+      if (d.length < 2) d = d0.replace(/(과|학부|전공)$/, ""); // 수학과 → 수학 · 약학과 → 약학
+      q = q.ilike("department", `%${d}%`);
+    }
+    if (args?.track === "인문" || args?.track === "자연") q = q.eq("track", args.track);
+    const p = Number(args?.percentile);
+    if (Number.isFinite(p) && p > 0) {
+      const w = Math.max(0.3, p * 0.15); // 상위권일수록 좁게 (1% → ±0.3 · 10% → ±1.5)
+      q = q.gte("pct_low", Math.max(0, p - w)).lte("pct_low", p + w);
+    }
+    const { data } = await q.order("pct_low", { ascending: true });
+    const rows = (data ?? []).map((r: any) => ({
+      계열: r.track, 대학: r.university + (r.campus && r.campus !== "서울" ? `(${r.campus})` : ""), 군: r.gun ? `${r.gun}군` : "", 학과: r.department + (r.tag ? `[${r.tag}]` : ""),
+      누적백분위: r.exact != null ? `${r.exact}%` : (r.pct_high == null ? `${r.pct_low}% 이하` : `${r.pct_low}~${r.pct_high}%`), ...(r.unclear ? { 확인필요: "원본 글자가 흐려 이름이 정확하지 않을 수 있음" } : {}),
+    }));
+    return {
+      results: rows,
+      note: rows.length
+        ? "2026학년도 정시 최종 결과(네이버 카페 오쓰카 '입결표 최종(9월)' 참고 자료)다. 누적 백분위는 수능 성적이 상위 몇 %인지이고 작을수록 높다. 커트라인 순서가 대학·학과의 우열을 뜻하지 않고, 해마다 바뀌며 대학마다 반영 비율·과목 가산점이 달라 참고용이다. 학과 이름은 표의 줄임말이다(예: 사복=사회복지, 국교=국어교육). [지]=지역균형, [인]=인문계열 모집, [자]=자유전공 등."
+        : "이 대학·학과는 정시 입결 자료가 아직 없어요 (인서울 주요 대학 · 의치한약수 위주로 들어 있음)",
+    };
+  }
   if (name === "get_results") {
     let q = db.from("univ_admission_results").select("result_year,department,track,quota,competition,extra,cut50,cut70,avg,cut_min,grade_system,change_note,score50,score70").eq("university", univ).limit(80);
     if (args?.department) q = q.ilike("department", `%${clean(args.department, 30)}%`);
@@ -834,6 +888,9 @@ function systemPrompt(student: string) {
   본문 마지막 줄은 "필요하면 아래에서 자료 추가를 요청해 주세요." 한 줄만 쓴다. 다른 방식으로 도와드릴까요 같은 되묻기는 붙이지 않는다.
 - 면접 준비 질문("○○대 면접 어떻게 봐?")이면 search_units/get_rules 로 면접 방식(비율·단계)을 찾고, get_interview_style 로 그 대학 면접관 스타일까지 함께 알려 준다.
 - 권장과목(고교에서 들으면 좋은 선택과목) 질문은 get_recommended_subjects 로 찾는다. 대학이 쓴 말(핵심/권장/추천)을 그대로 쓰고, 권장과목은 "필수"가 아니라 대학이 권하는 것임을 함께 말한다. 학생 생기부 노트에 들은 과목이 있으면 맞춰 보고 빠진 과목을 알려 준다. 자료가 없는 대학은 "아직 자료가 없어요"라고 말하고 지어내지 않는다.
+- 정시(수능) 입결은 get_jeongsi_results 로 찾는다 (2026학년도 정시 결과 · 누적 백분위 %). 수시 입결(내신 컷)은 get_results. 학생이 정시·수능·모의고사 성적으로 갈 수 있는 곳을 물으면 get_jeongsi_results 를 쓴다.
+  · 모의고사 등급만 말하면 누적 백분위를 짐작하지 말고 "국수탐 백분위나 누적 %를 알면 더 정확해요"라고 하고, 등급 기준의 대략적인 범위로만 말한다.
+  · 답할 때 "2026학년도 정시 결과 기준 참고 자료"임을 한 번 밝히고, 확인필요 표시가 있는 학과는 이름이 정확하지 않을 수 있다고 덧붙인다.
 - 입결(합격자 성적)은 일부 대학만 있다. 없으면 없다고 말하고, 합격 가능성을 단정하지 않는다 ("가능성이 있어 보여요" 정도로만, 근거 숫자와 함께).
 - 숫자(인원·등급·비율)는 DB 값을 그대로 쓴다.
 
@@ -1598,6 +1655,7 @@ function stepLabel(name: string, a: any) {
     case "get_rules": return `${u || "대학"} 전형 방법 읽는 중`;
     case "get_changes": return `${u || "대학"} 바뀐 점 확인하는 중`;
     case "get_results": return `${who || "대학"} 입결 확인하는 중`;
+    case "get_jeongsi_results": return `${who || "대학"} 정시 입결 확인하는 중`;
     case "get_interview_style": return `${u || "대학"} 면접 스타일 찾는 중`;
     case "get_recommended_subjects": return `${who || "학과"} 권장과목 찾는 중`;
     case "get_topic_cases": return `${d || "학과"} 실제 탐구 사례 찾는 중`;
@@ -2146,6 +2204,18 @@ ${PLAN_GUIDE}
       if (answer) {
         answer = answer.replace(/\[\[\s*할일\s*[:：]\s*(\d+)\s*\]\]/g, (w: string, id: string) => (proposed.includes(Number(id)) ? `[[할일:${id}]]` : "")).trim();
         for (const id of [...new Set(proposed)].slice(0, 2)) if (!answer.includes(`[[할일:${id}]]`)) answer += `\n\n[[할일:${id}]]`;
+        // 공부법 진단 카드(과목 · 많이 틀리는 단원)에 답했는데 물꼬가 효과 시험 제안을 빠뜨렸으면 — 서버가 대신 붙인다
+        //   (AI가 도구를 부를 때도 있고 안 부를 때도 있어서, 진단 답 뒤에는 늘 '효과 시험 만들기' 카드가 나오게)
+        if (!proposed.length && !/\[\[\s*할일/.test(answer)) {
+          const fv = (k: string) => (message.match(new RegExp(`${k}\\s*[:：=]\\s*([^\\n]+)`))?.[1] ?? "").trim();
+          const subjRaw = fv("과목"), unit = fv("많이\\s*틀리는\\s*단원");
+          const subject = TEST_SUBJECTS.includes(subjRaw) ? subjRaw : (SUBJ.find(([re]) => re.test(subjRaw))?.[1] ?? "");
+          if (subject && TEST_SUBJECTS.includes(subject) && unit.length >= 2 && !/^(없|모름|몰라)/.test(unit)) {
+            const r: any = await proposeAction(db, user.id, { kind: "study_test", subject, unit }).catch(() => null);
+            if (r?.proposed) answer += `\n\n이 공부법이 나한테 맞는지 확인해 볼까요? 지금 ${subject} '${clean(unit, 40)}' 10문제를 풀고, 일주일 뒤 비슷한 문제로 다시 풀어서 점수를 비교해요.\n\n[[할일:${r.id}]]`;
+            else if (r?.already) answer += `\n\n${subject} 효과 시험은 이미 진행 중이에요. 학습 플랜(/plan) ${subject} 탭에서 이어서 풀어요.`;
+          }
+        }
         // 선배 사례를 보여 줬으면 — 원본 보기 버튼 + 기록 (다음 날 다시 오는지 보려고)
         if (seniorShown > 0) {
           if (!/\[\[\s*선배\s*\]\]/.test(answer)) answer += "\n\n[[선배]]";
