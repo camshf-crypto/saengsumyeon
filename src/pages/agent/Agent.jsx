@@ -14,7 +14,7 @@ import { track } from "../../lib/track";
  *   대학 입시 DB(모집요강·시행계획·입결·면접 스타일) + 내 생수면 기록(생기부 노트·진단·예상질문·지원동기·성적)을 보고 답한다
  *   사용량: 질문 개수가 아니라 실제 AI 비용으로 센다 — '이번 주 사용량 ○%' 막대 + 초기화 시각(매주 월요일 0시)
  *   무료 회원: 주간 한도 · 친구가 내 링크로 가입하면 한도가 늘어남 (4명까지) · 답 아래 광고
- *   · 무료로 받은 답 2개마다 그 아래에 광고 배너(AdSlot home_top 광고를 같이 씀)
+ *   · 무료로 받은 답 2개마다 그 아래에 광고 카드(AdSlot variant=card · home_top 광고를 같이 씀 · 답마다 다른 업체)
  *   이용권(한 달·6개월·1년 — src/lib/pass.js PLANS)이 있으면 사용량 크게 · 광고 없음
  *   대화는 agent_chats 에 저장 — 왼쪽 대화 목록(휴대폰은 '대화 목록' 버튼)에서 다시 연다 · 주소 ?c=번호 로 새로고침해도 이어짐
  *   이용권 12,900원부터 — 계좌 입금 → '입금했어요' → 관리자 승인되면 바로 열림 (rpc agent_order, components/PassSheet)
@@ -937,24 +937,10 @@ export default function Agent() {
         {!paid && usage && usage.pct >= 60 && !needPay && <InviteCard invite={invite} />}
 
         {msgs.length === 0 && (
-          <div className="mt-5">
-            {/* 물꼬 첫인사 — 채팅 화면처럼 말풍선으로 시작 */}
-            <div className="mr-4 rounded-2xl rounded-bl-md bg-white px-4 py-3 text-[14px] leading-relaxed text-gray-800 ring-1 ring-black/5">
-              <b className="font-extrabold text-gray-900">안녕하세요, 물꼬예요.</b>
-              <br />
-              모집요강·입결부터 내 생기부, 면접, 탐구주제까지 편하게 물어보세요.
-              {grade !== null && (
-                <Link to="/my" className="mt-2 flex items-center gap-1.5 text-[12.5px] font-bold" style={{ color: NAVY }}>
-                  {grade
-                    ? <>📌 {grade} 기준으로 답해요{({ 고1: " (2029학년도)", 고2: " (2028학년도)", 고3: " (2027학년도)" })[grade] ?? ""} <span className="font-semibold text-gray-400">· 학년 바꾸기 ›</span></>
-                    : <>📌 학년을 알려 주면 학년에 맞춰 답해요 <span className="font-semibold text-gray-400">· 학년 정하기 ›</span></>}
-                </Link>
-              )}
-            </div>
-
+          <div className="mt-8 pb-10 sm:mt-10">
             {/* 바로 가기 — 생수면 주황 · 휴대폰은 옆으로 밀어서 보는 한 줄 (☰ 메뉴 '입시 준비'에도 같은 4개) */}
             {/* 가운데 정렬 — 한 줄에 다 들어가면 가운데, 넘치면 옆으로 밀어서 본다 */}
-            <div className="-mx-4 mt-4 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] sm:mx-0 sm:px-0">
+            <div className="-mx-4 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] sm:mx-0 sm:px-0">
              <div className="mx-auto flex w-max gap-2">
               {SHORTCUTS.map((t) => (
                 <Link key={t.to} to={t.to} className="flex flex-none items-center gap-1.5 whitespace-nowrap rounded-full bg-sm-orange px-4 py-2.5 text-[14px] font-extrabold text-white shadow-sm hover:bg-sm-orange-d sm:px-5 sm:py-3 sm:text-[15px]">
@@ -966,30 +952,16 @@ export default function Agent() {
              </div>
             </div>
 
-            {/* 물꼬가 할 수 있는 일 — 휴대폰에서는 제목만 작게 */}
-            <p className="mt-5 text-[13.5px] font-extrabold text-gray-900">물꼬가 할 수 있는 일</p>
-            <div className="mt-2 grid grid-cols-3 gap-1.5 sm:grid-cols-3 sm:gap-2">
-              {FEATURES.map((f) => (
-                <button key={f.title} onClick={() => (f.soon ? setMsgs([{ role: "user", content: "수행평가 도와줄 수 있어?" }, { role: "assistant", content: SOON_TEXT }]) : send(f.q))}
-                  className={`rounded-xl px-2.5 py-2.5 text-left ring-1 ring-black/5 sm:rounded-2xl sm:p-3.5 ${f.soon ? "bg-white/60" : "bg-white hover:ring-gray-300"}`}>
-                  <p className={`flex flex-wrap items-center gap-1 text-[12.5px] font-extrabold sm:text-[13.5px] ${f.soon ? "text-gray-400" : "text-gray-900"}`}>
-                    {f.title}
-                    {f.soon && <small className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold text-gray-500">준비 중</small>}
-                  </p>
-                  <p className={`mt-0.5 hidden text-[11.5px] leading-snug sm:block ${f.soon ? "text-gray-400" : "text-gray-500"}`}>{f.desc}</p>
-                </button>
-              ))}
-            </div>
+            {/* 물꼬 캐릭터 — 버튼과 인사 사이 (그림: public/images/mulkko.png) */}
+            <img src="/images/mulkko.png" alt="물꼬" className="mx-auto mt-12 w-44 select-none sm:mt-14 sm:w-52" draggable="false" />
 
-            <p className="mt-5 text-[12.5px] font-bold text-gray-500">이렇게 물어보세요</p>
-            <div className="-mx-4 mt-2 flex gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0">
-              {EXAMPLES.map((e) => (
-                <button key={e} onClick={() => send(e)} className="flex-none whitespace-nowrap rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-gray-600 ring-1 ring-gray-200 hover:ring-gray-400">{e}</button>
-              ))}
-            </div>
-            <p className="mt-4 text-[11.5px] leading-relaxed text-gray-400">
-              내 생기부로 맞춤 답을 받으려면 <Link to="/my/note" className="font-bold underline" style={{ color: NAVY }}>생기부 노트</Link>에 활동을 먼저 적어 두세요. 입결은 일부 대학만 있어요.
+            {/* 인사 — 바로 가기 4개 밑 */}
+            <p className="mt-6 text-center text-[13.5px] leading-relaxed text-gray-600">
+              <b className="font-extrabold text-gray-900">안녕하세요, 물꼬예요.</b>
+              <br />
+              모집요강·입결부터 내 생기부, 면접, 탐구주제까지 편하게 물어보세요.
             </p>
+
           </div>
         )}
 
@@ -1085,7 +1057,9 @@ export default function Agent() {
                 </button>
               )}
               {/* 광고는 답 2개마다 한 번 (2번째 · 4번째 · 6번째 답 아래) */}
-              {!paid && msgs.slice(0, i + 1).filter((x) => x.role === "assistant").length % 2 === 0 && <AdSlot slot="home_top" className="mt-2" />}
+              {!paid && msgs.slice(0, i + 1).filter((x) => x.role === "assistant").length % 2 === 0 && (
+                <AdSlot slot="home_top" variant="card" pick={msgs.slice(0, i + 1).filter((x) => x.role === "assistant").length / 2 - 1} onHide={() => setBuy(true)} className="mt-3" />
+              )}
             </div>
           )))}
           {busy && <Thinking steps={steps} startedAt={startedAt} />}
@@ -1111,7 +1085,7 @@ export default function Agent() {
             onChange={(e) => setInput(e.target.value.slice(0, 1500))}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }}
             rows={1}
-            placeholder="궁금한 대학·학과·전형을 물어보세요"
+            placeholder="학습법부터 입시의 모든 것, 물어보세요"
             className="max-h-32 min-h-[44px] flex-1 resize-none rounded-xl border border-gray-200 px-3.5 py-2.5 text-[14px] leading-relaxed outline-none focus:border-gray-400"
           />
           <button onClick={() => send()} disabled={busy || !input.trim()} className="h-11 shrink-0 rounded-xl px-4 text-[14px] font-extrabold text-white disabled:opacity-40" style={{ background: PINK }}>보내기</button>
