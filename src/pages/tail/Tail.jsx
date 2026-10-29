@@ -174,7 +174,7 @@ export default function Tail() {
   useEffect(() => { saveDraft({ univ, dept, mainType, mainQ, answer }); }, [univ, dept, mainType, mainQ, answer]);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [sess?.turns?.length, busy]);
 
-  const left = pass ? Infinity : (me?.free_left ?? 0) + (me?.balance ?? 0);
+  const left = pass ? Infinity : (me?.balance ?? 0); // 꼬리질문은 1년 이용권 전용 (예전에 산 개수만 남아 있으면 그만큼)
   const hits = univ && focusU ? univs.filter((u) => u.replace(/\s/g, "").includes(univ.replace(/\s/g, ""))).slice(0, 6) : [];
   const known = univs.includes(univ);
   const startOk = univ.trim() && dept.trim() && mainQ.trim().length >= 5 && answer.trim().length >= 15;
@@ -235,8 +235,8 @@ export default function Tail() {
         <div className="mt-3 flex items-center justify-between rounded-2xl bg-white px-4 py-3 ring-1 ring-black/5">
           <p className="text-[13px] text-gray-600">
             {pass ? <b style={{ color: NAVY }}>이용권 사용 중 · 꼬리질문 개수 제한 없음</b>
-              : user ? <>남은 꼬리질문 <b className="text-[16px]" style={{ color: PINK }}>{left}개</b>{me?.free_left > 0 && <span className="ml-1 text-[12px] text-gray-400">(무료 {me.free_left}개 포함)</span>}</>
-              : <>로그인하면 <b style={{ color: PINK }}>꼬리질문 5개 무료</b></>}
+              : user ? <>남은 꼬리질문 <b className="text-[16px]" style={{ color: PINK }}>{left}개</b></>
+              : <>꼬리질문 연습은 <b style={{ color: PINK }}>1년 이용권 전용</b>이에요</>}
           </p>
           {!pass && (
             <button onClick={() => (user ? setPay(true) : setLogin(true))} className="h-9 rounded-lg px-3 text-[12.5px] font-extrabold text-white" style={{ background: NAVY }}>
@@ -439,11 +439,11 @@ export default function Tail() {
       <PassSheet
         open={pay}
         title="면접 꼬리질문"
-        headline={left <= 0 ? "꼬리질문을 다 썼어요" : "꼬리질문 개수 제한 없이 받기"}
+        headline="꼬리질문 연습은 1년 이용권 전용이에요"
         onClose={() => setPay(false)}
         onUnlocked={() => { setPay(false); loadMe(); }}
       />
-      <LoginPopup open={login} onClose={() => setLogin(false)} title="로그인하고 꼬리질문 5개 무료로 받기" desc="닉네임만 보이고, 학교·이름은 받지 않아요." />
+      <LoginPopup open={login} onClose={() => setLogin(false)} title="로그인하고 꼬리질문 연습하기" desc="닉네임만 보이고, 학교·이름은 받지 않아요." />
     </div>
   );
 }

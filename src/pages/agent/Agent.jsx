@@ -5,7 +5,7 @@ import { useAuth } from "../../lib/AuthContext";
 import LoginGate from "../../components/LoginGate";
 import AdSlot from "../../components/AdSlot";
 import { refLink } from "../../lib/referral";
-import PassSheet from "../../components/PassSheet"; // 이용권 결제 (모든 유료 기능 공통)
+import UpgradeModal from "../../components/UpgradeModal"; // 업그레이드 팝업 → 요금제 화면(/pricing)에서 결제
 import { PASS_PRICE, PASS_PRODUCTS } from "../../lib/pass";
 import { track } from "../../lib/track";
 
@@ -13,11 +13,11 @@ import { track } from "../../lib/track";
  * 🤖 입시 상담 AI — /agent
  *   대학 입시 DB(모집요강·시행계획·입결·면접 스타일) + 내 생수면 기록(생기부 노트·진단·예상질문·지원동기·성적)을 보고 답한다
  *   사용량: 질문 개수가 아니라 실제 AI 비용으로 센다 — '이번 주 사용량 ○%' 막대 + 초기화 시각(매주 월요일 0시)
- *   무료 회원: 주간 한도 · 친구가 내 링크로 가입하면 한도가 늘어남 (4명까지) · 답 아래 광고
+ *   무료 회원: 주간 한도 · 답 아래 광고 · 친구 초대 보너스 없음 (다 쓰면 1년 이용권으로)
  *   · 무료로 받은 답 2개마다 그 아래에 광고 카드(AdSlot variant=card · home_top 광고를 같이 씀 · 답마다 다른 업체)
  *   이용권(한 달·6개월·1년 — src/lib/pass.js PLANS)이 있으면 사용량 크게 · 광고 없음
  *   대화는 agent_chats 에 저장 — 왼쪽 대화 목록(휴대폰은 '대화 목록' 버튼)에서 다시 연다 · 주소 ?c=번호 로 새로고침해도 이어짐
- *   이용권 12,900원부터 — 계좌 입금 → '입금했어요' → 관리자 승인되면 바로 열림 (rpc agent_order, components/PassSheet)
+ *   1년 이용권 79,000원 — 계좌 입금 → '입금했어요' → 관리자 승인되면 바로 열림 (rpc agent_order, components/PassSheet)
  *   면접 예상질문 · 꼬리질문은 처음 화면 타일에서 뺐다 — 수시 면접 준비(/prep)에서 한다
  *   에이전트 (sql/sm_96): 물꼬가 기억하는 나(물꼬 노트 — 대화마다 물꼬가 스스로 고침) · 해 줄까요? 카드 [[할일:번호]] (면접 준비에 학교 넣기 · 효과 시험 만들기)
  * DB: sql/sm_76 · sm_77 · sm_78_agent.sql · sm_80_agent_order.sql · 서버 함수: supabase/functions/agent
@@ -26,6 +26,14 @@ import { track } from "../../lib/track";
 const NAVY = "#1E2A5A";
 const PINK = "#FD1673";
 const WIDTH = "mx-auto max-w-2xl px-4 sm:px-5";
+/* 학년 달력 — 첫 화면 '이번 달에 많이 묻는 것' 3개 (서버 index.ts SEASON 과 같은 흐름) */
+const SEASON_Q = {
+  고1: { "1-2": ["희망 계열 찾는 방법 알려 줘", "고1 겨울방학에 읽을 입문 책 추천해 줘", "고1 올라가기 전에 뭐 준비해?"], "3": ["고1 1년 로드맵 짜 줘", "동아리 어떻게 골라?", "고1 첫 학기에 뭐부터 해야 해?"], "4-5": ["수행평가 같이 완성해 줘", "첫 탐구 보고서 써 보고 싶어", "중간고사 공부법 알려 줘"], "6-7": ["1학기 활동 생기부 노트에 정리하는 법", "기말 공부법 알려 줘", "여름방학에 할 탐구 추천해 줘"], "8": ["방학에 읽을 책 추천해 줘", "방학 탐구 보고서 하나 완성해 줘", "2학기 준비 뭐 해?"], "9": ["2학기 탐구 보고서 같이 완성해 줘", "수행평가 같이 완성해 줘", "수행평가 주제 잡는 법"], "10-11": ["수행평가 같이 완성해 줘", "중간고사 공부법 알려 줘", "고1인데 지금 뭐 해야 해?"], "12": ["고1 1년 기록 정리해 줘", "고2 때 뭐 해야 해?", "기말 공부법 알려 줘"] },
+  고2: { "1-2": ["고1 활동 이어서 고2 탐구 방향 잡아 줘", "고2 올라가기 전에 뭐 준비해?", "겨울방학 독서 추천해 줘"], "3": ["선택과목 내 학과에 맞아?", "고2 1년 로드맵 짜 줘", "고2 때 꼭 해야 할 것"], "4-5": ["세특 탐구 보고서 같이 완성해 줘", "수행평가 같이 완성해 줘", "중간고사 공부법 알려 줘"], "6-7": ["1학기 탐구 보고서 심화하기", "기말 공부법 알려 줘", "여름방학 심화 탐구 추천해 줘"], "8": ["여름방학 심화 탐구 보고서 완성해 줘", "학과 관련 책 추천해 줘", "2학기 세특 방향 잡아 줘"], "9": ["2학기 세특 탐구 보고서 완성해 줘", "수행평가 같이 완성해 줘", "진로랑 이어지는 활동 뭐 해?"], "10-11": ["탐구 보고서 마무리해 줘", "수행평가 같이 완성해 줘", "고2인데 지금 뭐 해야 해?"], "12": ["고2 1년 기록 정리해 줘", "고3 1년 계획 짜 줘", "기말 공부법 알려 줘"] },
+  고3: { "1-2": ["내 내신으로 갈 수 있는 대학 알려 줘", "내 생기부 점검해 줘", "수시 지원 전략 어떻게 세워?"], "3": ["생기부 예상질문 뽑아 줘", "내 생기부로 학종 쓰기 좋은 학교", "고3 1년 계획 짜 줘"], "4-5": ["마지막 수행평가 같이 완성해 줘", "내 내신으로 갈 수 있는 대학 알려 줘", "수시 지원 전략 어떻게 세워?"], "6-7": ["수시 6장 어떻게 정해?", "내 내신으로 갈 수 있는 대학 알려 줘", "수능 최저 없는 학종 찾아 줘"], "8": ["지원 동기 정리 도와줘", "면접 준비 어떻게 시작해?", "생기부 예상질문 뽑아 줘"], "9": ["지원한 대학 면접 스타일 알려 줘", "생기부 예상질문 뽑아 줘", "면접 꼬리질문 연습하고 싶어"], "10-11": ["면접 예상질문 뽑아 줘", "면접 꼬리질문 연습하고 싶어", "수능 전 공부법 알려 줘"], "12": ["면접 마지막 점검", "정시 입결 알려 줘", "내 성적으로 정시 갈 수 있는 곳"] },
+};
+const seasonKey = (m) => (m <= 2 ? "1-2" : m === 3 ? "3" : m <= 5 ? "4-5" : m <= 7 ? "6-7" : m === 8 ? "8" : m === 9 ? "9" : m <= 11 ? "10-11" : "12");
+
 /* 처음 화면 — 물꼬가 할 수 있는 일 (누르면 그 기능 예시 질문을 바로 보냄) */
 const FEATURES = [
   { title: "모집요강·입결", desc: "37개 대학 2027·2028 전형·수능최저 · 일부 대학 입결", q: "경희대 2027이랑 2028 뭐가 달라져?" },
@@ -200,7 +208,7 @@ function InputCard({ form, onSubmit, onClose }) {
  * 학습 다이어리에 넣기 — 물꼬가 짠 하루 · 주간 루틴을 /plan 다이어리로 (sql/sm_91 · 서버 routine_save)
  * 누르면 루틴 줄로 바꿔 저장하고 바로 다이어리 화면으로 넘어간다
  */
-function RoutineSaveCard({ text }) {
+function RoutineSaveCard({ text, onBuy }) {
   const nav = useNavigate();
   const [state, setState] = useState(""); // "" · busy · error 글
   async function save() {
@@ -208,17 +216,21 @@ function RoutineSaveCard({ text }) {
     const { data, error } = await supabase.functions.invoke("agent", { body: { action: "routine_save", text } });
     let r = data;
     if (error) { try { r = await error.context?.json?.(); } catch { r = null; } }
+    // 다이어리에 넣으면서 효과 시험도 만들어졌으면 → 바로 시험 화면으로 (지금 10문제)
+    if (r?.count && r?.link) return nav(r.link, { state: { from: "agent", diary: true, test: r.test } });
     if (r?.count) return nav("/plan", { state: { from: "agent", diary: true } });
+    if (r?.need_pay) { setState(""); return onBuy?.(); } // 학습 다이어리 · 자기주도학습법은 1년 이용권 전용
     setState(r?.error ?? "잠시 후 다시 해 주세요");
   }
   return (
     <div className="mt-2 rounded-2xl bg-white p-4 ring-1 ring-black/10">
       <b className="block text-[14.5px] font-extrabold text-gray-900">이 루틴을 내 학습 다이어리에 넣을까요?</b>
-      <small className="mt-0.5 block text-[12.5px] leading-relaxed text-gray-500">매일 할 일을 체크하고, 어떻게 하는지 공부법도 같이 보여 줘요. 한 줄 일기 · 공부 시간도 남길 수 있어요.</small>
+      <small className="mt-0.5 block text-[12.5px] leading-relaxed text-gray-500">매일 할 일을 체크하고, 이 공부법이 나한테 맞는지 확인하는 시험(지금 10문제 → 일주일 뒤 비슷한 문제)도 자동으로 만들어 드려요.</small>
       <button onClick={save} disabled={state === "busy"} className="mt-3 h-11 w-full rounded-xl text-[14px] font-extrabold text-white disabled:opacity-50" style={{ background: NAVY }}>
-        {state === "busy" ? "다이어리에 옮기는 중… (10초쯤)" : "학습 다이어리에 넣고 보러 가기 ›"}
+        {state === "busy" ? "다이어리에 넣고 시험 문제 만드는 중… (30초쯤)" : "학습 다이어리에 넣고 자기주도학습법 시작 ›"}
       </button>
       {state && state !== "busy" && <p className="mt-2 text-[12.5px] font-bold text-red-500">{state}</p>}
+      <p className="mt-2 text-center text-[11.5px] text-gray-400">학습 다이어리 · 자기주도학습법은 1년 이용권 전용이에요</p>
     </div>
   );
 }
@@ -227,8 +239,8 @@ function RoutineSaveCard({ text }) {
  * 해 줄까요? — 물꼬가 직접 해 주겠다고 제안한 일 (sql/sm_96 agent_actions · 서버 agent_action)
  * [네, 해 줘]를 눌러야 실행된다 · 한 번 정하면 대화를 다시 열어도 결과가 그대로 보인다
  */
-const ACT_LABEL = { prep_school: "면접 준비", study_test: "효과 시험" };
-function ActionCard({ id }) {
+const ACT_LABEL = { prep_school: "면접 준비", study_test: "자기주도학습법" };
+function ActionCard({ id, onBuy }) {
   const nav = useNavigate();
   const [row, setRow] = useState(null);
   const [busy, setBusy] = useState("");
@@ -242,7 +254,8 @@ function ActionCard({ id }) {
     let r = data;
     if (error) { try { r = await error.context?.json?.(); } catch { r = null; } }
     setBusy("");
-    if (r?.need_pay) return setErr("이번 주 물꼬 사용량을 다 썼어요. 월요일 0시에 다시 채워져요.");
+    if (r?.need_pay && r?.pass_only) return onBuy?.(); // 자기주도학습법은 1년 이용권 전용
+    if (r?.need_pay) return setErr("오늘 무료 사용량을 다 썼어요. 새벽 5시에 다시 채워지고, 1년 이용권이면 바로 계속 쓸 수 있어요.");
     if (!r || r.error) return setErr(r?.error ?? "잠시 후 다시 해 주세요");
     setRow((x) => ({ ...x, status: r.status, result: r }));
   }
@@ -574,14 +587,17 @@ function Rich({ text }) {
 /* 이번 주 사용량 — 컴퓨터는 왼쪽 '새 대화' 밑, 휴대폰은 제목 밑 (금액은 안 보여 준다) */
 function UsageBar({ usage, pending, className = "mt-3" }) {
   if (!usage) return <div className={`${className} h-[52px]`} />;
-  const reset = new Date(usage.reset_at);
-  const resetText = `${"일월화수목금토"[reset.getDay()]}요일 ${reset.getHours() === 0 ? "0시" : reset.toLocaleTimeString("ko-KR", { hour: "numeric" })}에 초기화`;
+  // 무료: 처음 맛보기 한 번 → 다 쓰면 매일 새벽 5시에 하루치 (free_daily) · 이용권은 매주 월요일 0시 초기화
+  const reset = usage.reset_at ? new Date(usage.reset_at) : null;
+  const resetText = reset
+    ? `${"일월화수목금토"[reset.getDay()]}요일 ${reset.getHours() === 0 ? "0시" : reset.toLocaleTimeString("ko-KR", { hour: "numeric" })}에 초기화`
+    : usage.free_daily || usage.pct >= 100 ? "새벽 5시에 다시 채워져요" : "처음 한 번 · 다 쓰면 매일 새벽 5시에 조금씩";
   const until = usage.paid_until ? new Date(usage.paid_until).toLocaleDateString("ko-KR", { month: "long", day: "numeric" }) : "";
   const full = usage.pct >= 100;
   return (
     <div className={`${className} rounded-2xl bg-white px-4 py-3 ring-1 ring-black/5`}>
       <div className="flex items-center justify-between gap-2 whitespace-nowrap text-[12.5px]">
-        <p className="font-bold text-gray-800">이번 주 사용량</p>
+        <p className="font-bold text-gray-800">{reset ? "이번 주 사용량" : usage.free_daily ? "오늘 무료 사용량" : "무료 맛보기"}</p>
         <p className="font-extrabold" style={{ color: full ? PINK : NAVY }}>{usage.pct}% 사용됨</p>
       </div>
       {usage.paid_until && <p className="mt-1 inline-block rounded-md bg-[#EEF2FF] px-1.5 py-0.5 text-[11px] font-bold" style={{ color: NAVY }}>이용권 · {until}까지</p>}
@@ -735,7 +751,7 @@ export default function Agent() {
   const [usage, setUsage] = useState(null); // { pct, reset_at, paid_until, invite }
   const [grade, setGrade] = useState(null); // 물꼬가 보는 학년 (마이페이지 내 정보 → 가입 학년) · "" 이면 모름
   const [needPay, setNeedPay] = useState(false);
-  const [buy, setBuy] = useState(false); // 이용권 사기 창
+  const [buy, setBuy] = useState(false); // 업그레이드 팝업 (false 또는 { reason, title, desc } 또는 true)
   const [closedCard, setClosedCard] = useState(false); // 질문 카드를 닫았는지 (새 답이 오면 다시 열림)
   const [pending, setPending] = useState(null); // 입금 확인 중인 이용권 주문
   const [myPlan, setMyPlan] = useState(null); // 내 입시 플랜이 있는지 (null = 모름) — 없으면 [[플랜]] 버튼이 '만들기'로
@@ -808,8 +824,37 @@ export default function Agent() {
     return () => clearTimeout(t);
   }, [msgs, busy, steps.length]);
 
+  const paidNow = !!usage?.paid_until;
+  // 귀찮게 — 팝업이 알아서 뜬다 (무료만)
+  //  ① 방금 받은 답에 이용권 안내([[이용권]])가 있으면
+  //  ② 무료 사용량이 50% · 80%를 처음 넘을 때 (각각 한 번 · 브라우저에 기억)
+  const popped = useRef(new Set());
+  useEffect(() => {
+    if (paidNow || busy || !msgs.length) return;
+    const i = msgs.length - 1, m = msgs[i];
+    if (m.role === "assistant" && /\[\[\s*이용권\s*\]\]/.test(m.content ?? "") && !popped.current.has(i) && m.at && Date.now() - m.at < 60000) {
+      popped.current.add(i);
+      setBuy({ reason: "answer" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [msgs.length, busy, paidNow]);
+  useEffect(() => {
+    if (paidNow || !usage || usage.pct >= 100) return;
+    const step = usage.pct >= 80 ? 80 : usage.pct >= 50 ? 50 : 0;
+    if (!step) return;
+    const key = `sm_upgrade_${step}`;
+    try {
+      if (localStorage.getItem(key)) return;
+      localStorage.setItem(key, "1");
+    } catch {
+      return;
+    }
+    setBuy({ reason: `usage${step}`, title: `무료 사용량을 ${usage.pct}% 썼어요`, desc: "다 쓰면 물꼬를 더 쓸 수 없어요. 1년 이용권이면 무제한 · 광고 없이 계속 써요." });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usage?.pct, paidNow]);
+
   if (loading) return <div className="min-h-[60vh]" />;
-  if (!user) return <LoginGate title="물꼬 입시 AI" desc="내 생기부 기록을 같이 보고 답해 드려요. 친구를 초대하면 사용량이 늘어나요." />;
+  if (!user) return <LoginGate title="물꼬 입시 AI" desc="내 생기부 기록을 같이 보고 답해 드려요." />;
 
   async function send(text) {
     const q = String(text ?? input).trim();
@@ -836,6 +881,7 @@ export default function Agent() {
     if (data?.usage) setUsage(data.usage);
     if (data?.need_pay) {
       setNeedPay(true);
+      setBuy({ reason: "limit", title: "오늘 무료 사용량을 다 썼어요", desc: "새벽 5시에 다시 채워져요. 지금 바로 계속 쓰려면 1년 이용권으로 물꼬를 무제한 · 광고 없이 써요." });
       setMsgs((m) => m.slice(0, -1));
       setInput(q);
       return;
@@ -849,7 +895,7 @@ export default function Agent() {
     }
     setChatId(data.chat_id);
     if (String(data.chat_id) !== params.get("c")) setParams({ c: String(data.chat_id) }, { replace: true });
-    setMsgs((m) => [...m, { role: "assistant", content: data.answer }]);
+    setMsgs((m) => [...m, { role: "assistant", content: data.answer, at: Date.now() }]);
     watchMemory(msgs.length + 1); // 방금 받은 답의 번호 (내 질문 다음 칸)
     setClosedCard(false);
     loadChats();
@@ -884,6 +930,7 @@ export default function Agent() {
   }
 
   const paid = !!usage?.paid_until;
+
   const invite = usage?.invite ?? null;
 
   return (
@@ -916,17 +963,12 @@ export default function Agent() {
 
         {/* 사용량 — 컴퓨터는 왼쪽 목록 위 · 휴대폰은 위쪽 ☰ 전체 서비스 안 (components/Header) · 그 사이 폭(태블릿)만 여기 */}
         <div className="hidden sm:block md:hidden"><UsageBar usage={usage} pending={pending} /></div>
-        <PassSheet
-          open={buy}
-          title="생수면 이용권"
-          headline="물꼬 입시 AI · 꼬리질문 · 흔한가까지 전부"
+        <UpgradeModal
+          open={Boolean(buy) && !paid}
+          reason={buy?.reason ?? "button"}
+          title={buy?.title}
+          desc={buy?.desc}
           onClose={() => setBuy(false)}
-          onOrdered={(o) => setPending(o)}
-          onUnlocked={() => {
-            setBuy(false);
-            setPending(null);
-            supabase.functions.invoke("agent", { body: { action: "status" } }).then(({ data }) => data?.usage && setUsage(data.usage));
-          }}
         />
         {pending && !paid && (
           <p className="mt-2 rounded-xl bg-[#FFF7ED] px-3 py-2.5 text-[12.5px] font-bold text-[#C2410C]">
@@ -934,7 +976,6 @@ export default function Agent() {
           </p>
         )}
 
-        {!paid && usage && usage.pct >= 60 && !needPay && <InviteCard invite={invite} />}
 
         {msgs.length === 0 && (
           <div className="mt-8 pb-10 sm:mt-10">
@@ -962,6 +1003,23 @@ export default function Agent() {
               모집요강·입결부터 내 생기부, 면접, 탐구주제까지 편하게 물어보세요.
             </p>
 
+            {/* 이번 달에 많이 묻는 것 — 학년 × 달 (학년 모르면 고2 기준) */}
+            {(() => {
+              const mon = new Date().getMonth() + 1;
+              const g = SEASON_Q[grade === "N수" ? "고3" : grade] ? (grade === "N수" ? "고3" : grade) : "고2";
+              const qs = SEASON_Q[g][seasonKey(mon)] ?? [];
+              return qs.length ? (
+                <div className="mt-6">
+                  <p className="text-center text-[12.5px] font-bold text-gray-500">📅 {grade ? `${grade} · ` : ""}{mon}월에 많이 묻는 것</p>
+                  <div className="mt-2 flex flex-col items-center gap-2">
+                    {qs.map((q) => (
+                      <button key={q} onClick={() => send(q)} className="rounded-full bg-white px-4 py-2 text-[13.5px] font-semibold text-gray-700 ring-1 ring-gray-200 hover:ring-gray-400">{q}</button>
+                    ))}
+                  </div>
+                </div>
+              ) : null;
+            })()}
+
           </div>
         )}
 
@@ -976,10 +1034,9 @@ export default function Agent() {
                 return (
                   <>
                     {body && <div className="rounded-2xl rounded-bl-md bg-white px-4 py-3 text-[14px] leading-relaxed text-gray-700 ring-1 ring-black/5"><Rich text={body} /></div>}
-                    {inv && !paid && last && <InviteCard invite={invite} topic />}
                     {univReq && <UnivRequestCard key={`u${i}`} req={univReq} question={msgs[i - 1]?.content} />}
-                    {routine && body && <RoutineSaveCard key={`r${i}`} text={body} />}
-                    {acts.map((id) => <ActionCard key={`a${id}`} id={id} />)}
+                    {routine && body && <RoutineSaveCard key={`r${i}`} text={body} onBuy={() => setBuy(true)} />}
+                    {acts.map((id) => <ActionCard key={`a${id}`} id={id} onBuy={() => setBuy(true)} />)}
                     {senior && (
                       <Link to="/sb" className="mt-2 flex items-center justify-between gap-3 rounded-2xl bg-white p-4 ring-1 ring-black/10 hover:ring-black/20">
                         <span>
@@ -1036,7 +1093,7 @@ export default function Agent() {
                     )}
                     {pass && !paid && (pending
                       ? <p className="mt-2 rounded-xl bg-[#FFF7ED] px-3 py-2.5 text-[12.5px] font-bold text-[#C2410C]">이용권 입금 확인 중이에요. 확인되면 바로 광고가 없어져요.</p>
-                      : <button onClick={() => setBuy(true)} className="mt-2 h-12 w-full rounded-xl text-[14.5px] font-extrabold text-white" style={{ background: PINK }}>이용권 {PASS_PRICE.toLocaleString()}원부터 · 광고 없이 쓰기</button>)}
+                      : <button onClick={() => setBuy({ reason: "card" })} className="mt-2 inline-flex h-9 items-center rounded-full bg-white px-4 text-[13px] font-extrabold ring-1 ring-sm-navy/30 hover:ring-sm-navy" style={{ color: NAVY }}>요금제 보기 ›</button>)}
                     {form && last && !busy && !closedCard && (
                       <InputCard key={`f${i}`} form={form} onSubmit={(t) => send(t)} onClose={() => setClosedCard(true)} />
                     )}
@@ -1066,12 +1123,11 @@ export default function Agent() {
           {err && <p className="text-[13px] font-semibold text-red-500">{err}</p>}
           {needPay && (
             <div className="rounded-2xl bg-white p-4 ring-1 ring-black/5">
-              <p className="text-[15px] font-extrabold text-gray-900">이번 주 무료 사용량을 다 썼어요</p>
-              <p className="mt-1 text-[13px] leading-relaxed text-gray-600">월요일 0시에 다시 채워져요. 지금 더 쓰려면 친구를 초대하거나 이용권을 쓰면 돼요.</p>
-              <InviteCard invite={invite} />
+              <p className="text-[15px] font-extrabold text-gray-900">오늘 무료 사용량을 다 썼어요</p>
+              <p className="mt-1 text-[13px] leading-relaxed text-gray-600">새벽 5시에 다시 채워져요. 지금 바로 계속 쓰려면 1년 이용권으로 물꼬를 무제한 · 광고 없이 써요.</p>
               {pending
                 ? <p className="mt-3 rounded-xl bg-[#FFF7ED] px-3 py-2.5 text-[12.5px] font-bold text-[#C2410C]">이용권 입금 확인 중이에요. 확인되면 바로 열려요.</p>
-                : <button onClick={() => setBuy(true)} className="mt-3 h-12 w-full rounded-xl text-[14.5px] font-extrabold text-white" style={{ background: PINK }}>이용권 {PASS_PRICE.toLocaleString()}원부터 · 광고 없이 쓰기</button>}
+                : <button onClick={() => setBuy({ reason: "limit" })} className="mt-3 h-12 w-full rounded-xl bg-sm-navy text-[14.5px] font-extrabold text-white">요금제 보기 ›</button>}
             </div>
           )}
           <div ref={endRef} className="h-2 scroll-mb-28" />
@@ -1079,6 +1135,15 @@ export default function Agent() {
       </div>
 
       <div className="sticky bottom-0 z-30 border-t border-gray-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
+        {/* 무료 사용량이 절반을 넘으면 입력창 위에 계속 보인다 */}
+        {!paid && usage?.pct >= 50 && (
+          <button onClick={() => setBuy({ reason: "bar" })} className={`${WIDTH} flex w-full items-center justify-between gap-2 pt-2.5 text-left`}>
+            <span className="text-[12.5px] font-bold" style={{ color: usage.pct >= 100 ? PINK : "#C2410C" }}>
+              {usage.pct >= 100 ? "오늘 무료를 다 썼어요 · 새벽 5시에 다시 채워져요" : `무료 사용량이 ${Math.max(0, 100 - usage.pct)}% 남았어요`}
+            </span>
+            <span className="flex-none text-[12.5px] font-extrabold" style={{ color: NAVY }}>요금제 보기 ›</span>
+          </button>
+        )}
         <div className={`${WIDTH} flex items-end gap-2 py-3`}>
           <textarea
             value={input}

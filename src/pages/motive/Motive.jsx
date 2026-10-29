@@ -224,7 +224,7 @@ function After({ r, onAgain }) {
     <>
       {r.remaining != null && (
         <p className="mt-6 text-center text-[13.5px] font-bold text-sm-navy">
-          이번 주 남은 지원동기 진단 <span className="text-sm-orange">{r.remaining}번</span>
+          오늘 남은 지원동기 진단 <span className="text-sm-orange">{r.remaining}번</span>
           {r.bonus_left > 0 && <span className="text-[12px] font-normal text-gray-500"> (친구 초대로 받은 {r.bonus_left}번 포함)</span>}
           {r.remaining === 0 && r.next_open && (
             <span className="block text-[12px] font-normal text-gray-500">
@@ -411,7 +411,7 @@ export default function Motive() {
       {/* 무료를 다 씀 — 회원: 친구 초대 또는 기다리기 / 비회원: 회원가입 */}
       {view === "result" && r?.quota_exceeded && r.is_member && (
         <InviteGate
-          title="이번 주 무료 지원동기 진단 2번을 모두 사용했어요"
+          title="오늘 무료 지원동기 진단 2번을 모두 사용했어요"
           question="한 번 더 확인해보고 싶은 지원동기가 있나요?"
           reward="+1번"
           unit="번"
@@ -428,7 +428,7 @@ export default function Motive() {
         <div className="rounded-2xl border border-gray-200 px-6 py-8 text-center">
           <p className="text-[18px] font-extrabold text-sm-navy">이번 주 무료 진단 1번을 썼어요</p>
           <p className="mt-2 text-[14px] leading-relaxed text-gray-600">
-            회원가입하면 <b className="text-sm-navy">일주일에 2번</b>씩 진단하고,
+            회원가입하면 <b className="text-sm-navy">하루 2번</b>씩 진단하고,
             <br />
             대학별 기준 분석까지 모두 볼 수 있어요.
           </p>

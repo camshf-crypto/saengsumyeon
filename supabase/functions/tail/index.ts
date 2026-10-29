@@ -165,6 +165,11 @@ Deno.serve(async (req) => {
     const pass = await hasPass(db, user.id); // 이용권이면 꼬리질문 개수 제한 없음
     const { data: use } = viaAgent || pass ? { data: { ok: true, by: null } } : await db.rpc("tail_use", { p_user: user.id });
     if (!use?.ok) return json({ need_pay: true });
+    // 꼬리질문 연습은 1년 이용권 전용 — 무료 개수로는 안 연다 (예전에 산 꼬리질문(paid)은 그대로 쓴다)
+    if (!viaAgent && !pass && use.by !== "paid") {
+      await db.rpc("tail_refund", { p_user: user.id, p_by: use.by });
+      return json({ need_pay: true, pass_only: true });
+    }
     const svc = viaAgent ? "agent" : "tail";
     const refund = () => (viaAgent || pass ? null : db.rpc("tail_refund", { p_user: user.id, p_by: use.by }));
 

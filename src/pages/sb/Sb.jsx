@@ -587,6 +587,9 @@ export default function Sb() {
     grade: [`${grade}학년 판은 고${grade}이 되면 열려`, `학년이 올라가면 같은 크기의 새 판이 열려. 지금은 ${myGrade}학년 판을 모아봐.`],
     tier: ["아직 잠긴 학교야", "다른 학교에서 창체·세특 같은 영역 하나를 다 열면 열려."],
     score: ["성적 판은 마지막에 열려", "창체 · 세특 · 행특 판을 모두 완성하면 이 선배의 성적을 볼 수 있어."],
+    pass: board?.record_limit > 1
+      ? [`이용권으로는 선배 생기부 ${board.record_limit}개까지야`, "이미 연 선배 생기부는 계속 볼 수 있어."]
+      : ["무료는 선배 생기부 1개까지야", "처음 연 선배 생기부는 계속 무료로 볼 수 있어. 1년 이용권이면 5개까지 열려."],
   }[lock];
   const W = Math.min(MAX_W, paperW || 358);
   const lay = layout(lines, size, W);
@@ -602,6 +605,9 @@ export default function Sb() {
           <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M7 11V8a5 5 0 0 1 10 0v3M6 11h12v9H6z" /></svg>
           <p className="text-[16px] font-black text-sm-navy">{lockText[0]}</p>
           <p className="text-[13px] leading-relaxed text-gray-600">{lockText[1]}</p>
+          {lock === "pass" && !(board?.record_limit > 1) && (
+            <Link to="/pricing" className="mt-3 inline-flex h-11 items-center rounded-xl bg-sm-navy px-5 text-[14px] font-extrabold text-white">요금제 보기 ›</Link>
+          )}
         </div>
       )}
 

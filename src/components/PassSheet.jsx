@@ -5,7 +5,7 @@ import { BANK, PASS_BENEFITS, PASS_PRODUCTS, PLANS, PLANS_ON_SALE, hasPass, perM
 
 /*
  * 이용권 결제 창 — 생수면의 모든 유료 기능을 이 창 하나로 결제한다
- * 요금제는 src/lib/pass.js PLANS 중 sale: true 인 것만 보인다 (지금은 한 달 12,900원)
+ * 요금제는 src/lib/pass.js PLANS 중 sale: true 인 것만 보인다 (지금은 1년 이용권 79,000원 · 첫해 가격)
  * (물꼬 입시 에이전트 · 꼬리질문 · 탐구팩 · 로드맵 · 흔한가 진단 — 생기부 예상질문은 따로 24,000원: interview/InterviewPay)
  * 요금제 고르기 → ① 계좌로 입금 → ② 입금자명 → '입금했어요' (rpc agent_order) → 관리자 승인 → 기간만큼 열림
  * 입금 확인 중이면 그 상태를 보여 주고, 승인되는 순간 onUnlocked 를 부른다 (실시간 + 30초마다 확인)
@@ -85,7 +85,7 @@ export default function PassSheet({ open, onClose, title, headline, onUnlocked, 
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-[12px] font-bold text-sm-orange">{title || "생수면 이용권"}</p>
-            <p className="mt-1 text-[19px] font-extrabold leading-snug text-sm-navy">{headline || "이용권 하나로 생수면 전부 열기"}</p>
+            <p className="mt-1 text-[19px] font-extrabold leading-snug text-sm-navy">{headline || "1년 이용권 하나로 생수면 전부 열기"}</p>
           </div>
           <button onClick={onClose} className="text-[24px] leading-none text-gray-400" aria-label="닫기">×</button>
         </div>
@@ -107,7 +107,7 @@ export default function PassSheet({ open, onClose, title, headline, onUnlocked, 
                 </span>
                 <span>
                   <b className="block text-[14.5px] font-extrabold text-sm-navy">{p.label}</b>
-                  <small className="text-[11.5px] text-gray-500">{p.days === 30 ? "30일" : `한 달 약 ${perMonth(p).toLocaleString()}원`}</small>
+                  <small className="text-[11.5px] text-gray-500">{p.days === 30 ? "30일" : p.days === 365 ? "1년 · 한 달 약 6,600원" : `한 달 약 ${perMonth(p).toLocaleString()}원`}</small>
                 </span>
               </span>
               <b className="text-[18px] font-black text-sm-navy">{p.price.toLocaleString()}원</b>
@@ -115,7 +115,7 @@ export default function PassSheet({ open, onClose, title, headline, onUnlocked, 
           ))}
         </div>
         <div className="mt-3 rounded-2xl bg-[#F8F9FB] p-3.5">
-          <p className="text-[12.5px] font-bold text-gray-700">이용권 하나로 전부 열려요</p>
+          <p className="text-[12.5px] font-bold text-gray-700">1년 동안 전부 열려요</p>
           <ul className="mt-1.5 grid gap-1">
             {PASS_BENEFITS.map((t) => (
               <li key={t} className="flex items-start gap-2 text-[12.5px] text-gray-600">
@@ -124,7 +124,7 @@ export default function PassSheet({ open, onClose, title, headline, onUnlocked, 
               </li>
             ))}
           </ul>
-          <p className="mt-1.5 text-[11px] text-gray-400">승인된 날부터 기간만큼 · 자동으로 다시 결제되지 않아요</p>
+          <p className="mt-1.5 text-[11px] text-gray-400">승인된 날부터 1년 · 자동으로 다시 결제되지 않아요</p>
         </div>
 
         {err && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-[13px] font-bold text-red-600">{err}</p>}

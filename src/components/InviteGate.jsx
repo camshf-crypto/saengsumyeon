@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { track } from "../lib/track";
 import { refLink } from "../lib/referral";
+import PassSheet from "./PassSheet";
 
 /*
  * 무료 횟수를 다 쓴 회원 — 친구 초대로 추가 횟수 받기 (탐구주제 진단의 친구 초대 화면과 같은 구성)
@@ -12,7 +13,7 @@ import { refLink } from "../lib/referral";
  * reward    : "+2권"  — 친구 1명당 받는 것
  * unit      : "권" | "번"
  * name      : "독서" | "지원동기" — 설명에 들어가는 진단 이름
- * weekly    : 일주일 무료 수 (2)
+ * weekly    : 일주일 무료 수 (2) · 1년 이용권이면 무제한 (아래 이용권 버튼)
  * shareText : 친구에게 보낼 문구 (링크 앞에 붙는다)
  * bonusTable: 받은 보상을 세는 표 ("reading_bonus" | "motive_bonus")
  * nextOpen  : 다음 무료 1회가 열리는 시각 (ISO)
@@ -29,6 +30,7 @@ export default function InviteGate({ title, question, reward, unit = "번", name
   const [info, setInfo] = useState(null); // { my_code, invited_count }
   const [rewarded, setRewarded] = useState(0); // 이 진단으로 보상 받은 친구 수
   const [msg, setMsg] = useState("");
+  const [buy, setBuy] = useState(false); // 1년 이용권 결제 창
 
   useEffect(() => {
     supabase.rpc("get_my_referral").then(({ data, error }) => {
@@ -81,7 +83,14 @@ export default function InviteGate({ title, question, reward, unit = "번", name
         기다리면 <b className="text-gray-500">{openDay(nextOpen) || "일주일 뒤"}</b>에 1{unit}이 다시 열려요.
       </p>
 
+      <button
+        onClick={() => { track("invite_gate_pass", name); setBuy(true); }}
+        className="mt-6 h-12 w-full rounded-xl bg-sm-navy text-[14.5px] font-extrabold text-white"
+      >
+        1년 이용권으로 무제한 진단하기
+      </button>
       <button onClick={onHome} className="mt-5 text-[13.5px] text-gray-400 underline">처음으로</button>
+      <PassSheet open={buy} title={`${name} 흔한가 진단`} headline={title} onClose={() => setBuy(false)} onUnlocked={() => { setBuy(false); onHome?.(); }} />
     </div>
   );
 }

@@ -95,7 +95,7 @@ function Notice({ topic, title, body, note, action }) {
 }
 
 /*
- * 회원이 하루 3회를 다 썼을 때 — 친구 추천으로 +3회 받기
+ * 회원이 하루 2회를 다 썼을 때 — 친구 추천으로 +3회 받기
  * (추가권이 있으면 서버가 그냥 진단해주므로, 이 화면은 추가권이 없을 때만 뜬다)
  */
 function ShareGate({ topic, onHome }) {
@@ -159,7 +159,7 @@ function ShareGate({ topic, onHome }) {
           {topic && <p className="rs-topic">{topic}</p>}
 
           <div className="rounded-2xl border border-gray-200 bg-white px-6 py-8 text-center">
-            <p className="text-[18px] font-extrabold text-sm-navy">오늘 무료 진단 3번을 모두 사용했어요</p>
+            <p className="text-[18px] font-extrabold text-sm-navy">오늘 무료 진단 2번을 모두 사용했어요</p>
             <p className="mt-2 text-[14px] leading-relaxed text-gray-600">
               한 번 더 확인해보고 싶은 탐구주제가 있나요?
               <br />
@@ -188,7 +188,7 @@ function ShareGate({ topic, onHome }) {
             <p className="mt-4 text-[12px] leading-relaxed text-gray-400">
               친구가 링크로 들어와 새로 가입하고 진단 1번을 마치면 추가권이 들어와요.
               <br />
-              추가권은 기한 없이 쌓이고, 하루 무료 3번을 다 쓴 뒤에 사용돼요.
+              추가권은 기한 없이 쌓이고, 하루 무료 2번을 다 쓴 뒤에 사용돼요.
             </p>
 
             <button onClick={onHome} className="mt-5 text-[13px] text-gray-400 underline">
@@ -243,7 +243,7 @@ function InquiryStart({ input, suggestion }) {
       </button>
       {/* 새 서비스 안내 때문에 진단이 유료가 되는 걸로 오해하지 않게 */}
       <p className="mt-3 text-[12px] text-indigo-200">
-        탐구주제 진단은 지금처럼 <b className="text-white">하루 3번 무료</b>예요.
+        탐구주제 진단은 지금처럼 <b className="text-white">하루 2번 무료</b>예요.
       </p>
     </div>
   );
@@ -449,7 +449,7 @@ export default function Result() {
         body={
           member
             ? `하루 ${data.daily_limit ?? 3}번까지 진단할 수 있어요. 내일 다시 확인해 주세요.`
-            : "회원가입하면 하루 3번까지 진단할 수 있어요. 이유와 제안 주제도 함께 볼 수 있고요."
+            : "회원가입하면 하루 2번까지 진단할 수 있어요. 이유와 제안 주제도 함께 볼 수 있고요."
         }
         note="이미 진단한 주제는 횟수와 상관없이 다시 볼 수 있어요"
         action={

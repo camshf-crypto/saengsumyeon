@@ -42,6 +42,7 @@ import NoteRoadmap from "./pages/note/NoteRoadmap";
 import Study from "./pages/study/Study";
 import Tail from "./pages/tail/Tail";
 import Agent from "./pages/agent/Agent";
+import Pricing from "./pages/pricing/Pricing";
 import Prep from "./pages/prep/Prep";
 import Plan from "./pages/plan/Plan";
 import Advertise from "./pages/ads/Advertise";
@@ -180,6 +181,8 @@ export default function App() {
             <Route path="/tail" element={<Tail />} />
             {/* 입시 상담 AI */}
             <Route path="/agent" element={<Agent />} />
+            {/* 요금제 — 무료 vs 1년 이용권 (업그레이드 팝업의 [요금제 보기]가 여기로) */}
+            <Route path="/pricing" element={<Pricing />} />
             <Route path="/prep" element={<Prep />} />
             {/* 내 입시 플랜 — 학년별 계획 · 이번 주 할 일 체크 */}
             <Route path="/plan" element={<Plan />} />

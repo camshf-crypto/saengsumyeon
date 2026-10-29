@@ -572,14 +572,16 @@ export default function InquiryResult() {
       .then(() => nav(`/inquiry/${id}/report`));
   }
 
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(null);
   useEffect(() => {
     // 관리자 또는 이용권이면 결제 없이 연다
     if (user) Promise.all([supabase.rpc("is_admin"), hasPass()]).then(([{ data }, pass]) => setIsAdmin(Boolean(data) || pass));
   }, [user]);
-  // 무료 체험 탐구인지 — 2단계에서 학생이 무료 체험을 쓰기로 한 탐구 (보고서 디자인까지 무료, PDF 저장만 이용권)
+  // 무료 체험 탐구인지 — 2단계에서 학생이 무료 체험을 쓰기로 한 탐구 (탐구 준비까지만 무료)
   const free = inq ? Boolean(inq.free_trial) : null;
-  const locked = inq && !inq.paid && !isAdmin && free === false; // 무료 체험 탐구는 열어 둔다
+  // 결과 분석 · 보고서는 이용권(또는 예전에 결제한 탐구)만 — 무료 체험은 탐구 준비까지 (isAdmin 이 null 이면 아직 확인 중)
+  const oldTrial = Boolean(inq?.free_trial) && String(inq?.created_at) < "2026-10-29T15:00:00Z"; // 바꾸기 전에 시작한 무료 체험은 끝까지 열어 둔다
+  const locked = inq && !inq.paid && !oldTrial && isAdmin === false;
 
   // 3단계에 들어오면 AI가 바로 결과를 정리한다 (한 번만)
   //  - 문헌·사례·데이터: 2단계에서 고른 자료를 읽고 비교표를 채운다 (비교표가 비어 있을 때만 — 학생이 채운 칸은 덮어쓰지 않음)
@@ -588,7 +590,7 @@ export default function InquiryResult() {
   const autoFilled = useRef(false);
   useEffect(() => {
     if (!inq || !data || autoFilled.current || busy) return;
-    if (!(inq.paid || isAdmin || free === true)) return; // 무료 체험 확인 전이거나 이용권이 필요한 탐구면 기다린다
+    if (!(inq.paid || isAdmin || oldTrial)) return; // 이용권 확인 전이거나 이용권이 필요한 탐구면 기다린다
     autoFilled.current = true;
     if (!inq.analysis_mode) {
       track("analyze_ai", inq.method);

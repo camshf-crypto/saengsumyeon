@@ -344,6 +344,7 @@ async function readViaSearch(x: any, cols: string[]) {
 }
 
 /* 결제 막기 — 유료 기능은 결제된(이용권으로 연) 탐구만. 관리자는 통과 */
+const OLD_TRIAL_BEFORE = "2026-10-29T15:00:00Z"; // 이 시각 전에 시작한 무료 체험 탐구는 예전처럼 보고서 디자인까지 무료
 const PAYWALL = { error: "이용권이 필요해요. 결제하면 바로 열려요.", paywall: true };
 
 /* 방법 추천 + 그 방법의 탐구팩 */
@@ -400,10 +401,14 @@ Deno.serve(async (req) => {
 
     // 쓸 수 있는 탐구인지 — 결제된 탐구, 관리자, 또는 무료 체험 탐구
     // 무료 체험 = 학생이 2단계에서 "무료 체험 1건을 사용할게요"를 누른 탐구 1건 (free_trial)
-    //           → AI 자료 찾기부터 보고서 디자인까지 무료 (PDF 저장만 이용권, 화면에서 막음)
+    //           → 탐구 준비(탐구팩 · AI 자료 찾기)까지 무료. 결과 분석 · 보고서 · PDF 는 이용권
     async function usable(inq: any) {
       return Boolean(inq.paid || admin_ok || (inq.free_trial && inq.pack));
     }
+    // 결과 분석 · 보고서 — 이용권(또는 예전에 결제한 탐구)만. 무료 체험은 탐구 준비(주제·방법·자료)까지
+    //   (바꾸기 전에 이미 시작한 무료 체험 탐구는 약속대로 끝까지 열어 둔다)
+    const paidOpen = (inq: any) => Boolean(inq.paid || admin_ok || (inq.free_trial && String(inq.created_at) < OLD_TRIAL_BEFORE));
+    const STAGE_WALL = { ...PAYWALL, error: "무료는 탐구 준비까지예요. 결과 분석과 보고서는 1년 이용권으로 열려요." };
     // 이 학생이 무료 체험을 이미 다른 탐구에 썼는지
     async function trialUsedElsewhere(inqId: string | null) {
       let q = admin.from("inquiries").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("free_trial", true);
@@ -620,7 +625,7 @@ Deno.serve(async (req) => {
         .from("inquiries").select("*").eq("id", body.inquiry_id).eq("user_id", user.id).maybeSingle();
       if (!inq) return json({ error: "탐구를 찾지 못했어요." }, 404);
       // 학생이 '보고서에 쓰기'로 고른 자료만 읽는다
-      if (!(await usable(inq))) return json(PAYWALL, 402);
+      if (!paidOpen(inq)) return json(STAGE_WALL, 402); // 결과 분석·보고서는 이용권 (무료는 탐구 준비까지)
       const list = (inq.sources?.list ?? []).filter((x: any) => x.selected && x.url).slice(0, 6);
       if (!list.length) return json({ error: "보고서에 쓸 자료를 2단계에서 먼저 골라 주세요." }, 400);
 
@@ -704,7 +709,7 @@ ${readable
       const { data: inq } = await admin
         .from("inquiries").select("*").eq("id", body.inquiry_id).eq("user_id", user.id).maybeSingle();
       if (!inq?.results?.data) return json({ error: "비교표를 찾지 못했어요." }, 404);
-      if (!(await usable(inq))) return json(PAYWALL, 402);
+      if (!paidOpen(inq)) return json(STAGE_WALL, 402); // 결과 분석·보고서는 이용권 (무료는 탐구 준비까지)
       const d = inq.results.data;
       const i = Number(body.index);
       const text = String(body.text ?? "").slice(0, 8000);
@@ -739,7 +744,7 @@ ${readable
       const { data: inq } = await admin
         .from("inquiries").select("*").eq("id", body.inquiry_id).eq("user_id", user.id).maybeSingle();
       if (!inq) return json({ error: "탐구를 찾지 못했어요." }, 404);
-      if (!(await usable(inq))) return json(PAYWALL, 402);
+      if (!paidOpen(inq)) return json(STAGE_WALL, 402); // 결과 분석·보고서는 이용권 (무료는 탐구 준비까지)
       const r = inq.results ?? {};
       if (!r.memory?.l1) return json({ error: "3단계에서 기억 문장을 먼저 정해 주세요." }, 400);
 
@@ -810,7 +815,7 @@ AI 분석: ${JSON.stringify(r.ai ?? {}).slice(0, 1200)}
         .from("inquiries").select("*").eq("id", body.inquiry_id).eq("user_id", user.id).maybeSingle();
       if (!inq) return json({ error: "탐구를 찾지 못했어요." }, 404);
 
-      if (!(await usable(inq))) return json(PAYWALL, 402);
+      if (!paidOpen(inq)) return json(STAGE_WALL, 402); // 결과 분석·보고서는 이용권 (무료는 탐구 준비까지)
       const data = body.data; // 학생이 입력한 결과 (표·설문 집계)
       if (!data) return json({ error: "결과를 먼저 입력해 주세요." }, 400);
 

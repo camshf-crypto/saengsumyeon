@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/AuthContext";
 import { track } from "../../lib/track";
+import { hasPass } from "../../lib/pass";
 import { getClientId } from "../../lib/clientId";
 import { UNIVERSITIES, DEPARTMENTS } from "../motive/Motive";
 import InterviewPay from "./InterviewPay";
@@ -16,7 +17,7 @@ import { StudyView } from "../prep/Prep";
  *   회원: 전부 보이고 + [전체 열기] 결제
  * 결제 후: 질문 만들기는 서버가 뒤에서 돌린다 — job 번호를 받아 3초마다 확인 (다른 화면에 다녀와도 이어서 기다린다)
  * 결제 후: 가이드 PDF(Supabase 비공개 버킷 guides — 서버가 10분짜리 링크를 준다)로 생기부를 ChatGPT에 넣어 엑셀로 정리 → 엑셀 올리기(화면에서 바로 읽음) → 활동마다 질문 1개
- *   결제 = 24,000원 (InterviewPay · 상품 interview6) — 대학 6곳까지, 대학마다 질문 따로 · 이용권(12,900원)으로는 안 열림
+ *   결제 = 24,000원 (InterviewPay · 상품 interview6) 또는 1년 이용권 — 대학 6곳까지, 대학마다 질문 따로
  *   (예전 1곳 상품 19,000원을 산 학생은 그대로 쓴다)
  * 나온 질문을 누르면 기출문제와 같은 5단계 학습 (prep/Prep.jsx 의 StudyView — 답변 → AI 피드백 → 2차 → 최종 → 꼬리질문)
  *   결제한 학생만 · 답은 prep_answers 에 저장되어 수시 면접 준비(/prep)의 '예상' 문제와 같이 보인다
@@ -492,9 +493,10 @@ export default function Interview() {
         supabase.from("interview_access").select("user_id").maybeSingle(),
         supabase.rpc("is_admin"),
         supabase.from("interview_queries").select("result").eq("preview", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-      ]).then(([a, b, prev]) => {
+        hasPass(),
+      ]).then(([a, b, prev, pass]) => {
         if (!alive) return;
-        const p = Boolean(a.data) || Boolean(b.data); // 24,000원 결제(또는 관리자)만 — 이용권으로는 안 열림
+        const p = Boolean(a.data) || Boolean(b.data) || pass; // 예상질문 결제 · 1년 이용권 · 관리자
         setPaid(p);
         setIsAdmin(Boolean(b.data));
         if (p) {

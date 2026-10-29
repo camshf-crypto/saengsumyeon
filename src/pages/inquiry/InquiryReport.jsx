@@ -808,14 +808,16 @@ export default function InquiryReport() {
     window.print();
   }
 
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(null);
   useEffect(() => {
     // 관리자 또는 이용권이면 결제 없이 연다
     if (user) Promise.all([supabase.rpc("is_admin"), hasPass()]).then(([{ data }, pass]) => setIsAdmin(Boolean(data) || pass));
   }, [user]);
-  // 무료 체험 탐구인지 — 2단계에서 학생이 무료 체험을 쓰기로 한 탐구 (보고서 디자인까지 무료, PDF 저장만 이용권)
+  // 무료 체험 탐구인지 — 2단계에서 학생이 무료 체험을 쓰기로 한 탐구 (탐구 준비까지만 무료)
   const free = inq ? Boolean(inq.free_trial) : null;
-  const locked = inq && !inq.paid && !isAdmin && free === false; // 무료 체험이 아닌 미결제 탐구는 화면부터 막는다
+  // 결과 분석 · 보고서는 이용권(또는 예전에 결제한 탐구)만 — 무료 체험은 탐구 준비까지 (isAdmin 이 null 이면 아직 확인 중)
+  const oldTrial = Boolean(inq?.free_trial) && String(inq?.created_at) < "2026-10-29T15:00:00Z"; // 바꾸기 전에 시작한 무료 체험은 끝까지 열어 둔다
+  const locked = inq && !inq.paid && !oldTrial && isAdmin === false;
   const [pdfWall, setPdfWall] = useState(false); // PDF 저장을 눌렀을 때 결제 창
 
   if (authLoading) return <div className="py-40 text-center text-gray-400">불러오는 중…</div>;
@@ -864,7 +866,7 @@ export default function InquiryReport() {
             {inq.format_mode === "free" && (
               <button onClick={() => setPicking(true)} className="h-9 rounded-lg border border-gray-300 px-3 text-[13px] font-bold text-sm-navy">디자인 바꾸기</button>
             )}
-            {free && !inq.paid && !isAdmin && (
+            {oldTrial && !inq.paid && isAdmin === false && (
               <span className="rounded-full bg-orange-50 px-2.5 py-1 text-[12px] font-bold text-sm-orange">무료 체험 중 · PDF 저장은 이용권</span>
             )}
             <button onClick={print} className="h-9 rounded-lg bg-sm-navy px-4 text-[13px] font-bold text-white">PDF로 저장</button>

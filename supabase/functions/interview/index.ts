@@ -25,6 +25,7 @@
 // 활동은 record_activities에 한 줄씩, 뽑은 결과는 interview_queries에 저장한다 (학생 동의 후)
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { hasPass } from "../_shared/pass.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -340,8 +341,16 @@ function todayStartKST() {
 }
 
 /* 결제 상품 — 승인된 주문 중 6곳 상품이 하나라도 있으면 six, 아니면 one (관리자는 six) */
+/* 예상질문을 쓸 수 있나 — 예상질문 결제(interview_access) 또는 1년 이용권 */
+async function accessOf(admin: any, userId: string) {
+  const { data } = await admin.from("interview_access").select("user_id").eq("user_id", userId).maybeSingle();
+  if (data) return { data };
+  return { data: (await hasPass(admin, userId)) ? { user_id: userId, pass: true } : null };
+}
+
 async function planOf(admin: any, userId: string, isAdmin: boolean) {
   if (isAdmin) return "six";
+  if (await hasPass(admin, userId)) return "six"; // 1년 이용권 = 6곳
   const { data } = await admin
     .from("pay_orders").select("product").eq("user_id", userId).eq("status", "approved").in("product", ["interview", "interview6"]);
   return (data ?? []).some((o: any) => o.product === "interview6") ? "six" : "one";
@@ -522,7 +531,7 @@ Deno.serve(async (req) => {
     if (body.action === "status") {
       if (!user) return json({ paid: false });
       const { data: adm } = await admin.from("admins").select("user_id").eq("user_id", user.id).maybeSingle();
-      const { data: acc } = adm ? { data: true } : await admin.from("interview_access").select("user_id").eq("user_id", user.id).maybeSingle();
+      const { data: acc } = adm ? { data: true } : await accessOf(admin, user.id);
       if (!acc) return json({ paid: false });
       const plan = await planOf(admin, user.id, Boolean(adm));
       const used = await usedUnivs(admin, user.id);
@@ -533,7 +542,7 @@ Deno.serve(async (req) => {
     if (body.action === "guide") {
       if (!user) return json({ error: "로그인이 필요해요.", login: true }, 401);
       const { data: adm } = await admin.from("admins").select("user_id").eq("user_id", user.id).maybeSingle();
-      const { data: acc } = adm ? { data: true } : await admin.from("interview_access").select("user_id").eq("user_id", user.id).maybeSingle();
+      const { data: acc } = adm ? { data: true } : await accessOf(admin, user.id);
       if (!acc) return json({ error: "결제 후 받을 수 있어요.", paywall: true }, 402);
       const { data: signed, error: sErr } = await admin.storage.from(GUIDE_BUCKET).createSignedUrl(GUIDE_FILE, 600, { download: GUIDE_NAME });
       if (sErr || !signed?.signedUrl) {
@@ -589,10 +598,12 @@ Deno.serve(async (req) => {
 
     // 결제 여부 (관리자는 결제한 것으로)
     const { data: adminRow } = user ? await admin.from("admins").select("user_id").eq("user_id", user.id).maybeSingle() : { data: null };
-    const { data: access } = !user ? { data: null } : adminRow ? { data: true } : await admin.from("interview_access").select("user_id").eq("user_id", user.id).maybeSingle();
+    const { data: access } = !user ? { data: null } : adminRow ? { data: true } : await accessOf(admin, user.id);
     const paid = Boolean(access);
 
     if (!paid && mode === "full") return json({ error: "생기부 예상질문을 결제하면 이용할 수 있어요.", paywall: true }, 402);
+    // 생기부 예상질문은 1년 이용권(또는 예상질문 결제) 전용 — 무료 맛보기 없음 (물꼬 채팅은 agent 에서 이용권을 먼저 확인)
+    if (!paid && !viaAgent) return json({ error: "생기부 예상질문은 1년 이용권 전용이에요.", paywall: true }, user ? 402 : 401);
 
     if (!paid && !viaAgent) {
       // 결제 전 무료 질문 — 계정 1번 + 기기(브라우저) 1번. 둘 중 하나라도 이미 썼으면 새로 뽑지 않는다 (AI 비용 0)

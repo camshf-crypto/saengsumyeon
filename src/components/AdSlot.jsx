@@ -14,6 +14,10 @@ import { getClientId } from "../lib/clientId";
  * 화면에 절반 이상 보이면 '노출', 누르면 '클릭'을 남긴다 (서버가 하루·기기당 1번만 센다)
  * 맨 위: 광고가 없으면 칸 자체가 안 보인다
  * 오른쪽: 광고가 있는 만큼 + 자리가 남으면 맨 아래 '광고 문의' 칸 하나 → /advertise
+ *
+ *   <AdSlot slot="home_top" variant="card" pick={n} onHide={…} />
+ *       물꼬 채팅 답 아래 — 대화 속 카드 모양 (배너 + 업체명 · '광고' 표시 · ⋯ 메뉴)
+ *       맨 위 배너 광고를 같이 쓴다 · pick 으로 답마다 다른 업체가 나온다
  */
 const imgUrl = (path) => supabase.storage.from("ads").getPublicUrl(path).data.publicUrl;
 // .then 을 붙여야 서버로 실제로 보내진다 (안 붙이면 요청이 만들어지기만 하고 안 나간다)
@@ -55,6 +59,48 @@ function Banner({ ad, ratio, className = "" }) {
   );
 }
 
+/* 채팅 속 광고 카드 — 배너 + 업체명 · 광고 · ⋯ (보이면 노출 1번 · 누르면 클릭) */
+function ChatCard({ ad, className = "", onHide }) {
+  const box = useRef(null);
+  const [menu, setMenu] = useState(false);
+  useEffect(() => {
+    if (!box.current) return;
+    let done = false;
+    const io = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting && !done) { done = true; track(ad.id, "view"); io.disconnect(); }
+    }, { threshold: 0.5 });
+    io.observe(box.current);
+    return () => io.disconnect();
+  }, [ad.id]);
+
+  return (
+    <div ref={box} className={`relative w-full min-w-0 ${className}`}>
+      <a href={ad.link_url} target="_blank" rel="sponsored noopener noreferrer" onClick={() => track(ad.id, "click")}
+        className="block overflow-hidden rounded-2xl bg-white ring-1 ring-black/10 transition hover:ring-black/20">
+        <div className="relative w-full bg-gray-100" style={{ aspectRatio: "5 / 1" }}>
+          <img src={imgUrl(ad.image_path)} alt={ad.title || ad.advertiser || "광고"} loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
+        </div>
+        <div className="flex items-start gap-2 px-3.5 py-2.5 pr-11">
+          <div className="min-w-0 flex-1">
+            {ad.advertiser && <p className="truncate text-[12px] font-semibold text-gray-500">{ad.advertiser}</p>}
+            {ad.title && <p className="line-clamp-2 text-[14.5px] font-extrabold leading-snug text-gray-900">{ad.title}</p>}
+          </div>
+          <span className="mt-0.5 shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-bold text-gray-500">광고</span>
+        </div>
+      </a>
+      {/* ⋯ 메뉴 — 광고 없이 쓰기 · 광고 문의 */}
+      <button type="button" aria-label="광고 메뉴" onClick={() => setMenu((v) => !v)}
+        className="absolute bottom-2 right-2 flex h-7 w-7 items-center justify-center rounded-full text-[16px] font-black leading-none text-gray-400 hover:bg-gray-100">⋯</button>
+      {menu && (
+        <div className="absolute bottom-10 right-2 z-10 w-44 overflow-hidden rounded-xl bg-white text-[13px] shadow-lg ring-1 ring-black/10">
+          {onHide && <button type="button" onClick={() => { setMenu(false); onHide(); }} className="block w-full px-3.5 py-2.5 text-left font-bold text-gray-800 hover:bg-gray-50">광고 없이 쓰기</button>}
+          <Link to="/advertise" className="block px-3.5 py-2.5 font-bold text-gray-800 hover:bg-gray-50">광고 문의</Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* 맨 위 배너 — 5초마다 다음 업체로 (마우스를 올리면 멈춤) */
 function TopRotator({ ads, className }) {
   const [i, setI] = useState(0);
@@ -93,7 +139,7 @@ function EmptySlot() {
   );
 }
 
-export default function AdSlot({ slot = "home_right", className = "" }) {
+export default function AdSlot({ slot = "home_right", className = "", variant = "", pick = 0, onHide }) {
   const [ads, setAds] = useState(null);
 
   useEffect(() => {
@@ -103,6 +149,9 @@ export default function AdSlot({ slot = "home_right", className = "" }) {
   }, [slot]);
 
   if (ads === null) return null; // 불러오는 중
+
+  // 채팅 속 카드 — 업체 하나 (pick 으로 돌아가며)
+  if (variant === "card") return ads.length ? <ChatCard ad={ads[Math.abs(pick) % Math.min(ads.length, 3)]} className={className} onHide={onHide} /> : null;
 
   // 메인 맨 위 — 배너 1개, 업체 3곳이 돌아가며 (없으면 안 보임)
   if (slot === "home_top") return ads.length ? <TopRotator ads={ads.slice(0, 3)} className={className} /> : null;

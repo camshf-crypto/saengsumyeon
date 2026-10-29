@@ -171,7 +171,7 @@ function Locked({ n, what, next = "고2" }) {
   );
 }
 
-/* 고2 로드맵 — 생수면 이용권(12,900원부터)으로 열린다 (components/PassSheet)
+/* 고2 로드맵 — 생수면 1년 이용권(79,000원)으로 열린다 (components/PassSheet)
  * 예전에 로드맵만 따로 산 학생(note_roadmap_access)도 그대로 열린다 · 이용권이 승인되는 순간 저절로 로드맵 화면으로 */
 function Roadmap({ main, next = "고2" }) {
   const g3 = next === "고3";
@@ -268,7 +268,7 @@ function Roadmap({ main, next = "고2" }) {
         <div className="mt-4">
           <span className="rounded bg-orange-400 px-1.5 py-0.5 text-[11px] font-bold text-sm-navy">생수면 이용권</span>
           <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2">
-            <b className="text-[24px] font-black">{PASS_PRICE.toLocaleString()}원부터</b>
+            <b className="text-[24px] font-black">1년 {PASS_PRICE.toLocaleString()}원</b>
             <span className="text-[12px] text-slate-300">로드맵 + 예상질문 · 꼬리질문 · 물꼬 입시 AI까지 전부</span>
           </div>
         </div>

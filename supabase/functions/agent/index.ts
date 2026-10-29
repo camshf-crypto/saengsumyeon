@@ -26,8 +26,11 @@ const json = (body: unknown, status = 200) =>
 
 const MODEL = "gpt-5-mini"; // 답이 아쉬우면 "gpt-5" (질문 1개당 비용 약 4~5배)
 const KRW = 1400; // 달러 → 원
-const FREE_WON = 200; // 무료 회원 주간 한도 (보통 질문 약 7~10개)
-const FRIEND_WON = 150; // 친구 1명이 내 링크로 가입할 때마다 늘어나는 주간 한도 (질문 약 5개)
+const FREE_WON = 100; // 무료 처음 맛보기 — 한 번 (무거운 질문 약 8개)
+const FREE_DAILY_WON = 60; // 맛보기를 다 쓴 다음부터 매일 새벽 5시(한국)에 다시 채워지는 양 (무거운 질문 약 5개)
+const FREE_RESET_HOUR = 5; // 하루가 바뀌는 시각 — 학원 끝나고 밤늦게 공부하는 학생이 자정에 두 번 받지 않게 새벽 5시
+const FREE_FROM = "2026-10-26T15:00:00Z"; // 이때(한국 10/27 0시)부터 쓴 것을 센다 — 그 전에 쓴 건 안 셈
+const FRIEND_WON = 75; // 친구 1명이 내 링크로 가입할 때마다 늘어나는 주간 한도 (2026-10-29 절반 · 150 → 75)
 const FRIEND_MAX = 4; // 친구 보너스는 4명까지
 const PAID_WON = 3000; // 이용권 주간 한도 (보통 질문 약 100개 — 사실상 무제한, 과다 사용만 막음)
 const MAX_ROUNDS = 6; // 한 질문에 DB 찾기 최대 횟수
@@ -380,6 +383,13 @@ const TOOLS = [
   },
 ];
 
+/* 1년 이용권 또는 관리자인가 — 이용권 전용 기능(예상질문 · 꼬리질문 · 기출 피드백) 확인용 */
+async function passOrAdmin(db: any, userId: string) {
+  if (await passUntil(db, userId)) return true;
+  const { data } = await db.from("admins").select("user_id").eq("user_id", userId).maybeSingle();
+  return Boolean(data);
+}
+
 /* 생수면의 다른 서버 기능(진단)을 학생 로그인 그대로 부른다 */
 async function callFn(fn: string, body: unknown, token: string, pass = false) {
   const res = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/${fn}`, {
@@ -426,7 +436,7 @@ function formatCheck(kind: string, r: any, args: any) {
       if (r.how) L.push(`어떻게: ${clean(r.how, 300)}`);
     }
     if (!args?.__paid && r.today_left !== null && r.today_left !== undefined) {
-      L.push("", `오늘 남은 탐구주제 흔한가: ${r.today_left}번${r.bonus_left ? ` · 친구 초대로 받은 추가 ${r.bonus_left}번` : ""}`);
+      L.push("", `오늘 남은 탐구주제 흔한가: ${r.today_left}번${r.bonus_left ? ` · 추가 ${r.bonus_left}번` : ""}`);
     }
   } else if (kind === "motive") {
     const u = r.univ;
@@ -492,6 +502,7 @@ async function runTool(db: any, userId: string, name: string, args: any, token =
   if (name === "propose_action") return proposeAction(db, userId, args);
   if (name === "find_seniors") return findSeniors(db, args);
   if (name === "interview_questions") {
+    if (!(await passOrAdmin(db, userId))) return { paywall: true, note: "생기부 예상질문은 1년 이용권 전용이에요. 질문을 지어내지 말고, 이용권이면 대학 6곳 예상질문을 받을 수 있다고 짧게 안내한 뒤 답 끝에 [[이용권]]을 붙인다" };
     let acts = (Array.isArray(args?.activities) ? args.activities : [])
       .map((a: any) => ({ subject: clean(a?.subject, 30), content: String(a?.content ?? "").replace(/\s+/g, " ").trim().slice(0, 600) }))
       .filter((a: any) => a.content.length >= 5);
@@ -522,10 +533,11 @@ async function runTool(db: any, userId: string, name: string, args: any, token =
       university: res.university, department: res.department, has_univ_data: res.has_univ_data,
       groups: (res.groups ?? []).map((g: any) => ({ title: g.title, questions: g.questions })),
       used_activities: activities.map((a: any) => `${a.subject || ""} ${clean(a.content, 60)}`.trim()),
-      note: "채팅에서는 활동 4개까지 써요. 생기부 전체 활동으로 대학 6곳 질문과 PDF까지 받으려면 생기부 예상질문 화면(24,000원 · 질문마다 답변 피드백·꼬리질문 연습까지)에서 해요",
+      note: "채팅에서는 활동 4개까지 써요. 생기부 전체 활동으로 대학 6곳 질문과 PDF까지 받으려면 생기부 예상질문 화면(/interview)에서 해요",
     };
   }
   if (name === "tail_practice") {
+    if (!(await passOrAdmin(db, userId))) return { paywall: true, note: "꼬리질문 연습은 1년 이용권 전용이에요. 꼬리질문을 지어내지 말고, 이용권이면 무제한으로 연습할 수 있다고 짧게 안내한 뒤 답 끝에 [[이용권]]을 붙인다" };
     const answer = String(args?.answer ?? "").trim().slice(0, 1200);
     let body: any;
     if (args?.action === "next") {
@@ -789,6 +801,16 @@ async function gradeOf(db: any, userId: string, meta: any = {}) {
   return /N수|재수|졸업/.test(raw) ? "N수" : g ? `고${g}` : "";
 }
 const YEAR_OF: Record<string, number> = { 고1: 2029, 고2: 2028, 고3: 2027, N수: 2027 };
+/* ───────── 학년 달력 — 학년 · 달마다 지금 할 일 (물꼬가 먼저 꺼내는 이야기 · 화면 Agent.jsx SEASON 과 같은 내용) */
+const SEASON: Record<string, Record<string, string>> = {
+  고1: { "1-2": "희망 계열 찾기 · 입문 독서", "3": "고1 로드맵 · 동아리 고르기", "4-5": "첫 수행평가 완성 (주제 → 채점 기준 맞춰 결과물까지)", "6-7": "1학기 활동을 생기부 노트에 기록 · 기말 공부법", "8": "방학 독서 + 탐구 보고서 하나 완성", "9": "2학기 탐구 주제 → 탐구 보고서 완성", "10-11": "2학기 수행평가 완성 · 중간 공부법", "12": "1년 기록 정리 → 고2 계획 · 기말 공부법" },
+  고2: { "1-2": "고1 기록 정리 → 고2 탐구 방향", "3": "선택과목과 희망 학과 맞추기", "4-5": "세특 탐구 주제 → 탐구 보고서 완성 · 수행평가 완성", "6-7": "1학기 기록 + 심화 탐구 이어 가기 · 기말 공부법", "8": "심화 탐구 보고서 완성 · 독서 (고2 여름이 핵심)", "9": "2학기 세특 탐구 보고서 완성 · 수행평가 완성", "10-11": "진로와 이어지는 탐구 보고서 마무리 · 중간 공부법", "12": "1년 기록 정리 → 고3 계획 · 기말 공부법" },
+  고3: { "1-2": "생기부 점검 · 지원 대학 후보 (입결)", "3": "생기부 예상질문으로 내 생기부 점검", "4-5": "마지막 수행평가 · 탐구 보고서 완성 · 수시 지원 전략", "6-7": "수시 6장 정하기 (입결 · 전형)", "8": "지원 동기 정리 · 면접 준비 시작", "9": "원서 접수 · 대학별 면접 스타일", "10-11": "면접 예상질문 · 꼬리질문 연습 · 수능", "12": "면접 · 정시 입결" },
+};
+function seasonOf(g: string, month: number) {
+  const key = month <= 2 ? "1-2" : month === 3 ? "3" : month <= 5 ? "4-5" : month <= 7 ? "6-7" : month === 8 ? "8" : month === 9 ? "9" : month <= 11 ? "10-11" : "12";
+  return SEASON[g === "N수" ? "고3" : g]?.[key] ?? "";
+}
 
 /* ───────── 학생 정보 (생수면에서 한 것들) — 대화마다 짧게 붙인다 */
 async function studentContext(db: any, userId: string, meta: any = {}) {
@@ -819,6 +841,8 @@ async function studentContext(db: any, userId: string, meta: any = {}) {
     L.push(`[학년 상태] ${gnum ? `고${gnum}` : "학년 모름"} · ${gnum ? `${YEAR_OF[`고${gnum}`]}학년도 입시` : "학년도 모름"}`
       + (prev.length ? ` · 지난 학년(${prev.map((n) => `고${n}`).join("·")}) 생기부 노트 활동 ${prevCnt}개` : "")
       + ` · 지금 학년 활동 ${gnum ? byG(gnum) : 0}개`);
+    const mon = new Date(Date.now() + 9 * 3600000).getUTCMonth() + 1;
+    if (gnum) L.push(`[이번 달 할 일 · 고${gnum} ${mon}월] ${seasonOf(`고${gnum}`, mon)}`);
   }
   const d = diag.data?.result;
   if (d) {
@@ -932,13 +956,13 @@ function systemPrompt(student: string) {
   선배 사례를 지어내지 않는다. found 가 0이면 "아직 이 계열 선배 사례가 없어서 일반 정보로 알려 줄게"라고 나눠 말한다.
 
 [물꼬 입시 AI 이용 안내 — 학생이 사용량·광고·결제를 물으면 이걸로 답한다]
-- 무료 회원: 매주 정해진 사용량(화면 위 '이번 주 사용량 %')을 쓸 수 있고, 매주 월요일 0시에 다시 채워진다. 무료로 받은 답 아래에는 광고가 나온다.
-- 친구가 내 추천 링크로 가입하면 주간 사용량이 늘어난다(4명까지).
-- 생수면 이용권: 요금제는 지금 한 달 12,900원 하나만 판다 (6개월·1년 요금제는 아직 없다고 말한다). 승인된 날부터 그 기간 동안 물꼬 사용량 한도가 크게 늘고 광고가 없다. 면접 꼬리질문(개수 제한 없음), 흔한가 진단(탐구주제는 무료 하루 3번 → 횟수 없이), 생기부 로드맵, 탐구팩도 모두 열린다. 계좌 입금 후 '입금했어요'를 누르면 확인되는 대로 열린다.
+- 무료 회원: 처음 무료 맛보기(화면 위 '무료 사용량 %')를 다 쓰면, 그다음부터는 매일 새벽 5시에 하루치가 조금 다시 채워진다. 마음껏 쓰려면 1년 이용권. 무료로 받은 답 아래에는 광고가 나온다.
+- 물꼬 사용량은 친구 초대로 늘지 않는다. 더 쓰려면 이용권이다.
+- 생수면 이용권: 요금제는 지금 1년 이용권 79,000원(첫해 가격 · 한 달에 약 6,600원) 하나만 판다 (한 달·6개월 요금제는 없다고 말한다). 승인된 날부터 1년 동안 물꼬 사용량 한도가 크게 늘고 광고가 없다. 면접 꼬리질문(개수 제한 없음), 흔한가 진단(탐구주제는 무료 하루 2번 → 횟수 없이), 생기부 로드맵, 탐구팩도 모두 열린다. 계좌 입금 후 '입금했어요'를 누르면 확인되는 대로 열린다.
 - 생기부 예상질문(내 생기부 전체 · 대학 6곳 · PDF · 질문마다 답변 피드백과 꼬리질문 연습)은 이용권과 따로 24,000원 (생기부 예상질문 화면에서 결제).
-- 수시 면접 준비(/prep) 기출문제 학습: 무료는 학교 1곳 · 3문제, 친구 1명이 내 링크로 가입할 때마다 5문제 더. 친구 초대 대신 이용권(한 달 12,900원)이면 학교 6곳까지 기출 무제한, 생기부 예상질문(24,000원)을 사면 기출 무제한 + 예상질문 학습까지.
+- 수시 면접 준비(/prep) 기출문제 학습: 무료는 학교 1곳 · 3문제, 친구 1명이 내 링크로 가입할 때마다 5문제 더. 친구 초대 대신 이용권(1년 79,000원)이면 학교 6곳까지 기출 무제한, 생기부 예상질문(24,000원)을 사면 기출 무제한 + 예상질문 학습까지.
 - 광고를 없애고 싶다는 질문이면 브라우저 광고 차단 방법 같은 바깥 이야기는 하지 말고, 위 이용권을 짧게 안내한 뒤 마지막 줄에 [[이용권]] 을 붙인다 (화면에 결제 버튼이 생긴다).
-- 사용량을 다 썼다는 질문이면 초기화 시각·친구 초대·이용권을 안내하고 마지막 줄에 [[이용권]] 을 붙인다.
+- 사용량을 다 썼다는 질문이면 무료는 새벽 5시에 하루치가 다시 채워진다고 말하고 이용권을 안내하고 (친구 초대는 말하지 않는다 · 이용권 학생은 월요일 0시 초기화) 마지막 줄에 [[이용권]] 을 붙인다.
 
 [지금 입시 시기 — 오늘 날짜에 맞춰 조언한다]
 - 2027학년도(현 고3): 수시 원서접수는 2026년 9월에 이미 끝났다. 수능은 2026년 11월 19일. 그 뒤 수시 면접·논술 고사, 12월 수시 발표, 12월 말~1월 정시 원서접수.
@@ -989,6 +1013,12 @@ function systemPrompt(student: string) {
   · 답할 때 "2026학년도 정시 결과 기준 참고 자료"임을 한 번 밝히고, 확인필요 표시가 있는 학과는 이름이 정확하지 않을 수 있다고 덧붙인다.
 - 입결(합격자 성적)은 일부 대학만 있다. 없으면 없다고 말하고, 합격 가능성을 단정하지 않는다 ("가능성이 있어 보여요" 정도로만, 근거 숫자와 함께).
 - 숫자(인원·등급·비율)는 DB 값을 그대로 쓴다.
+
+[이번 달 할 일 — 학년 달력]
+- [학생 정보]의 [이번 달 할 일]은 이 학년 학생이 이맘때 하면 좋은 일이다. 학생 질문을 막거나 바꾸지 않는다 — 무엇을 물어도 먼저 그 질문에 제대로 답한다.
+- 학생이 "뭐부터 해야 해", "지금 뭐 하면 돼", "막막해"처럼 방향을 물으면 [이번 달 할 일]을 중심으로 답한다.
+- 탐구 · 수행평가 이야기는 주제 고르기에서 끝내지 않는다. 주제 → 흔한가 확인 → 보고서(수행평가 결과물) 완성까지가 한 흐름이다.
+- 다른 질문에 답한 뒤에는, 질문이 이번 달 할 일과 이어질 때만 한 대화에 한 번 끝에 한 줄 붙인다: "참고로 고2 10월이면 지금 ○○ 할 때예요." (매번 붙이지 않는다 · 앞 답에 이미 붙였으면 안 붙인다)
 
 [학년에 맞춰 답하기 — 중요]
 - [학생 정보]의 [학년 상태]를 먼저 본다. 가입 때 고른 학년이 기본이고, 학생이 대화에서 다른 학년을 말하면 그걸 따른다.
@@ -1172,18 +1202,29 @@ function weekWindow() {
 
 /* 이번 주 사용량 — ai_usage 의 agent 비용 합계를 한도와 비교해 % 로 */
 async function usageOf(db: any, userId: string, paid: string | null) {
+  // 이용권: 매주 월요일 0시 초기화
+  // 무료: ① 처음 맛보기 FREE_WON (FREE_FROM 부터 쓴 전체) → ② 맛보기를 어제까지 다 썼으면 매일 FREE_DAILY_WON (한국 새벽 5시 초기화)
   const { start, reset } = weekWindow();
-  const [{ data: rows }, { data: refs }] = await Promise.all([
-    db.from("ai_usage").select("cost_usd").eq("service", "agent").eq("user_id", userId).gte("created_at", start.toISOString()).limit(5000),
-    db.from("referrals").select("referred_user_id").eq("referrer_id", userId).not("referred_user_id", "is", null).limit(100),
-  ]);
-  const usedWon = (rows ?? []).reduce((a: number, r: any) => a + Number(r.cost_usd ?? 0), 0) * KRW;
-  const friends = new Set((refs ?? []).map((r: any) => r.referred_user_id).filter((id: string) => id && id !== userId)).size;
-  const limit = paid ? PAID_WON : FREE_WON + Math.min(friends, FRIEND_MAX) * FRIEND_WON;
-  const pct = Math.min(100, Math.round((usedWon / limit) * 100));
+  const kst = new Date(Date.now() + (9 - FREE_RESET_HOUR) * 3600000); // 한국 시각에서 5시간 빼기 → 새벽 5시가 하루의 시작
+  const today = new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate()) - (9 - FREE_RESET_HOUR) * 3600000); // 오늘(한국 새벽 5시 기준) 시작
+  const tomorrow = new Date(today.getTime() + 86400000);
+  const from = paid ? start.toISOString() : FREE_FROM;
+  const { data: rows } = await db.from("ai_usage").select("cost_usd,created_at").eq("service", "agent").eq("user_id", userId).gte("created_at", from).limit(20000);
+  const won = (list: any[]) => list.reduce((a: number, r: any) => a + Number(r.cost_usd ?? 0), 0) * KRW;
+  if (paid) {
+    const pct = Math.min(100, Math.round((won(rows ?? []) / PAID_WON) * 100));
+    return { pct, reset_at: reset.toISOString(), free_once: false, paid_until: paid, invite: null };
+  }
+  const before = won((rows ?? []).filter((r: any) => new Date(r.created_at) < today)); // 어제까지 쓴 것
+  const daily = before >= FREE_WON; // 맛보기를 어제까지 다 썼으면 오늘부터는 하루치
+  const used = daily ? won((rows ?? []).filter((r: any) => new Date(r.created_at) >= today)) : won(rows ?? []);
+  const limit = daily ? FREE_DAILY_WON : FREE_WON;
+  const pct = Math.min(100, Math.round((used / limit) * 100));
   return {
-    pct, reset_at: reset.toISOString(), paid_until: paid,
-    invite: paid ? null : { friends, max: FRIEND_MAX, plus_pct: Math.round((FRIEND_WON / FREE_WON) * 100) },
+    pct, reset_at: null, paid_until: paid, invite: null,
+    free_once: !daily,                     // 처음 맛보기 중
+    free_daily: daily,                     // 하루치 무료 중
+    free_reset_at: tomorrow.toISOString(), // 다 쓰면 다시 채워지는 때 (맛보기를 오늘 다 써도 내일 0시부터 하루치)
   };
 }
 
@@ -1195,8 +1236,8 @@ async function usageOf(db: any, userId: string, paid: string | null) {
  * 학교: 무료는 처음 AI 피드백을 받은 학교 1곳만 (지웠다 다시 넣어도 그 학교) · 결제하면 6곳까지
  * 생기부 예상질문에서 나온 질문(source interview)은 24,000원 결제(interview_access)한 학생만
  */
-const STUDY_FREE = 3; // AI 피드백 3문제까지 무료 — 그다음은 친구 초대
-const STUDY_PER_FRIEND = 5;
+const STUDY_FREE = 0; // 기출 AI 피드백은 1년 이용권 전용 (무료 문제 없음)
+const STUDY_PER_FRIEND = 0; // 친구 초대로 늘어나는 문제도 없음
 // 학교 이름 맞추기 — "단국대학교(죽전)" · "단국대" 를 같은 학교로
 const ukey = (v: string) => String(v ?? "").replace(/\(.*?\)/g, "").replace(/\s/g, "").replace(/대학교$|대학$/, "대");
 const STUDY_SCHOOLS_FREE = 1; // 무료는 학교 1곳 (처음 AI 피드백을 받은 학교)
@@ -1220,7 +1261,7 @@ async function studyQuota(db: any, userId: string) {
   const limit = unlimited ? 9999 : STUDY_FREE + friends * STUDY_PER_FRIEND;
   return {
     used: used ?? 0, limit, left: Math.max(0, limit - (used ?? 0)), friends, free: STUDY_FREE, per_friend: STUDY_PER_FRIEND,
-    interview_paid: admin || Boolean(acc), unlimited, pass_until: pass,
+    interview_paid: admin || Boolean(acc) || Boolean(pass), unlimited, pass_until: pass, // 1년 이용권이면 예상질문도 열림
     schools, free_university: schools[0] ?? null, school_limit: admin ? 99 : unlimited ? STUDY_SCHOOLS_PAID : STUDY_SCHOOLS_FREE,
   };
 }
@@ -1364,7 +1405,15 @@ async function planFromCard(db: any, user: any, message: string, usage: any, pai
   const grade = (get("학년").match(/고\s*[123]/)?.[0] ?? "").replace(/\s/g, "");
   if (!grade) return `학년을 고1 · 고2 · 고3 중에서 적어 주세요.\n${again}`;
   if (!get("대학") || !get("학과")) return `플랜은 **목표 대학 · 학과**에 맞춰 짜요. 아직 정하지 못했으면 가고 싶은 곳을 하나만 적어도 돼요 (나중에 다시 짤 수 있어요).\n${again}`;
-  if (usage.pct >= 100 && !paid) return "**이번 주 사용량을 다 썼어요.** 월요일 0시에 다시 채워져요.\n\n[[친구초대]]\n[[이용권]]";
+  // 입시 플랜 · 학습 플랜(공부법 도감)은 1년 이용권 전용 — 관리자는 통과
+  const isAdm = Boolean((await db.from("admins").select("user_id").eq("user_id", user.id).maybeSingle()).data);
+  // 무료는 맛보기 1번 — 처음 플랜은 채팅에서 끝까지 보여 준다. 매주 미션 체크 · 다시 짜기 · 학습 다이어리는 이용권
+  const free = !paid && !isAdm;
+  if (free) {
+    const { count: had } = await db.from("study_plans").select("id", { count: "exact", head: true }).eq("user_id", user.id);
+    if ((had ?? 0) > 0) return "**무료 맛보기 플랜은 이미 받았어요.**\n\n플랜을 다시 짜고, 매주 월요일마다 새 미션을 받고, 내 플랜에서 체크하려면 1년 이용권(79,000원 · 한 달 약 6,600원)이 필요해요.\n\n[[이용권]]";
+  }
+  if (usage.pct >= 100 && !paid) return "**오늘 무료 사용량을 다 썼어요.**\n\n새벽 5시에 다시 채워져요. 지금 바로 계속 쓰려면 1년 이용권(79,000원 · 한 달 약 6,600원)으로 물꼬를 무제한 · 광고 없이 쓸 수 있어요.\n\n[[이용권]]";
   const r: any = await makePlan(db, user.id, user.user_metadata ?? {}, { grade, department: get("학과"), did: get("활동"), goal: get("대학"), university: get("대학") });
   if (r.error) return r.error;
   const P = r.row.plan ?? {};
@@ -1374,7 +1423,8 @@ async function planFromCard(db: any, user: any, message: string, usage: any, pai
   if (P.study?.length) { L.push("", "**과목별 공부법**"); P.study.forEach((x: any) => L.push(`- **${x.subject}** · ${x.tip}${x.how?.[0] ? ` — ${x.how[0]}` : ""}`)); }
   if (r.tasks?.length) { L.push("", "**이번 주 미션**"); r.tasks.forEach((t: any) => L.push(`- ${t.title}`)); }
   if (P.semester?.length) { L.push("", "**이번 학기 목표**"); P.semester.forEach((g: string, i: number) => L.push(`${i + 1}. ${g}`)); }
-  L.push("", "아래 버튼을 눌러 내 플랜에 들어가면 미션을 체크할 수 있어요. 플랜은 저장되고, 매주 월요일마다 지난주에 한 걸 보고 새 미션을 드려요.", "", "[[플랜]]");
+  if (free) L.push("", "**여기까지가 무료 맛보기예요.**", "1년 이용권이면 이 플랜이 내 플랜에 저장돼서 미션을 체크하고, 매주 월요일마다 지난주에 한 걸 보고 새 미션을 받아요. 학습 다이어리 · 자기주도학습법도 같이 열려요.", "", "[[이용권]]");
+  else L.push("", "아래 버튼을 눌러 내 플랜에 들어가면 미션을 체크할 수 있어요. 플랜은 저장되고, 매주 월요일마다 지난주에 한 걸 보고 새 미션을 드려요.", "", "[[플랜]]");
   return L.join("\n");
 }
 
@@ -1780,7 +1830,7 @@ function stepLabel(name: string, a: any) {
     case "tail_practice": return a?.action === "next" ? "내 답변 듣고 다음 꼬리질문 만드는 중" : `${u || "대학"} 면접관처럼 꼬리질문 만드는 중`;
     case "check_reading": return `'${clean(a?.title, 20) || "책"}' 독서 흔한가 진단하는 중 (10초쯤 걸려요)`;
     case "find_seniors": return `${TRACK_LABEL[a?.track] ?? ""} 합격 선배 생기부에서 비슷한 사례 찾는 중`;
-    case "propose_action": return a?.kind === "study_test" ? "효과 시험 준비해 둘지 정하는 중" : "면접 준비에 넣을지 정하는 중";
+    case "propose_action": return a?.kind === "study_test" ? "자기주도학습법 시험 준비해 둘지 정하는 중" : "면접 준비에 넣을지 정하는 중";
     default: return "자료 찾는 중";
   }
 }
@@ -1798,6 +1848,8 @@ Deno.serve(async (req) => {
     // 남은 횟수만 묻기
     const paid = await passUntil(db, user.id);
     const usage = await usageOf(db, user.id, paid);
+    // 1년 이용권 전용 기능(공부법 도감 = 입시 플랜 · 학습 플랜 · 학습 다이어리 · 자기주도학습법)을 쓸 수 있나 — 이용권 또는 관리자
+    const passOk = async () => Boolean(paid) || Boolean((await db.from("admins").select("user_id").eq("user_id", user.id).maybeSingle()).data);
     if (body.action === "status") return json({ usage, grade: await gradeOf(db, user.id, user.user_metadata ?? {}).catch(() => "") });
 
     // 면접 준비 화면(/prep) — 대학 하나의 면접 정보 (AI 안 부름 · 사용량 안 씀)
@@ -1946,6 +1998,7 @@ ${answer}`;
     // 학습 다이어리에 넣기 — { action: "routine_save", text: 물꼬가 짠 루틴 답변 } → { count }
     //   답변 글을 루틴 줄(무엇 · 언제 · 몇 분 · 어떻게 · 요일)로 바꿔 plan_routines 에 넣는다 (예전 루틴은 끈다 · 체크 기록은 남김)
     if (body.action === "routine_save") {
+      if (!(await passOk())) return json({ need_pay: true, pass_only: "diary" }); // 학습 다이어리는 1년 이용권 전용
       const text = String(body.text ?? "").replace(/\[\[[^\]]*\]\]/g, "").trim().slice(0, 4000);
       if (text.length < 20) return json({ error: "넣을 루틴이 없어요" }, 400);
       const sys = `학생에게 짜 준 공부 루틴 글을 매일 체크할 루틴 목록으로 바꾼다. JSON만 출력.
@@ -1959,7 +2012,8 @@ ${answer}`;
   · 공부 내용(개념 · 문제 · 오답 · 지문 · 단어 · 기출 · 풀이 · 정리 · 복습)이면 줄에 과목 이름이 없어도 글 전체가 다루는 과목으로 넣는다 (국어 루틴의 '오답·헷갈린 표현 정리'는 국어)
   · 전과목은 기상 · 수면 · 휴식 · 플래너 쓰기처럼 과목과 상관없는 생활 습관에만 쓴다
 - 체크리스트 · 규칙처럼 따로 적힌 것(기상 시간 지켰나 등)도 매일 할 일이면 넣는다
-{"routines":[{"subject":"","title":"","how":"","time_label":"","minutes":0,"days":[1,2,3,4,5]}]}`;
+- unit: 이 루틴이 고치려는 단원 · 약점 하나 (예: "미적분 극한", "비문학 과학 지문"). 글에 없으면 ""
+{"unit":"","routines":[{"subject":"","title":"","how":"","time_label":"","minutes":0,"days":[1,2,3,4,5]}]}`;
       const out = await planAsk(db, user.id, sys, text);
       const list = (Array.isArray(out?.routines) ? out.routines : []).map((r: any, i: number) => ({
         user_id: user.id, subject: SUBJECTS.includes(r?.subject) ? r.subject : "전과목",
@@ -1987,12 +2041,25 @@ ${answer}`;
       list.forEach((r: any, i: number) => { r.sort = base + i; });
       const { error } = await db.from("plan_routines").insert(list);
       if (error) { console.error("routine save", error); return json({ error: "저장하지 못했어요. 잠시 후 다시 해 주세요" }, 500); }
-      return json({ count: list.length });
+      // 다이어리에 넣으면 그 과목 '공부법 효과 시험'도 바로 만든다 (지금 10문제 → 일주일 뒤 비슷한 문제로 비교)
+      //   이미 진행 중인 시험이 있으면 그걸로 · 과목을 모르거나(전과목) 사용량을 다 썼으면 다이어리만
+      let test: any = null;
+      if (main && TEST_SUBJECTS.includes(main)) {
+        const { data: open } = await db.from("study_tests").select("id,unit").eq("user_id", user.id).eq("subject", main).neq("status", "done").maybeSingle();
+        if (open) test = { subject: main, unit: open.unit, already: true };
+        else if (usage.pct < 100) {
+          const unit = clean(out?.unit, 40) || `${main} 기본 개념`;
+          const r: any = await createTest(db, user, main, unit).catch(() => ({ error: "x" }));
+          if (!r?.error) test = { subject: main, unit, n: (r.row?.set_a ?? []).length };
+        }
+      }
+      return json({ count: list.length, test, link: test ? `/plan?tab=study&subject=${encodeURIComponent(test.subject)}` : null });
     }
 
     // 플랜 만들기 — { action: "plan_make", grade, department, did, goal?, concern? } → { plan, tasks }
     //   AI 비용은 물꼬 주간 사용량에 들어간다 (다 쓰고 이용권도 없으면 need_pay)
     if (body.action === "plan_make") {
+      if (!(await passOk())) return json({ need_pay: true, pass_only: "plan" }); // 입시 플랜은 1년 이용권 전용
       if (usage.pct >= 100) return json(paid ? { error: "이번 주 사용량을 다 썼어요. 월요일 0시에 다시 채워져요", usage } : { need_pay: true, usage });
       const r: any = await makePlan(db, user.id, user.user_metadata ?? {}, body);
       if (r.error) return json({ error: r.error }, 400);
@@ -2002,6 +2069,7 @@ ${answer}`;
     // 새 주 할 일 — { action: "plan_next_week" } → { tasks }  (이번 주 할 일이 이미 있으면 그대로)
     //   지난 할 일 중 한 것 · 못 한 것을 보고 이번 주 3~5개를 새로 짠다 (못 한 중요한 일은 이어서)
     if (body.action === "plan_next_week") {
+      if (!(await passOk())) return json({ need_pay: true, pass_only: "plan" }); // 입시 플랜은 1년 이용권 전용
       const ws = weekStartKST();
       const { data: plan } = await db.from("study_plans").select("*").eq("user_id", user.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
       if (!plan) return json({ error: "먼저 플랜을 만들어 주세요" }, 400);
@@ -2076,9 +2144,10 @@ ${PLAN_GUIDE}
         return finish("done", { message: `${p.university}${p.department ? ` ${p.department}` : ""}를 수시 면접 준비에 넣었어요. 기출문제부터 연습해 봐요.`, link: "/prep", link_label: "면접 준비하러 가기" });
       }
       if (act.kind === "study_test") {
+        if (!(await passOk())) return json({ need_pay: true, pass_only: "test" }); // 자기주도학습법(효과 시험)은 1년 이용권 전용
         const { data: open } = await db.from("study_tests").select("id").eq("user_id", user.id).eq("subject", p.subject).neq("status", "done").maybeSingle();
         const link = `/plan?tab=study&subject=${encodeURIComponent(p.subject)}`;
-        if (open) return finish("done", { message: `${p.subject} 효과 시험이 이미 있어요. 학습 플랜에서 이어서 풀어요.`, link, link_label: "시험 보러 가기" });
+        if (open) return finish("done", { message: `${p.subject} 자기주도학습법 시험이 이미 있어요. 학습 플랜에서 이어서 풀어요.`, link, link_label: "시험 보러 가기" });
         if (usage.pct >= 100) return json(paid ? { error: "이번 주 사용량을 다 썼어요. 월요일 0시에 다시 채워져요" } : { need_pay: true, usage });
         const r: any = await createTest(db, user, p.subject, p.unit);
         if (r.error) return json({ error: r.error }, 502);
@@ -2096,6 +2165,7 @@ ${PLAN_GUIDE}
     }
 
     if (body.action === "test_make") {
+      if (!(await passOk())) return json({ need_pay: true, pass_only: "test" }); // 자기주도학습법(효과 시험)은 1년 이용권 전용
       const subject = TEST_SUBJECTS.includes(body.subject) ? body.subject : "";
       const unit = clean(body.unit, 40);
       if (!subject) return json({ error: "과목을 골라 주세요" }, 400);
@@ -2257,8 +2327,8 @@ ${PLAN_GUIDE}
             const ck = { check_topic: "topic", check_motive: "motive", check_reading: "reading" }[String(tc.function?.name)];
             if (ck && out && typeof out.score === "number" && !fixed) fixed = formatCheck(ck, out, { ...args, __paid: !!paid });
             if (ck === "topic" && out?.quota_exceeded && !fixed) {
-              // 하루 3번을 다 쓰면 — 이용권 버튼 + 친구 초대 카드
-              fixed = "**오늘 탐구주제 흔한가 3번을 다 썼어요.** 내일 다시 3번이 열려요.\n\n지금 더 하려면\n- 친구 초대: 친구가 내 링크로 가입해 첫 진단을 하면 +3번\n- 이용권 (한 달 12,900원부터): 탐구주제 흔한가를 횟수 없이 쓰고, 광고도 없어져요\n\n[[친구초대]]\n[[이용권]]";
+              // 하루 횟수를 다 쓰면 — 이용권 버튼 (물꼬에서는 친구 초대 안내 안 함)
+              fixed = "**오늘 탐구주제 흔한가 2번을 다 썼어요.** 내일 다시 2번이 열려요.\n\n지금 더 하려면 1년 이용권(79,000원 · 한 달 약 6,600원)으로 탐구주제 흔한가를 횟수 없이 쓰고, 광고도 없어져요.\n\n[[이용권]]";
             }
           }
           if (fixed) { answer = fixed; break; }
@@ -2347,6 +2417,7 @@ ${PLAN_GUIDE}
           await db.from("senior_events").insert({ user_id: user.id, cases: seniorShown }).then(() => {}, () => {});
         }
       }
+      if (answer) answer = answer.replace(/\n?\[\[\s*친구초대\s*\]\]/g, ""); // 물꼬는 친구 초대 카드 안 씀
       if (!answer) return { status: 502, body: { error: "답을 만들지 못했어요. 잠시 뒤 다시 물어봐 주세요" } };
 
       emit(/\[\[\s*질문/.test(answer) ? "물어볼 것 고르는 중" : "답 정리하는 중");

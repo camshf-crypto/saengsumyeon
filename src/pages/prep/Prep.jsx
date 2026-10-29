@@ -21,7 +21,7 @@ import { track } from "../../lib/track";
  *     예상 = 내가 생기부 예상질문에서 뽑은 그 대학 질문 (interview_queries)
  *   답변은 prep_answers 에 저장 → 'n/전체 문제 학습'
  *   기출은 무료 3문제 + 친구 1명이 내 링크로 가입할 때마다 5문제 (서버 agent studyQuota · sql/sm_86)
- *     친구 초대 대신 결제하면 무제한 — 기출만: 한 달 이용권 12,900원 · 기출 + 생기부 예상질문: 24,000원
+ *     친구 초대 대신 결제하면 무제한 — 기출만: 1년 이용권 79,000원 · 기출 + 생기부 예상질문: 24,000원
  *     한 번 연 문제는 2차 피드백 · 꼬리질문까지 그대로 · 무료 문제를 다 쓰면 친구 초대 창(InviteSheet)
  *   예상 문제(생기부 예상질문)는 24,000원 결제한 학생만 — 학습 화면은 생기부 예상질문(/interview)에서도 같이 쓴다 (StudyView)
  */
@@ -365,7 +365,7 @@ function Feedback({ fb, title, school }) {
 /*
  * 친구 초대 창 — 무료 기출 문제를 다 쓰면 (또는 '친구 초대'를 누르면)
  * 친구 1명이 내 추천 링크(?ref=코드)로 가입할 때마다 기출 5문제가 더 열린다
- * 친구 초대가 싫으면 결제: 기출문제만 = 한 달 이용권 12,900원(30일 무제한) · 생기부 예상질문까지 = 24,000원
+ * 친구 초대가 싫으면 결제: 기출문제만 = 1년 이용권 79,000원(30일 무제한) · 생기부 예상질문까지 = 24,000원
  */
 function InviteSheet({ open, onClose, quota, onRefresh, onBuyPass, onBuyInterview }) {
   const [code, setCode] = useState(null);
@@ -378,7 +378,7 @@ function InviteSheet({ open, onClose, quota, onRefresh, onBuyPass, onBuyIntervie
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
   if (!open) return null;
-  const per = quota?.per_friend ?? 5;
+  const per = quota?.per_friend ?? 0;
   const link = code ? refLink(code) : "";
   const text = `수시 면접 대학별 기출문제, AI가 학교 기준으로 답변 피드백까지 해 줘요. 같이 준비하자!`;
   async function share() {
@@ -394,6 +394,23 @@ function InviteSheet({ open, onClose, quota, onRefresh, onBuyPass, onBuyIntervie
     }
   }
   const empty = quota && quota.left <= 0;
+  // 지금은 친구 초대 보상이 없다 (기출 AI 피드백은 1년 이용권 전용) — 결제 버튼만 보여 준다
+  if (!per) return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 sm:items-center" onClick={onClose}>
+      <div className="w-full max-w-md rounded-t-3xl bg-white px-6 pb-7 pt-6 text-center sm:rounded-3xl" onClick={(e) => e.stopPropagation()}>
+        <p className="text-[13px] font-bold text-sm-orange">기출문제 학습</p>
+        <p className="mt-1 text-[20px] font-extrabold text-sm-navy">기출 AI 피드백은 1년 이용권 전용이에요</p>
+        <p className="mt-2 text-[14px] leading-relaxed text-gray-600">기출 질문은 무료로 볼 수 있어요. 내 답변에 AI 피드백 · 2차 피드백 · 꼬리질문을 받으려면 이용권이 필요해요.</p>
+        <button onClick={() => { track("prep_buy", "pass"); onBuyPass?.(); }} className="mt-6 h-[52px] w-full rounded-xl bg-sm-navy text-[15.5px] font-extrabold text-white">
+          1년 이용권 {PASS_PRICE.toLocaleString()}원 · 학교 6곳 무제한
+        </button>
+        <button onClick={() => { track("prep_buy", "interview"); onBuyInterview?.(); }} className="mt-2 h-11 w-full rounded-xl border border-gray-200 text-[13.5px] font-bold text-gray-600">
+          기출 + 생기부 예상질문만 24,000원
+        </button>
+        <button onClick={onClose} className="mt-3 h-10 w-full text-[13.5px] font-semibold text-gray-500">닫기</button>
+      </div>
+    </div>
+  );
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 sm:items-center" onClick={onClose}>
       <div className="w-full max-w-md rounded-t-3xl bg-white px-6 pb-7 pt-6 text-center sm:rounded-3xl" onClick={(e) => e.stopPropagation()}>
@@ -419,7 +436,7 @@ function InviteSheet({ open, onClose, quota, onRefresh, onBuyPass, onBuyIntervie
         <div className="mt-6 flex items-center gap-3 text-[12.5px] font-bold text-gray-400"><i className="h-px flex-1 bg-gray-200" />친구 초대 없이 바로 하기<i className="h-px flex-1 bg-gray-200" /></div>
         <div className="mt-3 grid gap-2 text-left">
           <button onClick={() => { track("prep_buy", "pass"); onBuyPass?.(); }} className="flex items-center justify-between gap-3 rounded-xl border-[1.5px] border-gray-200 px-4 py-3 text-left hover:border-sm-navy">
-            <span><b className="block text-[14.5px] font-extrabold text-gray-900">기출문제만</b><small className="text-[12.5px] text-gray-500">한 달 동안 기출 무제한</small></span>
+            <span><b className="block text-[14.5px] font-extrabold text-gray-900">1년 이용권</b><small className="text-[12.5px] text-gray-500">1년 동안 기출 무제한 + 물꼬 · 흔한가 · 꼬리질문 전부</small></span>
             <b className="flex-none text-[16px] font-black text-sm-navy">{PASS_PRICE.toLocaleString()}원</b>
           </button>
           <button onClick={() => { track("prep_buy", "interview"); onBuyInterview?.(); }} className="relative flex items-center justify-between gap-3 rounded-xl border-2 border-sm-navy bg-[#EEF1FA] px-4 py-3 text-left">
@@ -453,7 +470,7 @@ function SchoolPaySheet({ open, onClose, freeUniv, univ, onBuyPass, onBuyIntervi
         </p>
         <div className="mt-6 grid gap-2 text-left">
           <button onClick={() => { track("prep_buy", "school_pass"); onBuyPass?.(); }} className="flex items-center justify-between gap-3 rounded-xl border-[1.5px] border-gray-200 px-4 py-3 text-left hover:border-sm-navy">
-            <span><b className="block text-[14.5px] font-extrabold text-gray-900">기출문제만</b><small className="text-[12.5px] text-gray-500">한 달 · 학교 6곳 · 기출 무제한</small></span>
+            <span><b className="block text-[14.5px] font-extrabold text-gray-900">1년 이용권</b><small className="text-[12.5px] text-gray-500">1년 · 학교 6곳 · 기출 무제한 + 생수면 기능 전부</small></span>
             <b className="flex-none text-[16px] font-black text-sm-navy">{PASS_PRICE.toLocaleString()}원</b>
           </button>
           <button onClick={() => { track("prep_buy", "school_interview"); onBuyInterview?.(); }} className="relative flex items-center justify-between gap-3 rounded-xl border-2 border-sm-navy bg-[#EEF1FA] px-4 py-3 text-left">
@@ -1056,7 +1073,7 @@ export default function Prep() {
           </div>
           {tab === "past" && quota && quota.limit < 9999 && (
             <button onClick={() => setInvite(true)} className="rounded-full bg-[#EEF1FA] px-3 py-1.5 text-[12.5px] font-bold text-sm-navy hover:bg-[#E3E7F3]">
-              무료 기출 {quota.left}문제 남음 · 친구 초대 +{quota.per_friend}
+              기출 AI 피드백 · 1년 이용권 전용 ›
             </button>
           )}
         </div>
@@ -1183,7 +1200,7 @@ export default function Prep() {
                 <span className="text-[30px]">🔒</span>
                 <b className="mt-2 text-[17px] font-extrabold text-gray-900">{sel.university} 기출은 결제하면 열려요</b>
                 <p className="mt-2 text-[13.5px] leading-relaxed text-gray-500">
-                  무료는 학교 1곳{freeUniv ? ` (${freeUniv})` : ""}이에요. 결제하면 학교 6곳까지 기출을 무제한으로 연습해요.
+                  1년 이용권이면 학교 6곳까지 기출 AI 피드백을 무제한으로 연습해요.
                   <br />이 학교 기출 {items.length}개가 준비돼 있어요.
                 </p>
                 <button onClick={() => setSchoolPay({ univ: sel.university })} className="mt-5 h-12 rounded-xl bg-sm-navy px-6 text-[15px] font-extrabold text-white">이 학교 열기</button>
@@ -1241,9 +1258,10 @@ export default function Prep() {
         {tab === "past" && quota && quota.limit < 9999 && (
           <div className="mt-8 flex flex-col gap-3 rounded-2xl bg-sm-navy p-5 text-white sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <b className="block text-[16px] font-bold">기출문제 학습은 결제 없이 — 친구 1명 가입할 때마다 +{quota.per_friend}문제</b>
+              <b className="block text-[16px] font-bold">기출 AI 피드백 · 꼬리질문은 1년 이용권 전용이에요</b>
+              <small className="mt-0.5 block text-[12.5px] text-white/70">학교 6곳 · 기출 무제한 · 생기부 예상질문까지</small>
             </div>
-            <button onClick={() => setInvite(true)} className="h-11 flex-none rounded-xl bg-orange-400 px-5 text-[14px] font-extrabold text-sm-navy">친구 초대하기</button>
+            <button onClick={() => setInvite(true)} className="h-11 flex-none rounded-xl bg-orange-400 px-5 text-[14px] font-extrabold text-sm-navy">이용권 알아보기</button>
           </div>
         )}
       </div>

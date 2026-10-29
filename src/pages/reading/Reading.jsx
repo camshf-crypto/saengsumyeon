@@ -189,7 +189,7 @@ function After({ r, onAgain }) {
     <>
       {r.remaining != null && (
         <p className="mt-6 text-center text-[13.5px] font-bold text-sm-navy">
-          {r.is_member ? "이번 주 남은 독서 진단" : "무료 독서 진단"} <span className="text-sm-orange">{r.remaining}권</span>
+          {r.is_member ? "오늘 남은 독서 진단" : "무료 독서 진단"} <span className="text-sm-orange">{r.remaining}권</span>
           {r.bonus_left > 0 && <span className="text-[12px] font-normal text-gray-500"> (친구 초대로 받은 {r.bonus_left}권 포함)</span>}
           {r.is_member && r.remaining === 0 && r.next_open && (
             <span className="block text-[12px] font-normal text-gray-500">{openDay(r.next_open)}에 1권이 다시 열려요 · 친구를 초대하면 바로 2권</span>
@@ -396,7 +396,7 @@ export default function Reading() {
       {/* 무료를 다 씀 — 회원: 친구 초대 또는 기다리기 / 비회원: 회원가입 */}
       {view === "result" && r?.quota_exceeded && r.is_member && (
         <InviteGate
-          title="이번 주 무료 독서 진단 2권을 모두 사용했어요"
+          title="오늘 무료 독서 진단 2권을 모두 사용했어요"
           question="한 번 더 확인해보고 싶은 책이 있나요?"
           reward="+2권"
           unit="권"
@@ -412,7 +412,7 @@ export default function Reading() {
         <div className="rounded-2xl border border-gray-200 px-6 py-8 text-center">
           <p className="text-[18px] font-extrabold text-sm-navy">무료 독서 진단 1권을 썼어요</p>
           <p className="mt-2 text-[14px] leading-relaxed text-gray-600">
-            회원가입하면 <b className="text-sm-navy">일주일에 2권</b>씩 진단하고,
+            회원가입하면 <b className="text-sm-navy">하루 2권</b>씩 진단하고,
             <br />
             흔한 이유와 바꾸는 방법까지 모두 볼 수 있어요.
           </p>

@@ -11,7 +11,7 @@ const cors = {
 };
 
 const MODEL = "gpt-5";
-const DAILY_LIMIT = 3; // 로그인: 하루 3회
+const DAILY_LIMIT = 2; // 로그인: 하루 2회 (2026-10-29 3 → 2)
 const ANON_LIMIT = 1; // 비로그인: 브라우저당 하루 1회
 
 // 제안 주제에 연도·날짜가 들어갔는지 (예: 2024, 1901~1933, 24년, 10~12월)
@@ -196,7 +196,7 @@ Deno.serve(async (req) => {
     const focus = rawFocus === "subject" ? "subject" : "career"; // 기본은 진로 연결
     // 물꼬 입시 에이전트가 부른 요청 — 이 기능의 무료 횟수 대신 에이전트 주간 사용량(토큰)으로 계산한다
     const viaAgent = req.headers.get("x-agent-key") === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    // 탐구주제 흔한가는 비싸서(gpt-5) 에이전트에서도 하루 3번 — 이용권이 있을 때만 한도 없이 에이전트 사용량으로 센다
+    // 탐구주제 흔한가는 비싸서(gpt-5) 에이전트에서도 하루 2번 — 이용권이 있을 때만 한도 없이 에이전트 사용량으로 센다
     const agentPass = viaAgent && req.headers.get("x-agent-pass") === "1";
     // 이용권이면 화면에서도 횟수 제한 없음 — 로그인 토큰의 회원과 같을 때만 (user_id 를 남의 것으로 바꿔 보내도 안 통하게)
     let pass = agentPass;
@@ -265,7 +265,7 @@ Deno.serve(async (req) => {
           const { data: adm } = await supabase.from("admins").select("user_id").eq("user_id", user_id).maybeSingle();
           variant = adm ? "share" : variantOf(user_id);
 
-          // 지표: 회원이 3회를 다 쓴 순간
+          // 지표: 회원이 하루 횟수를 다 쓴 순간
           await supabase
             .from("referral_events")
             .insert({ type: "quota_hit", user_id, client_id: client_id ?? null, variant });
@@ -364,7 +364,7 @@ Deno.serve(async (req) => {
     if (logErr) console.error("log insert failed", logErr);
 
     if (!logErr && user_id) {
-      // 하루 3회를 넘겨 추가권으로 진단한 경우 1회 차감
+      // 하루 2회를 넘겨 추가권으로 진단한 경우 1회 차감
       if (useBonus) {
         const { error: e1 } = await supabase.rpc("consume_bonus_credit", { p_user: user_id });
         if (e1) console.error("bonus consume failed", e1);

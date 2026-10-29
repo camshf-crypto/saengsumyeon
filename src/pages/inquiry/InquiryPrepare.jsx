@@ -680,7 +680,7 @@ export default function InquiryPrepare() {
     trialUsedElsewhere(user.id, inq.id).then(setTrialTaken);
   }, [user, inq?.id]);
   const opened = Boolean(inq?.paid || isAdmin || free); // AI 자료 찾기·다음 단계를 바로 쓸 수 있는 탐구
-  const locked = inq && !opened && trialTaken === true; // 무료 체험도 다 써서 이용권이 필요한 탐구
+  const locked = inq && !inq.paid && !isAdmin; // 다음 단계(결과 분석·보고서)는 이용권 — 무료는 탐구 준비까지
   const [askTrial, setAskTrial] = useState(null); // 무료 체험 쓸지 묻는 창 — 누르고 나서 할 일: "research" | "result"
   const [usingTrial, setUsingTrial] = useState(false);
 
@@ -922,7 +922,11 @@ export default function InquiryPrepare() {
       track("result_blocked_no_source", inq.method);
       return setNeedPick(true);
     }
-    if (!needOpen("result")) return;
+    // 결과 분석부터는 이용권 — 무료(체험)는 탐구 준비까지
+    if (!(inq.paid || isAdmin)) {
+      track("result_paywall", inq.method);
+      return setWall({ reason: "result" });
+    }
     nav(`/inquiry/${inq.id}/result`);
   }
   function goPick() {
@@ -959,9 +963,9 @@ export default function InquiryPrepare() {
             <p className="mt-0.5 text-[14px] font-bold leading-snug text-sm-navy">{state?.suggestion || state?.topic}</p>
           </div>
           <p className="mt-4 text-[13.5px] leading-relaxed text-gray-600">
-            탐구 준비부터 <b className="text-sm-navy">AI 자료 찾기, 결과 분석, 보고서 디자인</b>까지 해 볼 수 있어요.
+            <b className="text-sm-navy">탐구팩과 AI 자료 찾기</b>까지 무료로 해 볼 수 있어요.
           </p>
-          <p className="mt-1 text-[12px] text-gray-400">첫 탐구는 PDF 저장 전까지 무료예요.</p>
+          <p className="mt-1 text-[12px] text-gray-400">첫 탐구는 준비(탐구팩·AI 자료 찾기)까지 무료예요.</p>
           <button onClick={() => startNew(true)} className="mt-6 h-[52px] w-full max-w-sm rounded-xl bg-sm-navy text-[15px] font-extrabold text-white">
             네, 이 주제로 만들게요
           </button>
@@ -1072,7 +1076,7 @@ export default function InquiryPrepare() {
                       이 주제로 AI 자료 찾기 시작
                     </button>
                     {!opened && trialTaken === false && (
-                      <p className="mt-2 text-[12px] text-gray-400">첫 탐구는 PDF 저장 전까지 무료예요</p>
+                      <p className="mt-2 text-[12px] text-gray-400">첫 탐구는 준비(탐구팩·AI 자료 찾기)까지 무료예요</p>
                     )}
                   </div>
                 )
@@ -1186,9 +1190,9 @@ export default function InquiryPrepare() {
             </button>
             {locked && (
               <p className="text-center text-[12px] leading-relaxed text-gray-500">
-                무료 체험 1건은 이미 썼어요.
+                무료는 탐구 준비까지예요.
                 <br />
-                이용권으로 열면 결과 분석·보고서 디자인·PDF까지 쓸 수 있어요.
+                1년 이용권으로 열면 결과 분석·보고서 디자인·PDF까지 쓸 수 있어요.
               </p>
             )}
           </aside>
@@ -1202,9 +1206,9 @@ export default function InquiryPrepare() {
             <p className="text-[19px] font-extrabold text-sm-navy">이 주제로 탐구보고서를 만들까요?</p>
             <p className="mt-2 rounded-lg bg-gray-50 px-3 py-2 text-[13px] font-bold leading-snug text-sm-navy">{inq.suggestion}</p>
             <p className="mt-3 text-[13px] leading-relaxed text-gray-600">
-              <b className="text-sm-navy">AI 자료 찾기, 결과 분석, 보고서 디자인</b>까지 해 볼 수 있어요.
+              <b className="text-sm-navy">탐구팩과 AI 자료 찾기</b>까지 무료로 해 볼 수 있어요.
             </p>
-            <p className="mt-1 text-[12px] text-gray-400">첫 탐구는 PDF 저장 전까지 무료예요.</p>
+            <p className="mt-1 text-[12px] text-gray-400">첫 탐구는 준비(탐구팩·AI 자료 찾기)까지 무료예요.</p>
             <button onClick={useTrial} disabled={usingTrial} className="mt-5 h-12 w-full rounded-xl bg-sm-navy text-[15px] font-extrabold text-white disabled:opacity-50">
               {usingTrial ? "여는 중…" : "네, 이 주제로 만들게요"}
             </button>

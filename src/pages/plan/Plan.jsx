@@ -5,6 +5,7 @@ import { useAuth } from "../../lib/AuthContext";
 import { track } from "../../lib/track";
 import LoginGate from "../../components/LoginGate";
 import PassSheet from "../../components/PassSheet";
+import { hasPass } from "../../lib/pass";
 
 /*
  * 내 플랜 (/plan) — 탭 두 개
@@ -220,7 +221,7 @@ function TestBox({ subject }) {
 
   if (!state) return null;
   const box = "mt-4 rounded-xl bg-[#F8F9FB] p-4";
-  const head = <p className="flex items-center gap-2"><b className="text-[14.5px] font-extrabold text-gray-900">{subject} 공부법 효과 시험</b><small className="text-[11.5px] font-bold text-gray-400">10문제 · 일주일 뒤 다시</small></p>;
+  const head = <p className="flex items-center gap-2"><b className="text-[14.5px] font-extrabold text-gray-900">{subject} 자기주도학습법</b><small className="text-[11.5px] font-bold text-gray-400">10문제 · 일주일 뒤 다시</small></p>;
 
   return (
     <>
@@ -500,6 +501,9 @@ export default function Plan() {
   const [err, setErr] = useState("");
   const [buy, setBuy] = useState(false);
   const [openMonth, setOpenMonth] = useState(0);
+  // 학습 플랜(학습 다이어리 · 자기주도학습법)은 1년 이용권 전용 — null 이면 확인 중
+  const [passOk, setPassOk] = useState(null);
+  const [buyWhy, setBuyWhy] = useState(""); // 결제 창 제목 — 다이어리 잠금 · 사용량
 
   function pick(v) {
     setView(v);
@@ -511,6 +515,7 @@ export default function Plan() {
   }
 
   async function load() {
+    if (!(await hasPass()) && !(await supabase.rpc("is_admin")).data) return; // 이용권이 없으면 불러오지 않는다 (잠금 화면)
     const r = await call({ action: "plan_status" });
     if (r.error) return setErr(r.error);
     setData(r);
@@ -524,6 +529,9 @@ export default function Plan() {
       else if (w.error) setErr(w.error);
     }
   }
+  useEffect(() => {
+    if (user) Promise.all([hasPass(), supabase.rpc("is_admin")]).then(([p, { data }]) => setPassOk(Boolean(p) || Boolean(data)));
+  }, [user]);
   useEffect(() => {
     if (user) load();
     track("plan_view");
@@ -589,10 +597,21 @@ export default function Plan() {
         </div>
 
         {/* ───── 학습 플랜 — 학습 다이어리 (입시 플랜이 없어도 매일 루틴은 체크할 수 있다) ───── */}
-        {view === "study" && <Diary userId={user.id} focus={Boolean(loc.state?.diary) || Boolean(new URLSearchParams(loc.search).get("subject"))} initSubject={new URLSearchParams(loc.search).get("subject") || ""} />}
+        {passOk === false && (
+          <div className="mt-4 rounded-2xl bg-white p-6 text-center ring-1 ring-gray-200">
+            <p className="text-[30px]">🔒</p>
+            <b className="mt-1 block text-[17px] font-extrabold text-gray-900">공부법 도감(입시 플랜 · 학습 플랜)은 1년 이용권 전용이에요</b>
+            <p className="mt-2 text-[13.5px] leading-relaxed text-gray-500">
+              목표 대학 · 학과에 맞춘 입시 플랜과 매주 미션, 물꼬가 짠 루틴을 매일 체크하는 학습 다이어리,
+              <br className="hidden sm:block" /> 지금 10문제 → 일주일 뒤 비슷한 문제로 공부법을 확인하는 자기주도학습법까지 열려요.
+            </p>
+            <button onClick={() => { setBuyWhy("diary"); setBuy(true); track("plan_diary_paywall"); }} className="mt-5 h-12 w-full max-w-xs rounded-xl bg-sm-navy text-[15px] font-extrabold text-white">1년 이용권으로 열기</button>
+          </div>
+        )}
+        {view === "study" && passOk && <Diary userId={user.id} focus={Boolean(loc.state?.diary) || Boolean(new URLSearchParams(loc.search).get("subject"))} initSubject={new URLSearchParams(loc.search).get("subject") || ""} />}
 
         {/* ───── 입시 플랜 ───── */}
-        {view === "exam" && (
+        {view === "exam" && passOk && (
           <>
             {data === null && !err && <p className="mt-10 text-center text-[14px] text-gray-400">불러오는 중…</p>}
             {data === null && err && <p className="mt-6 rounded-lg bg-red-50 px-3 py-2 text-center text-[13px] font-bold text-red-600">{err}</p>}
@@ -777,7 +796,13 @@ export default function Plan() {
         )}
       </div>
 
-      <PassSheet open={buy} title="물꼬 입시 AI" headline="이번 주 사용량을 다 썼어요" onClose={() => setBuy(false)} onUnlocked={() => { setBuy(false); load(); }} />
+      <PassSheet
+        open={buy}
+        title={buyWhy === "diary" ? "공부법 도감" : "물꼬 입시 AI"}
+        headline={buyWhy === "diary" ? "입시 플랜 · 학습 플랜 열기" : "물꼬 무료 사용량을 다 썼어요"}
+        onClose={() => { setBuy(false); setBuyWhy(""); }}
+        onUnlocked={() => { setBuy(false); setBuyWhy(""); setPassOk(true); load(); }}
+      />
     </div>
   );
 }

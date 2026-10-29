@@ -144,7 +144,7 @@ function AllServices({ onClose, user, isAdmin, pendingOrders, displayName, lv, a
         {user && usage && (
           <Link to="/agent" onClick={onClose} className="mt-4 block rounded-2xl bg-[#F4F5F7] px-4 py-3.5">
             <div className="flex items-center justify-between gap-2 whitespace-nowrap text-[13px]">
-              <b className="font-bold text-gray-800">물꼬 입시 AI · 이번 주 사용량</b>
+              <b className="font-bold text-gray-800">물꼬 입시 AI · {usage.reset_at ? "이번 주 사용량" : usage.free_daily ? "오늘 무료 사용량" : "무료 맛보기"}</b>
               <b className={`font-extrabold ${usage.pct >= 100 ? "text-[#FD1673]" : "text-sm-navy"}`}>{usage.pct}% 사용됨</b>
             </div>
             {usage.paid_until && (
@@ -156,7 +156,7 @@ function AllServices({ onClose, user, isAdmin, pendingOrders, displayName, lv, a
               <i className="block h-full rounded-full" style={{ width: `${Math.max(usage.pct, 2)}%`, background: usage.pct >= 100 ? "#FD1673" : "#3D6BEF" }} />
             </div>
             <small className="mt-1.5 block text-[11.5px] text-gray-500">
-              {usage.reset_at ? `${"일월화수목금토"[new Date(usage.reset_at).getDay()]}요일 0시에 초기화` : "매주 월요일 0시에 초기화"}
+              {usage.reset_at ? `${"일월화수목금토"[new Date(usage.reset_at).getDay()]}요일 0시에 초기화` : usage.free_daily || usage.pct >= 100 ? "새벽 5시에 다시 채워져요" : "처음 한 번 · 다 쓰면 매일 새벽 5시에 조금씩"}
             </small>
           </Link>
         )}
