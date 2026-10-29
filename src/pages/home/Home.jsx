@@ -5,7 +5,6 @@ import { supabase } from "../../lib/supabase";
 import { getClientId } from "../../lib/clientId";
 import Avatar from "../../components/Avatar";
 import { checkLevel } from "../../components/LevelUp";
-import AdSlot from "../../components/AdSlot";
 
 /*
  * 생수면 메인 (/)
@@ -344,8 +343,7 @@ export default function Home() {
       <div className="mx-auto grid max-w-6xl gap-5 px-4 pb-16 pt-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-7 lg:pt-9">
         {/* ── 왼쪽 */}
         <div className="min-w-0">
-          {/* 광고 — 맨 위 3칸 (광고가 없으면 안 보임) */}
-          <AdSlot slot="home_top" className="mb-4" />
+          {/* 광고는 홈에서 뺐다 — 물꼬 채팅 답 아래 카드로만 나온다 (Agent.jsx) */}
 
           {/* 물꼬 입시 에이전트 — 입시 궁금한 건 여기서 물어보기 */}
           <div className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-5">
@@ -502,8 +500,6 @@ export default function Home() {
           {levelCard && <div className="hidden lg:block">{levelCard}</div>}
           {mgCard}
           {joinCard}
-          {/* 광고 — 띠 배너 여러 개 + 큰 배너 (광고가 없으면 안 보임) */}
-          <AdSlot slot="home_right" />
         </aside>
       </div>
 

@@ -659,7 +659,7 @@ function Thinking({ steps, startedAt }) {
   const sec = Math.max(0, Math.floor((now - startedAt) / 1000));
   const list = steps.length ? steps : ["질문 이해하는 중"];
   return (
-    <div className="mr-4 rounded-2xl rounded-bl-md bg-white px-4 py-3.5 ring-1 ring-black/5">
+    <div className="mr-4 px-1 py-1">{/* 흰 칸 없이 글자만 */}
       <div className="flex items-center gap-2">
         <span className="relative flex h-2.5 w-2.5">
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-60" style={{ background: PINK }} />
