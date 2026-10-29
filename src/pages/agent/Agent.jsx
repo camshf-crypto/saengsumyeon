@@ -14,7 +14,7 @@ import { track } from "../../lib/track";
  *   대학 입시 DB(모집요강·시행계획·입결·면접 스타일) + 내 생수면 기록(생기부 노트·진단·예상질문·지원동기·성적)을 보고 답한다
  *   사용량: 질문 개수가 아니라 실제 AI 비용으로 센다 — '이번 주 사용량 ○%' 막대 + 초기화 시각(매주 월요일 0시)
  *   무료 회원: 주간 한도 · 친구가 내 링크로 가입하면 한도가 늘어남 (4명까지) · 답 아래 광고
- *   · 무료로 받은 답 아래에는 광고 배너(AdSlot home_top 광고를 같이 씀)
+ *   · 무료로 받은 답 2개마다 그 아래에 광고 배너(AdSlot home_top 광고를 같이 씀)
  *   이용권(한 달·6개월·1년 — src/lib/pass.js PLANS)이 있으면 사용량 크게 · 광고 없음
  *   대화는 agent_chats 에 저장 — 왼쪽 대화 목록(휴대폰은 '대화 목록' 버튼)에서 다시 연다 · 주소 ?c=번호 로 새로고침해도 이어짐
  *   이용권 12,900원부터 — 계좌 입금 → '입금했어요' → 관리자 승인되면 바로 열림 (rpc agent_order, components/PassSheet)
@@ -1074,7 +1074,7 @@ export default function Agent() {
                   </>
                 );
               })()}
-              {/* 무료 사용자: 답 아래 광고 (이용권이면 없음) · 광고가 없으면 칸도 안 보인다 */}
+              {/* 무료 사용자: 답 아래 광고 (이용권이면 없음 · 답 2개마다) · 광고가 없으면 칸도 안 보인다 */}
               {memNote?.at === i && (
                 <button onClick={() => setShowList(true)} className="mt-2 flex w-full items-start gap-2 rounded-xl bg-[#EEF2FF] px-3.5 py-2.5 text-left">
                   <span className="text-[13px]">📝</span>
@@ -1084,7 +1084,8 @@ export default function Agent() {
                   </span>
                 </button>
               )}
-              {!paid && <AdSlot slot="home_top" className="mt-2" />}
+              {/* 광고는 답 2개마다 한 번 (2번째 · 4번째 · 6번째 답 아래) */}
+              {!paid && msgs.slice(0, i + 1).filter((x) => x.role === "assistant").length % 2 === 0 && <AdSlot slot="home_top" className="mt-2" />}
             </div>
           )))}
           {busy && <Thinking steps={steps} startedAt={startedAt} />}

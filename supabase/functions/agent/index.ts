@@ -71,8 +71,12 @@ const ALIAS: Record<string, string> = {
 let UNIVS: string[] = [];
 async function univList(db: any) {
   if (UNIVS.length) return UNIVS;
-  const { data } = await db.from("univ_admission_rules").select("university").limit(5000);
-  UNIVS = [...new Set((data ?? []).map((r: any) => r.university))].sort() as string[];
+  // 모집요강이 있는 대학 + 입결만 있는 대학 (어디가 입결을 대학별로 계속 넣는다 — 꽃동네대 · 가톨릭관동대 …)
+  const [{ data }, { data: res }] = await Promise.all([
+    db.from("univ_admission_rules").select("university").limit(5000),
+    db.from("univ_result_names").select("university"), // sql/sm_100 — 입결 있는 대학 이름만 (줄이 많아도 1000줄 제한에 안 걸리게)
+  ]);
+  UNIVS = [...new Set([...(data ?? []), ...(res ?? [])].map((r: any) => r.university))].sort() as string[];
   return UNIVS;
 }
 async function matchUniv(db: any, raw: unknown): Promise<string | null> {
@@ -125,8 +129,16 @@ const TOOLS = [
     type: "function",
     function: {
       name: "get_results",
-      description: "전년도 입시결과(입결: 경쟁률·충원·내신 50%/70% 컷·평균)를 가져온다. 입결이 있는 대학은 일부뿐이다.",
-      parameters: { type: "object", properties: { university: { type: "string" }, department: { type: "string" } }, required: ["university"] },
+      description: "수시 입결(2026학년도 어디가 결과: 경쟁률·충원·내신 50%/70% 컷)을 가져온다. 대학 하나를 보거나, 대학을 비우고 학과 + 학생 내신 등급(grade)을 넣으면 전국 대학에서 그 학과를 도전·적정·안정으로 나눠 찾아 준다 ('내신 3.01인데 간호학과 어디 가능?' 같은 질문).",
+      parameters: {
+        type: "object",
+        properties: {
+          university: { type: "string", description: "대학 이름. 비우면 전국에서 찾는다 (이때 department 필요)" },
+          department: { type: "string", description: "학과 이름 일부 (예: 간호, 경영, 컴퓨터)" },
+          grade: { type: "number", description: "학생 내신 평균 등급 (예: 3.01). 전국에서 찾을 때 이 근처 컷을 고른다" },
+          special: { type: "boolean", description: "농어촌·기회균형·특성화고 같은 특별전형도 넣을지 (학생이 해당된다고 말했을 때만 true)" },
+        },
+      },
     },
   },
   {
@@ -556,8 +568,8 @@ async function runTool(db: any, userId: string, name: string, args: any, token =
   }
   if (name === "list_universities") {
     const list = await univList(db);
-    const { data } = await db.from("univ_admission_results").select("university").limit(5000);
-    return { universities: list, with_results: [...new Set((data ?? []).map((r: any) => r.university))] };
+    const { data } = await db.from("univ_result_names").select("university");
+    return { universities: list, with_results: (data ?? []).map((r: any) => r.university) };
   }
   if (name === "my_record") {
     let q = db.from("record_activities").select("grade,term,kind,subject,title,content").eq("user_id", userId).order("created_at").limit(120);
@@ -717,6 +729,46 @@ async function runTool(db: any, userId: string, name: string, args: any, token =
         : "이 대학·학과는 정시 입결 자료가 아직 없어요 (인서울 주요 대학 · 의치한약수 위주로 들어 있음)",
     };
   }
+  if (name === "get_results" && !univ) {
+    // 전국에서 학과 + 내신으로 찾기 (sql/sm_77 · 어디가 2026 입결)
+    if (!args?.department) return { error: "대학이나 학과 중 하나는 알려 주세요" };
+    const d0 = clean(args.department, 30).replace(/\s/g, "");
+    let d = d0.replace(/(학과|학부|전공|과)$/, "");
+    if (d.length < 2) d = d0;
+    const g = Number(args?.grade);
+    let q = db.from("univ_admission_results").select("university,result_year,department,track,quota,competition,cut50,cut70")
+      .ilike("department", `%${d}%`).gte("result_year", 2025).not("cut70", "is", null);
+    if (Number.isFinite(g) && g > 0) q = q.gte("cut70", Math.max(1, g - 0.8)).lte("cut70", g + 1.2);
+    const { data } = await q.limit(900);
+    const SPECIAL = /지역인재|지역기회|농어촌|기회균|특성화|장애|특수교육|기초|차상위|저소득|사회배려|사회통합|사회기여|보훈|서해|고른기회|다문화|만학도|성인학습|재직자|평생학습|군위탁|계약학과|한부모|정원외|목회자|교역자|추천자|특기자|외국인|북한/;
+    const best = new Map<string, any>();   // 대학·학과·전형마다 가장 최근 해만
+    for (const r of data ?? []) {
+      if (/\[정시/.test(r.track) || (!args?.special && SPECIAL.test(r.track))) continue;
+      const k = `${r.university}|${r.department}|${r.track}`;
+      const o = best.get(k);
+      if (!o || r.result_year > o.result_year) best.set(k, r);
+    }
+    const rows = [...best.values()];
+    if (!rows.length) return { results: [], note: `'${d0}' 수시 입결을 아직 못 찾았어요 (어디가 2026 입결을 대학별로 넣는 중)` };
+    const show = (r: any) => ({ 대학: r.university, 학과: r.department, 전형: r.track, 학년도: r.result_year, 모집: r.quota, 경쟁률: r.competition, "50%컷": r.cut50, "70%컷": r.cut70 });
+    if (!(Number.isFinite(g) && g > 0)) return { results: rows.sort((a, b) => a.cut70 - b.cut70).slice(0, 40).map(show) };
+    const group = (lo: number, hi: number) => {
+      const seen = new Set<string>(), out: any[] = [];
+      for (const r of rows.filter((r) => r.cut70 >= lo && r.cut70 < hi).sort((a, b) => Math.abs(a.cut70 - g) - Math.abs(b.cut70 - g))) {
+        if (seen.has(r.university)) continue;   // 대학마다 한 줄 (내 내신에 가장 가까운 전형)
+        seen.add(r.university); out.push(show(r));
+        if (out.length >= 10) break;
+      }
+      return out;
+    };
+    return {
+      grade: g,
+      도전: group(0, g - 0.2),            // 70%컷이 내 내신보다 높음 (숫자가 작음)
+      적정: group(g - 0.2, g + 0.3),
+      안정: group(g + 0.3, 99),
+      note: "어디가 2026학년도 수시 결과(9등급 환산등급) 기준이다. 70%컷 = 합격자 중 70% 지점 등급(숫자가 작을수록 높음). 도전 = 70%컷이 내 내신보다 0.2 넘게 높은 곳, 적정 = 비슷한 곳, 안정 = 0.3 넘게 낮은 곳. 해마다 바뀌고 학종은 내신만으로 정해지지 않아 참고용이다. 일반 전형만 골랐다 — 지역인재(그 지역 고교 졸업자만)·농어촌·기회균형 같은 특별전형은 빠져 있다 (넣으려면 special=true).",
+    };
+  }
   if (name === "get_results") {
     let q = db.from("univ_admission_results").select("result_year,department,track,quota,competition,extra,cut50,cut70,avg,cut_min,grade_system,change_note,score50,score70").eq("university", univ).limit(80);
     if (args?.department) q = q.ilike("department", `%${clean(args.department, 30)}%`);
@@ -822,6 +874,7 @@ async function updateMemory(db: any, userId: string, message: string, answer: st
   const cur = await memoryOf(db, userId);
   const sys = `너는 입시 상담 AI '물꼬'의 기억 담당이다. 학생이 이번에 한 말에서 다음 상담에도 쓸 '오래 가는 사실'만 뽑아 물꼬 노트를 고친다. JSON만 출력.
 - 학생이 직접 말한 것만. 물꼬 답에 나온 추천 · 추측 · 예시는 넣지 않는다 (물꼬 답은 학생 말이 무엇에 대한 답인지 이해하는 데만 쓴다).
+- 질문 카드에서 "더 볼까요 · 자세히 · 어떤 계열을 볼까요" 같은 둘러보기 보기를 고른 것은 학생의 목표가 아니다 — 계열 · 목표 학과에 넣지 않는다. 학생이 "나는 ○○ 가고 싶어", "내 희망은 ○○"처럼 자기 목표로 말할 때만 넣는다.
 - facts: 바뀌거나 새로 알게 된 칸만. 칸 이름은 이것만: ${MEM_KEYS.join(" · ")}. 값은 짧게 (60자 안). 학생이 더 이상 아니라고 하면 그 칸을 "" 로.
   · 성적은 과목과 함께 (예: "수학 4등급(모의) · 국어 2등급"). 면접 일정은 대학과 날짜 (예: "가천대 11/22").
 - notes_add: 칸에 안 맞지만 오래 기억할 것 (최대 2개, 40자 안). 예: "인강보다 문제집으로 공부하는 걸 좋아함"
@@ -904,8 +957,24 @@ function systemPrompt(student: string) {
 - 자기소개서·교사추천서(대입에서 폐지), 수상 실적·개인 봉사 실적(대입 미반영)을 준비하라고 하지 않는다.
 - DB에서 찾지 않은 대학별 특징(면접 스타일, "○배수 후 면접", 경쟁률 등)을 지어내지 않는다. 면접 특징은 get_interview_style 결과가 있을 때만 말한다.
 - 입결이 DB에 없으면 "합격 가능성은 입결 자료가 없어 판단하기 어려워요"라고 말하고, 가능성을 짐작해 말하지 않는다.
-- "3등급"처럼 내신인지 모의고사(수능)인지 모호한 성적은 짐작하지 말고 카드로 묻는다:
-  [[질문: 3등급은 어떤 성적이에요? | 내신 — 학교 성적 평균 | 모의고사 — 수능 모의 등급 | 둘 다 비슷해요 — 내신·모의 모두 3등급대]]
+- 성적이 내신인지 모의고사인지는 웬만하면 묻지 않는다. 3.01 · 2.7 처럼 소수점이 있으면 내신이다. "모의고사 · 수능 · 백분위"라는 말이 없으면 내신으로 보고 수시로 답한다. 정말 알 수 없을 때(예: 숫자 없이 "3등급인데 정시 수시 어디?")만 카드로 한 번 묻는다.
+
+[내 성적으로 갈 수 있는 대학 — 중요]
+- "내신 3.01인데 간호학과 어디 가능?", "3등급대 갈 수 있는 경영학과"처럼 성적 + 학과로 물으면 되묻지 말고 바로 get_results 를 university 없이 department + grade 로 불러 답한다. 지역 · 전형 · 대학을 먼저 묻지 않는다 (지역 무관 · 일반 전형으로 정하고 한 줄로 밝힌다).
+- 학과가 없으면 [학생 정보]의 희망 학과를 쓴다. 학과도 희망 학과도 없을 때만 [입력 카드]로 학과 하나만 묻는다.
+- 답 모양: 맨 위 한 줄 "내신 3.01 · 수시 일반전형 · 전국 기준이에요 (어디가 2026 입결)". 그다음 도전 · 적정 · 안정 순서로 대학을 3~5곳씩, 각 줄에 '대학 · 전형 · 70%컷 · 경쟁률' 숫자를 그대로 쓴다. 마지막에 "학종은 내신만으로 정해지지 않아요" 한 줄.
+- "어떤 대학을 확인해 볼까요?", "대학 5곳을 골라 주면 확인해 줄게요" 처럼 학생에게 대학을 고르게 하지 않는다. 도구가 전국에서 골라 준다.
+- 끝에 이어 가기 카드는 하나만 붙일 수 있다: [[질문: 이어서 볼까요? | 특별전형도 — 농어촌·기회균형 등 해당되면 | 한 대학 자세히 — 대학 이름을 적어 주세요 | 다른 학과 — 학과를 적어 주세요]]
+
+[학과 · 계열 둘러보기 ("요즘 뜨는 학과", "유망 학과", "○○ 계열 더 알려 줘")]
+- 생수면 DB에는 '뜨는 학과 순위' 자료가 없다. 흐름을 말할 때는 "일반적인 흐름이에요"라고 밝히고, 끝의 출처 줄에 "대학·산업 채용·연구 트렌드 종합" 같은 지어낸 출처를 쓰지 않는다. 출처 줄은 실제로 부른 도구 자료만 적는다 (도구를 안 불렀으면 출처 줄을 쓰지 않는다).
+- 흐름은 2~3개 계열만 짧게 말하고, 각 계열에 실제 학과 이름 예를 붙이려면 search_units(department: 인공지능 · 데이터 · 바이오 같은 낱말)로 찾은 대학·학과 이름만 쓴다.
+- 학생이 한 계열을 골라 "더 보기"를 누르면 그 계열 자체를 보여 준다. 공부법 카드(get_study_tips)로 넘어가지 않는다. 이 순서로:
+  ① 이 계열 학과 이름 예 3~5개 (search_units 결과 · 대학 이름과 함께)
+  ② 고교에서 들으면 좋은 과목 (get_recommended_subjects · 대학 비우고 학과 낱말로)
+  ③ 수시 입결 범위 (get_results · 대학 비우고 학과 낱말로 → 70%컷이 대략 몇~몇 등급인지 한 줄)
+  ④ 입문 책 1권 (get_book_recs)
+- 바로 앞 답에 붙였던 것과 같은 질문 카드를 또 붙이지 않는다. 이어 가기 카드는 다음 단계로: [[질문: 다음은? | 내 성적으로 갈 곳 — 내신을 적어 주세요 | 탐구주제 — 이 계열 세특 주제 | 다른 계열 — 바이오·에너지 등]]
 
 [자료 쓰는 법]
 - 대학 입시 정보(모집인원·전형·수능최저·면접·바뀐 점·입결)는 반드시 도구로 DB를 찾아서 답한다. 기억으로 지어내지 않는다.
@@ -937,6 +1006,7 @@ function systemPrompt(student: string) {
 
 [먼저 물어보기 — 중요]
 - 질문이 넓어서 답이 너무 많아지는 경우(예: "탐구주제 찾아 줘", "나한테 맞는 학교 추천해 줘", "학종 어디 써?")에는 바로 목록을 나열하지 않고 질문 카드로 먼저 묻는다.
+  단, 성적과 학과를 이미 말한 "갈 수 있는 대학" 질문은 예외다 — 묻지 않고 바로 찾는다 ([내 성적으로 갈 수 있는 대학] 참고).
 - 질문 카드는 답 맨 끝에만 붙인다. 본문은 "먼저 하나만 물어볼게요." 한 줄만 쓴다. 본문에 도구 이름(get_… 같은 영어)·내부 설명·"고3 생기부 활동을 바탕으로…" 같은 계획을 쓰지 않는다.
   형식 (한 질문 = 한 줄, 보기 2~4개 + 필요하면 '직접 입력' 보기, 각 보기는 '보기 — 짧은 설명'):
   [[질문: 어떤 학과 기준으로 찾을까요? | 간호학과 — 내 희망 학과 | 보건행정학과 — 진단에서 잘 맞은 학과 | 다른 학과 — 아래에 직접 적어 주세요]]
