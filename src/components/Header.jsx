@@ -55,6 +55,7 @@ const SECTIONS = [
     // 물꼬 입시 AI 화면 '바로 가기' 4개와 같은 것 — 휴대폰은 여기서 들어간다
     title: "입시 준비",
     items: [
+      { to: "/agent?sh=1", label: "수행평가 완성", icon: "note", color: "#0F9D58", login: true },
       { to: "/prep", label: "수시 면접 준비", icon: "mic", color: "#E8590C" },
       { to: "/sb", label: "선배 생기부 보기", icon: "puzzle", color: "#DB2777" },
       { to: "/my/note", label: "내 생기부 진단", icon: "note", color: "#4F46E5", login: true },

@@ -242,15 +242,18 @@ function ReturnSummary({ s }) {
     <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1.4fr]">
       {/* 며칠 만에 다시 오나 */}
       <div className="rounded-xl border border-gray-200 p-5">
-        <p className="text-[12px] text-gray-500">재로그인 회원은 보통</p>
+        {/* 회원 기준(sql/sm_109 member_median_gap) — 회원마다 가운데 값을 낸 뒤 그 가운데 값. 자주 오는 회원이 여러 번 세어지지 않는다 */}
+        <p className="text-[12px] text-gray-500">다시 오는 회원은 보통</p>
         <p className="mt-1 text-2xl font-extrabold text-sm-navy">
-          {s.median_gap == null ? "-" : `${daysTxt(s.median_gap)} 만에`}
+          {(s.member_median_gap ?? s.median_gap) == null ? "-" : `${daysTxt(s.member_median_gap ?? s.median_gap)} 만에`}
           <span className="ml-1 text-[14px] font-bold text-gray-500">다시 와요</span>
         </p>
         <p className="mt-0.5 text-[12px] text-gray-400">
-          평균 {daysTxt(s.avg_gap)} · 재로그인 {measured.toLocaleString()}번 기준
-          {num(s.first_after_join) ? ` · 가입 후 처음 ${num(s.first_after_join)}번은 뺌` : ""}
+          {s.member_median_gap != null ? `회원 ${num(s.members).toLocaleString()}명 기준 · ` : ""}
+          방문 {measured.toLocaleString()}번 기준으로는 {daysTxt(s.median_gap)} · 평균 {daysTxt(s.avg_gap)}
+          {num(s.first_after_join) ? ` · 가입 날 기록 없이 처음 온 ${num(s.first_after_join)}번은 뺌` : ""}
         </p>
+        <p className="mt-2 text-[11.5px] text-gray-400">아래 막대는 방문 횟수 기준이에요 (자주 오는 회원은 여러 번 세어져요)</p>
 
         {/* 구간 막대 */}
         <div className="mt-4 flex h-3 overflow-hidden rounded-full bg-gray-100">

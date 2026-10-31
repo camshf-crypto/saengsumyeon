@@ -194,6 +194,7 @@ export default function App() {
             <Route path="/advertise" element={<Advertise />} />
             <Route path="/my/level" element={<Level />} />
             <Route path="/my/home" element={<MyHome />} />
+            <Route path="/suhaeng" element={<Navigate to="/agent?sh=1" replace />} />
             <Route path="/my" element={<MyPage />} />
 
             {/* 인증 — 구글 로그인 후 /auth/callback으로 돌아온다 */}
