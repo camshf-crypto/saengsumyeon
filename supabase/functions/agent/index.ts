@@ -250,6 +250,21 @@ const TOOLS = [
       parameters: { type: "object", properties: { subject: { type: "string", description: "과목/영역 일부로 좁히기 (선택)" } } },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "school_eval",
+      description: "학생 학교의 교과별 평가계획(학교가 공개한 교수·학습 및 평가 운영 계획)을 가져온다. 과목별 중간·기말·수행평가 반영 비율, 시험 문항 구성, 수행평가 영역(제목·단원·성취기준·평가 방법·시기·배점·채점 기준표·유의 사항), 성취도 기준, 교재. 수행평가 · 내신 시험 · 세특 · 과목 공부 계획 질문이면 먼저 부른다. 과목을 비우면 그 학년 전 과목 요약.",
+      parameters: {
+        type: "object",
+        properties: {
+          subject: { type: "string", description: "과목 이름 일부 (예: 공통국어2, 화학, 미적분). 비우면 전 과목 요약" },
+          grade: { type: "integer", description: "학년 1~3. 비우면 학생 학년" },
+          school: { type: "string", description: "다른 학교를 물을 때만 (예: 휘문고등학교). 비우면 학생 학교" },
+        },
+      },
+    },
+  },
   // 흔한가 진단 3종 — 생수면의 진단 기능을 그대로 부른다 (마이페이지 기록도 같이 쌓임 · 비용은 에이전트 주간 사용량으로)
   {
     type: "function",
@@ -583,6 +598,39 @@ async function runTool(db: any, userId: string, name: string, args: any, token =
     const { data } = await db.from("univ_result_names").select("university");
     return { universities: list, with_results: (data ?? []).map((r: any) => r.university) };
   }
+  if (name === "school_eval") {
+    const mine = await schoolMeta(db, userId);
+    const want = clean(args?.school, 40) || mine.school;
+    if (!want) return { no_school: true, note: "학생 학교를 몰라요. 어느 학교인지 물어본다 (학교를 알려 주면 그 학교 평가계획으로 답할 수 있다고)" };
+    const name = await evalSchoolName(db, want);
+    if (!name) return { no_data: true, school: want, note: "이 학교 평가계획은 아직 생수면에 없어요. 지어내지 말고 없다고 말한 뒤, 일반적인 수행평가 · 시험 준비 방법으로 돕는다 (학교 평가계획은 계속 추가 중)" };
+    const gnum = Number(args?.grade) || Number(String(await gradeOf(db, userId)).match(/[123]/)?.[0] ?? 0);
+    const { rows, current } = await evalSubjects(db, name, gnum);
+    if (!rows.length) return { no_data: true, school: name, grade: gnum, note: `${name} ${gnum}학년 자료는 아직 없어요` };
+    const r0 = rows[0];
+    const head = { school: name, grade: r0.grade, year: r0.year, semester: r0.semester, current_term: current, source: r0.source };
+    const sk = nameKey(args?.subject);
+    if (!sk) {
+      const tasks = await evalTasks(db, rows.map((r: any) => r.id));
+      return {
+        ...head,
+        subjects: rows.map((r: any) => ({
+          subject: r.subject, kind: r.kind ?? undefined, exam_mid: r.exam_mid, exam_final: r.exam_final, perf_total: r.perf_total,
+          tasks: tasks.filter((t: any) => t.subject_id === r.id).map((t: any) => ({ title: clean(t.title, 60), points: t.points, period: clean(t.period, 30), methods: t.methods })),
+        })),
+      };
+    }
+    const hit = rows.filter((r: any) => nameKey(r.subject).includes(sk) || sk.includes(nameKey(r.subject)));
+    if (!hit.length) return { ...head, not_found: args.subject, subjects: rows.map((r: any) => r.subject), note: "그 과목이 이 학년 목록에 없어요. 비슷한 과목을 고르게 하거나 학생에게 확인한다" };
+    const tasks = await evalTasks(db, hit.map((r: any) => r.id), true);
+    return {
+      ...head,
+      subjects: hit.slice(0, 3).map((r: any) => ({
+        ...pick(r, ["subject", "kind", "exam_mid", "exam_final", "perf_total", "essay_total", "exam_detail", "grading", "notes", "books"]),
+        tasks: tasks.filter((t: any) => t.subject_id === r.id).map((t: any) => pick(t, ["title", "unit", "standards", "methods", "period", "months", "points", "rubric", "memo"])),
+      })),
+    };
+  }
   if (name === "my_record") {
     let q = db.from("record_activities").select("grade,term,kind,subject,title,content").eq("user_id", userId).order("created_at").limit(120);
     if (args?.subject) q = q.ilike("subject", `%${clean(args.subject, 20)}%`);
@@ -812,6 +860,185 @@ function seasonOf(g: string, month: number) {
   return SEASON[g === "N수" ? "고3" : g]?.[key] ?? "";
 }
 
+/* ───────── 우리 학교 평가계획 (sql/sm_105 school_eval_subjects · school_eval_tasks) ─────────
+ * 가입 때 고른 학교(user_metadata.school)로 그 학교 · 학년의 과목별 시험 비율과 수행평가(무엇을 · 언제 · 몇 점 · 채점 기준)를 찾는다
+ * 학년도는 3월에 바뀐다 (1~2월은 지난 학년도 2학기) · 이번 학기 자료가 없으면 가장 최근 학기 자료를 쓴다
+ */
+function termNow() {
+  const d = new Date(Date.now() + 9 * 3600000);
+  const m = d.getUTCMonth() + 1, y = d.getUTCFullYear();
+  return { year: m >= 3 ? y : y - 1, semester: m >= 3 && m <= 8 ? 1 : 2, month: m };
+}
+async function schoolMeta(db: any, userId: string, meta: any = null) {
+  let m = meta;
+  if (!m?.school) {
+    const { data } = await db.auth.admin.getUserById(userId).catch(() => ({ data: null }));
+    m = data?.user?.user_metadata ?? {};
+  }
+  return { school: clean(m?.school, 40), region: clean(m?.school_region, 20) };
+}
+// 학교 이름 맞추기 — 목록에서 고른 이름은 그대로 · 직접 쓴 이름(예: 개포고)은 앞부분이 같은 학교가 하나일 때만
+async function evalSchoolName(db: any, name: string) {
+  if (!name) return "";
+  const { data: hit } = await db.from("school_eval_subjects").select("school").eq("school", name).limit(1);
+  if (hit?.length) return name;
+  const short = name.replace(/\s/g, "").replace(/(고등학교|고교|고)$/, "");
+  if (short.length < 2) return "";
+  const { data } = await db.from("school_eval_subjects").select("school").ilike("school", `${short}고%`).limit(200);
+  const names = [...new Set((data ?? []).map((r: any) => r.school))];
+  return names.length === 1 ? String(names[0]) : "";
+}
+async function evalSubjects(db: any, school: string, gnum: number) {
+  let q = db.from("school_eval_subjects")
+    .select("id,school,region,year,semester,grade,subject,kind,exam_mid,exam_final,perf_total,essay_total,exam_detail,grading,notes,books,source")
+    .eq("school", school).order("year", { ascending: false }).order("semester", { ascending: false }).order("subject").limit(300);
+  if (gnum) q = q.eq("grade", gnum);
+  const { data } = await q;
+  const rows = data ?? [];
+  if (!rows.length) return { rows: [], current: false };
+  const t = termNow();
+  const cur = rows.filter((r: any) => r.year === t.year && r.semester === t.semester);
+  const use = cur.length ? cur : rows.filter((r: any) => r.year === rows[0].year && r.semester === rows[0].semester);
+  return { rows: use, current: cur.length > 0 };
+}
+async function evalTasks(db: any, ids: number[], full = false) {
+  if (!ids.length) return [];
+  const cols = full ? "subject_id,sort,title,unit,standards,methods,period,months,points,rubric,memo" : "subject_id,sort,title,methods,period,months,points";
+  const { data } = await db.from("school_eval_tasks").select(cols).in("subject_id", ids).order("subject_id").order("sort").limit(600);
+  return data ?? [];
+}
+const nameKey = (s: unknown) => String(s ?? "").replace(/\s|[·ㆍ]/g, "").replace(/Ⅰ/g, "I").replace(/Ⅱ/g, "II").toLowerCase();
+
+// 대화마다 붙이는 짧은 요약 — 과목별 반영 비율 + 이번 달 · 다음 달 수행평가
+async function schoolContext(db: any, userId: string, meta: any, grade: string) {
+  const { school, region } = await schoolMeta(db, userId, meta);
+  if (!school) return "[학교 평가계획] 학교 모름 (가입 정보에 학교 없음)";
+  const gnum = Number(String(grade).match(/[123]/)?.[0] ?? 0);
+  const name = await evalSchoolName(db, school);
+  if (!name) return `[학교 평가계획] ${school}${region ? ` (${region})` : ""} · 아직 생수면에 이 학교 평가계획 자료 없음`;
+  const { rows, current } = await evalSubjects(db, name, gnum);
+  if (!rows.length) return `[학교 평가계획] ${name} · ${gnum ? `${gnum}학년` : "학년 모름"} 자료 없음 (다른 학년 자료만 있음)`;
+  const r0 = rows[0];
+  const tasks = await evalTasks(db, rows.map((r: any) => r.id));
+  const subj = new Map(rows.map((r: any) => [r.id, r.subject]));
+  const mon = termNow().month, next = mon === 12 ? 1 : mon + 1;
+  const soon = tasks.filter((t: any) => (t.months ?? []).some((x: number) => x === mon || x === next));
+  const L = [
+    `[학교 평가계획] ${name} ${r0.grade}학년 ${r0.year}학년도 ${r0.semester}학기${current ? "" : " (지금 학기 자료가 아니라 가장 최근 자료)"} · ${rows.length}과목 · 자세히(채점 기준표 · 성취기준)는 school_eval 도구`,
+    "과목별 반영(중간/기말/수행 %): " + rows.slice(0, 40).map((r: any) => `${r.subject} ${r.exam_mid ?? 0}/${r.exam_final ?? 0}/${r.perf_total ?? 0}`).join(" · "),
+  ];
+  if (soon.length) L.push(`이번 달 · 다음 달(${mon}·${next}월) 수행평가: ` + soon.slice(0, 15).map((t: any) => `${subj.get(t.subject_id)} '${clean(t.title, 40)}' ${t.points ?? "?"}점(${clean(t.period, 20) || "시기 미정"})`).join(" · "));
+  return L.join("\n").slice(0, 2500);
+}
+
+/* ───────── 물꼬가 먼저 말 걸기 — 물꼬 화면에 들어올 때마다 (AI 안 부름 · 사용량 안 씀)
+ * 지난번에 한 것 → 이어서 할 순서 → 우리 학교 곧 있을 수행평가 → 이번 달 할 일 · 버튼(선택지) 3개까지
+ * 학생이 버튼을 누르거나 답하면 이 말이 대화 첫머리로 같이 저장된다 (body.opening)
+ */
+async function openingOf(db: any, user: any) {
+  const uid = user.id, meta = user.user_metadata ?? {};
+  const ago = (d: string) => Math.floor((Date.now() - new Date(d).getTime()) / 86400000);
+  const when = (d: string) => { const n = ago(d); return n <= 0 ? "오늘" : n === 1 ? "어제" : n < 7 ? `${n}일 전` : n < 30 ? `${Math.floor(n / 7)}주 전` : "지난달"; };
+  const since = new Date(Date.now() - 30 * 86400000).toISOString();
+  const [chat, topic, inq, acts, plan, grade, sch] = await Promise.all([
+    db.from("agent_chats").select("id,title,updated_at").eq("user_id", uid).order("updated_at", { ascending: false }).limit(1).maybeSingle(),
+    db.from("topic_queries").select("topic,department,subject,created_at").eq("user_id", uid).gte("created_at", since).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    db.from("inquiries").select("id,topic,created_at").eq("user_id", uid).gte("created_at", since).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    db.from("agent_actions").select("title,created_at").eq("user_id", uid).eq("status", "pending").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    db.from("study_plans").select("id").eq("user_id", uid).limit(1).maybeSingle(),
+    gradeOf(db, uid, meta).catch(() => ""),
+    schoolMeta(db, uid, meta),
+  ]);
+  // 부르는 이름 — 세 글자면 성 빼고 (김민준 → 민준아 · 김지수 → 지수야)
+  const full = clean(meta.name || meta.full_name, 10).replace(/\s/g, "");
+  const first = /^[가-힣]{3}$/.test(full) ? full.slice(1) : /^[가-힣]{2}$/.test(full) ? full : "";
+  const call = first ? first + ((first.charCodeAt(first.length - 1) - 0xac00) % 28 ? "아" : "야") : "";
+  const hi = call ? `${call}, 다시 왔네!` : "다시 왔네!";
+  const L: string[] = [];
+  const steps: string[] = [];
+  const opts: string[] = [];
+
+  // 1) 지난번에 한 것
+  const c = chat.data;
+  if (c) L.push(`${hi} ${when(c.updated_at)}엔 **'${clean(c.title, 30)}'** 이야기를 했지.`);
+  else L.push(`${call ? `${call}, ` : ""}반가워! 나는 물꼬야. 입시 · 생기부 · 수행평가 · 공부법 뭐든 같이 챙겨 줄게.`);
+
+  // 2) 이어서 할 순서 — 하다 만 것부터
+  if (acts.data) { steps.push(`'${clean(acts.data.title, 30)}' 마무리하기`); opts.push(`'${clean(acts.data.title, 24)}' 이어서 하기`); }
+  if (inq.data) { steps.push(`탐구 보고서 **'${clean(inq.data.topic, 30)}'** 어디까지 했는지 보고 다음 단계 하기`); opts.push("탐구 보고서 이어서 하기"); }
+  else if (topic.data) {
+    steps.push(`**'${clean(topic.data.topic, 30)}'** 주제로 탐구 보고서까지 완성하기 (주제 → 탐구 방법 → 결과 → 보고서)`);
+    opts.push("그 탐구주제로 보고서 쓰기");
+  }
+  if (plan.data) steps.push("입시 플랜 이번 주 미션 체크하기");
+
+  // 3) 우리 학교 수행평가 — 월별로, 지금 타이밍에 맞는 것부터
+  //    이번 달: 이미 지난 주차(예: 오늘이 4주인데 '10월 2주')는 빼고 남은 것 · 다음 달: 전부 · 주차 순서로
+  //    월말(25일~)이면 다음 달 것을 먼저 보여 준다 · 시험 주차(평가계획 notes 의 '중간고사 10월 2주')도 같이
+  const schoolLines: string[] = [];
+  const schoolOpts: string[] = [];
+  if (sch.school) {
+    const evalName = await evalSchoolName(db, sch.school).catch(() => "");
+    const gnum = Number(String(grade).match(/[123]/)?.[0] ?? 0);
+    if (!evalName) schoolLines.push(`**${sch.school}** 평가계획은 지금 준비하고 있어. 들어오면 그 학교 수행평가 일정에 맞춰서 먼저 알려 줄게.`);
+    else {
+      const { rows } = await evalSubjects(db, evalName, gnum);
+      const tasks = await evalTasks(db, rows.map((r: any) => r.id));
+      const subj = new Map(rows.map((r: any) => [r.id, r.subject]));
+      const kst = new Date(Date.now() + 9 * 3600000);
+      const mon = kst.getUTCMonth() + 1, day = kst.getUTCDate(), curW = Math.ceil(day / 7);
+      const next = mon === 12 ? 1 : mon + 1;
+      const weekOf = (t: any) => { const m = String(t.period ?? "").match(/(\d{1,2})\s*월\s*(\d)\s*주/); return m ? { mon: Number(m[1]), w: Number(m[2]) } : null; };
+      const order = (t: any) => weekOf(t)?.w ?? 9;
+      const has = (t: any, m: number) => (t.months ?? []).includes(m);
+      const lastM = (t: any) => { const ms = (t.months ?? []) as number[]; return ms.length ? ms[ms.length - 1] : 0; };
+      // 4달 넘게 이어지는 것(배움일지 · 포트폴리오 같은 상시 과제)은 따로 한 줄로
+      const long = (t: any) => (t.months ?? []).length >= 4;
+      const active = tasks.filter((t: any) => !long(t) && (has(t, mon) || has(t, next)));
+      const always = tasks.filter((t: any) => long(t) && (has(t, mon) || has(t, next)));
+      // 그 달에 끝나는 것(마감)이 먼저 · 그다음 주차 순서
+      const byDue = (m: number) => (a: any, b: any) => (Number(lastM(a) !== m) - Number(lastM(b) !== m)) || order(a) - order(b);
+      const passed = (t: any) => weekOf(t)?.mon === mon && weekOf(t)!.w < curW; // 이번 달 이미 지난 주차
+      const lateMonth = day >= 25; // 월말이면 다음 달 것부터
+      const thisM = active.filter((t: any) => has(t, mon) && !passed(t)).sort(byDue(mon));
+      const nextM = active.filter((t: any) => has(t, next) && (lateMonth || !has(t, mon))).sort(byDue(next));
+      const line = (t: any, m: number) => `📝 ${subj.get(t.subject_id)} **'${clean(t.title, 34)}'** ${t.points ?? "?"}점 · ${clean(t.period, 16) || "시기 미정"}${lastM(t) === m ? " · 마감" : ""}`;
+      const block = (label: string, list: any[], m: number) => list.length ? ["", `**${label}** ${list.length}개`, ...list.slice(0, 5).map((t: any) => line(t, m)), ...(list.length > 5 ? [`그 밖에 ${list.length - 5}개 더`] : [])] : [];
+      const first = lateMonth
+        ? block(`${next}월에 할 수행평가`, nextM, next)
+        : [...block(`${mon}월 수행평가`, thisM, mon), ...block(`${next}월에 새로 시작하는 수행평가`, nextM, next)];
+      if (always.length) first.push("", `상시 수행평가 ${always.length}개: ${always.slice(0, 3).map((t: any) => `${subj.get(t.subject_id)} '${clean(t.title, 16)}'`).join(" · ")} (꾸준히 쌓기)`);
+      // 시험 주차 — 과목 notes 에 가장 많이 적힌 '중간고사 N월 N주' · '기말고사 N월 N주'
+      const examOf = (kind: string) => {
+        const cnt = new Map<string, number>();
+        for (const r of rows) { const m = String(r.notes ?? "").match(new RegExp(`${kind}[^\\d]{0,6}(\\d{1,2}월\\s*\\d\\s*주)`)); if (m) cnt.set(m[1], (cnt.get(m[1]) ?? 0) + 1); }
+        return [...cnt.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
+      };
+      const mid = examOf("중간고사"), fin = examOf("기말고사");
+      if (first.some((x) => x.startsWith("📝"))) {
+        schoolLines.push(`📅 **${evalName} ${rows[0].grade}학년** 수행평가를 월별로 챙겨 봤어.`, ...first);
+        const top = (lateMonth ? nextM[0] ?? thisM[0] : thisM[0] ?? nextM[0]) as any;
+        schoolOpts.push(`${subj.get(top.subject_id)} '${clean(top.title, 18)}' 준비하기`);
+        schoolOpts.push(`${lateMonth || !thisM.length ? next : mon}월 수행평가 채점 기준 전부 보기`);
+      } else schoolLines.push(`📅 **${evalName} ${rows[0].grade}학년**은 ${mon}·${next}월에 잡힌 수행평가가 없어. 지금은 시험 준비에 집중해도 돼.`);
+      if (mid || fin) schoolLines.push("", `시험은 ${[mid && `중간고사 ${mid}`, fin && `기말고사 ${fin}`].filter(Boolean).join(" · ")}쯤이야 (학교 평가계획 기준).`);
+    }
+  }
+
+  // 4) 이번 달 할 일 (하다 만 게 없을 때)
+  const mon = termNow().month;
+  const season = grade ? seasonOf(grade, mon) : "";
+  if (!steps.length && season) { steps.push(`${grade} ${mon}월이면 지금은 **${season}** 할 때야`); opts.push(`${grade} ${mon}월에 뭐부터 하면 돼?`); }
+  if (c && !opts.length) opts.push("지난 대화 이어서 하기");
+
+  // 순서: 지난번 → 우리 학교 수행평가 → 이어서 할 순서 (번호 목록은 맨 끝 — 화면에서 목록 뒤 문단이 목록에 붙지 않게)
+  if (schoolLines.length) L.push("", ...schoolLines);
+  else if (!sch.school) L.push("", "학교를 알려 주면 그 학교 수행평가 일정 · 채점 기준에 맞춰서 챙겨 줄 수 있어.");
+  if (steps.length) L.push("", steps.length > 1 ? "이어서 할 순서야:" : "다음으로 할 건:", ...steps.slice(0, 3).map((s, i) => `${i + 1}. ${s}`));
+  const uniq = [...new Set([...schoolOpts, ...opts])].slice(0, 3); // 우리 학교 수행평가 버튼이 먼저
+  return { text: L.join("\n") + (uniq.length ? `\n\n[[선택지: ${uniq.join(" | ")}]]` : ""), last_chat: c?.id ?? null };
+}
+
 /* ───────── 학생 정보 (생수면에서 한 것들) — 대화마다 짧게 붙인다 */
 async function studentContext(db: any, userId: string, meta: any = {}) {
   const [prof, my, acts, diag, iv, mot, grades, tails, inq, pl] = await Promise.all([
@@ -843,6 +1070,8 @@ async function studentContext(db: any, userId: string, meta: any = {}) {
       + ` · 지금 학년 활동 ${gnum ? byG(gnum) : 0}개`);
     const mon = new Date(Date.now() + 9 * 3600000).getUTCMonth() + 1;
     if (gnum) L.push(`[이번 달 할 일 · 고${gnum} ${mon}월] ${seasonOf(`고${gnum}`, mon)}`);
+    // 우리 학교 평가계획 — 학교를 알면 그 학교 · 학년 과목과 곧 있을 수행평가
+    L.push(await schoolContext(db, userId, meta, grade).catch(() => "[학교 평가계획] 확인 못 함"));
   }
   const d = diag.data?.result;
   if (d) {
@@ -1019,6 +1248,16 @@ function systemPrompt(student: string) {
 - 학생이 "뭐부터 해야 해", "지금 뭐 하면 돼", "막막해"처럼 방향을 물으면 [이번 달 할 일]을 중심으로 답한다.
 - 탐구 · 수행평가 이야기는 주제 고르기에서 끝내지 않는다. 주제 → 흔한가 확인 → 보고서(수행평가 결과물) 완성까지가 한 흐름이다.
 - 다른 질문에 답한 뒤에는, 질문이 이번 달 할 일과 이어질 때만 한 대화에 한 번 끝에 한 줄 붙인다: "참고로 고2 10월이면 지금 ○○ 할 때예요." (매번 붙이지 않는다 · 앞 답에 이미 붙였으면 안 붙인다)
+
+[학교 평가계획 — 생수면만의 강점]
+- [학생 정보]의 [학교 평가계획]에 학생 학교 · 학년의 과목별 반영 비율과 곧 있을 수행평가가 있다. 자세한 것(채점 기준표 · 성취기준 · 시험 문항 구성 · 유의 사항)은 school_eval 도구로 본다.
+- 수행평가 · 내신 시험 · 세특 · 과목 공부 계획 · "이번 달 뭐 해야 해" 질문이면 일반론보다 먼저 학생 학교 자료로 답한다.
+- 학생에게 말할 때는 '우리 학교'라고 하지 말고 학교 이름을 그대로 쓴다 (예: "개포고등학교 1학년 공통국어2 수행평가는…"). 예: "○○고 2학년 화학은 수행평가 40% — 10월 '실험 보고서' 20점, 채점은 가설 4 · 과정 6 · 결론 10점이에요."
+- 수행평가를 도울 때는 채점 기준표(rubric)의 요소와 만점 기준 문장에 맞춰 준비 순서 · 체크리스트 · 결과물 구성을 짠다. 높은 점수 기준 문장을 그대로 짚어 준다 ("만점은 '…한 경우'라서 이 부분을 꼭 넣어요").
+- 숫자(비율 · 배점 · 시기)는 자료 그대로 쓰고 지어내지 않는다. 답에 한 번 "○○고 2026학년도 2학기 평가계획 기준"이라고 밝히고, 선생님 안내가 바뀔 수 있으니 최종은 수업 시간 공지를 따르라고 짧게 덧붙인다.
+- 자료가 지금 학기 것이 아니면 그렇다고 말한다. 학교 자료가 없으면 없다고 말하고 일반적인 방법으로 돕는다 (학교 평가계획은 계속 추가 중).
+- 곧 있을 수행평가가 있으면, 학생이 방향을 묻거나 대화를 처음 열 때 먼저 꺼내 줘도 된다: "다음 달에 ○○ 수행평가(20점) 있네요. 채점 기준부터 같이 볼까요?"
+- 수행평가 일정을 물으면 월별로 묶고, 그 달에 끝나는 것(마감)부터 주차 순서로 알려 준다. 이미 지난 주차는 빼고, 월말이면 다음 달 것부터 말한다.
 
 [학년에 맞춰 답하기 — 중요]
 - [학생 정보]의 [학년 상태]를 먼저 본다. 가입 때 고른 학년이 기본이고, 학생이 대화에서 다른 학년을 말하면 그걸 따른다.
@@ -1411,7 +1650,12 @@ async function planFromCard(db: any, user: any, message: string, usage: any, pai
   const free = !paid && !isAdm;
   if (free) {
     const { count: had } = await db.from("study_plans").select("id", { count: "exact", head: true }).eq("user_id", user.id);
-    if ((had ?? 0) > 0) return "**무료 맛보기 플랜은 이미 받았어요.**\n\n플랜을 다시 짜고, 매주 월요일마다 새 미션을 받고, 내 플랜에서 체크하려면 1년 이용권(79,000원 · 한 달 약 6,600원)이 필요해요.\n\n[[이용권]]";
+    if ((had ?? 0) > 0) {
+      const left = Math.max(0, 100 - (usage?.pct ?? 0));
+      return `**입시 플랜 맛보기는 1번만 무료예요.** 이미 받은 플랜이 있어서 새로 짜지는 않았어요.\n\n` +
+        (left > 0 ? `질문은 계속 할 수 있어요 (무료 사용량 ${left}% 남음 · 다 쓰면 새벽 5시에 다시 채워져요). 탐구주제 · 입결 · 공부법 뭐든 물어보세요.\n\n` : `오늘 무료 질문은 다 썼어요. 새벽 5시에 다시 채워져요.\n\n`) +
+        `플랜을 새로 짜고, 내 플랜에 저장해서 미션을 체크하려면 1년 이용권(79,000원 · 한 달 약 6,600원)이 필요해요.\n\n[[이용권]]`;
+    }
   }
   if (usage.pct >= 100 && !paid) return "**오늘 무료 사용량을 다 썼어요.**\n\n새벽 5시에 다시 채워져요. 지금 바로 계속 쓰려면 1년 이용권(79,000원 · 한 달 약 6,600원)으로 물꼬를 무제한 · 광고 없이 쓸 수 있어요.\n\n[[이용권]]";
   const r: any = await makePlan(db, user.id, user.user_metadata ?? {}, { grade, department: get("학과"), did: get("활동"), goal: get("대학"), university: get("대학") });
@@ -1504,7 +1748,11 @@ async function quickForm(db: any, userId: string, meta: any, message: string) {
   // 공부법 질문 — 바로 답하지 않고 과목 · 성적 · 많이 틀리는 단원 · 틀리는 이유부터 받는다 (그래야 맞춤으로 고른다)
   const sm = message.replace(/\s+/g, " ").trim();
   // 수행평가 도우미는 준비 중 — AI 없이 바로 안내 ('수행평가 주제 · 탐구 · 발표'는 탐구주제처럼 물꼬가 돕는다)
-  if (/수행\s*평가/.test(sm) && !/주제|탐구|발표/.test(sm)) return SOON_TEXT;
+  // 우리 학교 평가계획이 있으면 AI가 그 자료(school_eval)로 답한다
+  if (/수행\s*평가/.test(sm) && !/주제|탐구|발표/.test(sm)) {
+    const { school } = await schoolMeta(db, userId, meta);
+    if (!(school && (await evalSchoolName(db, school)))) return SOON_TEXT;
+  }
   if (sm.length <= 90 && STUDY_Q.test(sm)) return studyCard(sm);
   const t = message.replace(/\s+/g, " ").trim();
   if (t.length > 40) return null; // 학생이 내용까지 적었으면 AI가 읽는다
@@ -1823,6 +2071,7 @@ function stepLabel(name: string, a: any) {
     case "get_book_recs": return `${d || "학과"} 추천 도서 찾는 중`;
     case "get_study_tips": return `${a?.subject && a.subject !== "전과목" ? a.subject + " " : ""}선배 공부법 찾는 중`;
     case "my_record": return "내 생기부 노트 자세히 읽는 중";
+    case "school_eval": return `${clean(a?.school, 20) || "학교"} ${clean(a?.subject, 20) ? clean(a.subject, 20) + " " : ""}평가계획 확인하는 중`;
     case "list_universities": return "자료 있는 대학 확인하는 중";
     case "check_topic": return "탐구주제 흔한가 진단하는 중 (10초쯤 걸려요)";
     case "check_motive": return `${u ? u + " 기준으로 " : ""}지원동기 흔한가 진단하는 중 (10초쯤 걸려요)`;
@@ -1851,6 +2100,8 @@ Deno.serve(async (req) => {
     // 1년 이용권 전용 기능(공부법 도감 = 입시 플랜 · 학습 플랜 · 학습 다이어리 · 자기주도학습법)을 쓸 수 있나 — 이용권 또는 관리자
     const passOk = async () => Boolean(paid) || Boolean((await db.from("admins").select("user_id").eq("user_id", user.id).maybeSingle()).data);
     if (body.action === "status") return json({ usage, grade: await gradeOf(db, user.id, user.user_metadata ?? {}).catch(() => "") });
+    // 물꼬가 먼저 말 걸기 (AI 안 부름 · 사용량 안 씀)
+    if (body.action === "opening") return json(await openingOf(db, user).catch((e) => { console.error("opening", e); return { text: "" }; }));
 
     // 면접 준비 화면(/prep) — 대학 하나의 면접 정보 (AI 안 부름 · 사용량 안 씀)
     //   { action: "univ_brief", university, department } → { university, style, rules, units, past(이 학교 기출 메인 질문), common(자주 나온 공통 기출 — 이 학교 기출이 적을 때), tracks(면접 있는 전형) }
@@ -2284,6 +2535,9 @@ ${PLAN_GUIDE}
       const { data } = await db.from("agent_chats").select("*").eq("id", Number(body.chat_id)).eq("user_id", user.id).maybeSingle();
       chatRow = data;
     }
+    // 물꼬가 먼저 건 말(opening)에 답하는 거면 그 말을 대화 첫머리로 둔다 — '그 주제로 보고서 쓰기'가 무슨 말인지 알게
+    const opening = !chatRow && typeof body.opening === "string" ? String(body.opening).slice(0, 2000) : "";
+    if (opening) chatRow = { id: null, messages: [{ role: "assistant", content: opening, at: new Date().toISOString() }] };
     const history = ((chatRow?.messages ?? []) as any[]).slice(-HISTORY).map((m) => ({ role: m.role, content: m.content }));
 
     // 답 만들기 — emit 으로 지금 하는 일을 화면에 알린다 (stream: true 일 때)

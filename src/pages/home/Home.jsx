@@ -97,6 +97,7 @@ export default function Home() {
 
   const [ask, setAsk] = useState(""); // 물꼬에게 물어볼 말
   const [members, setMembers] = useState(null);
+  const [topicN, setTopicN] = useState(null); // 탐구주제 데이터 수 (sql/sm_108 · 진단할 때마다 올라감)
   const [shout, setShout] = useState(null); // 물꼬의 오늘의 외침
   const [hot, setHot] = useState([]);
   const [hotTab, setHotTab] = useState(null);
@@ -111,6 +112,7 @@ export default function Home() {
   // 모두에게 보이는 것
   useEffect(() => {
     supabase.rpc("main_numbers").then(({ data }) => data && setMembers(data.members));
+    supabase.rpc("main_topic_count").then(({ data, error }) => !error && data != null && setTopicN(Number(data)));
     supabase.rpc("shout_today").then(({ data }) => setShout(data || null));
     supabase.rpc("mg_stats").then(({ data }) => setQs(data || []));
   }, [uid]);
@@ -395,7 +397,7 @@ export default function Home() {
           </div>
 
           <div className="mt-2.5 flex flex-wrap gap-x-3.5 gap-y-1 pl-1 text-[12.5px] text-gray-500">
-            <span className="flex items-center gap-1.5"><i className="h-[5px] w-[5px] rounded-full bg-sm-orange" />탐구주제 데이터 <b className="text-gray-700">9,780건</b></span>
+            <span className="flex items-center gap-1.5"><i className="h-[5px] w-[5px] rounded-full bg-sm-orange" />탐구주제 데이터 <b className="text-gray-700">{(topicN ?? 9780).toLocaleString()}건</b></span>
             <span className="flex items-center gap-1.5"><i className="h-[5px] w-[5px] rounded-full bg-sm-orange" />대학 면접 분석 <b className="text-gray-700">140개교</b></span>
             {members != null && (
               <span className="flex items-center gap-1.5"><i className="h-[5px] w-[5px] rounded-full bg-sm-orange" />가입 학생 <b className="text-gray-700">{members.toLocaleString()}명</b></span>

@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { track } from "../../lib/track";
 import { announceNickname, uploadAvatar } from "../../components/NicknameEditor";
+import SchoolPicker, { schoolData } from "../../components/SchoolPicker";
 
 const GRADES = ["고1", "고2", "고3"];
 
@@ -50,6 +51,7 @@ export default function Signup() {
   const [file, setFile] = useState(null); // 고른 사진 — 닉네임을 저장한 뒤 올린다
   const [photoMsg, setPhotoMsg] = useState("");
   const [f, setF] = useState({ name: "", nickname: "", grade: state?.grade ?? "고3" });
+  const [school, setSchool] = useState(null); // 학교 { name, code, region }
   const [agree, setAgree] = useState({ terms: false, privacy: false, marketing: false });
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -137,6 +139,7 @@ export default function Signup() {
     if (!f.name.trim()) return setErr("이름을 입력해 주세요.");
     if (!nickname) return setErr("닉네임을 정해 주세요.");
     if (nick.status === "bad") return setErr(nick.msg);
+    if (!school) return setErr("학교를 골라 주세요. 목록에 없으면 '직접 입력'을 눌러요.");
     if (!agree.terms || !agree.privacy) return setErr("필수 약관에 동의해 주세요.");
 
     setBusy(true);
@@ -167,6 +170,7 @@ export default function Signup() {
       data: {
         name: f.name.trim(),
         grade: f.grade,
+        ...schoolData(school), // 학교 — 물꼬가 우리 학교 수행평가 · 시험 일정에 맞춰 답할 때 쓴다
         marketing_agreed: agree.marketing,
         agreed_at: new Date().toISOString(),
       },
@@ -199,7 +203,7 @@ export default function Signup() {
     <div className="mx-auto max-w-md px-5 py-14">
       <h1 className="text-2xl font-extrabold tracking-tight text-sm-navy">가입 마무리</h1>
       <p className="mt-2 text-sm text-gray-500">
-        프로필과 학년, 약관 동의만 확인하면 진단 결과 전체를 볼 수 있습니다.
+        프로필 · 학년 · 학교와 약관 동의만 확인하면 진단 결과 전체를 볼 수 있습니다.
       </p>
 
       {/* 결과 화면에서 넘어온 주제를 다시 보여준다 */}
@@ -287,6 +291,11 @@ export default function Signup() {
               {g}
             </button>
           ))}
+        </div>
+
+        {/* 학교 — 찾아서 고르기 · 목록에 없으면 직접 입력 */}
+        <div className="pt-1">
+          <SchoolPicker onChange={setSchool} />
         </div>
       </div>
 

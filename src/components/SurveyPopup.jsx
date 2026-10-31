@@ -36,6 +36,7 @@ export default function SurveyPopup() {
 
   useEffect(() => {
     if (!uid || SKIP_PATHS.some((p) => pathname.startsWith(p))) return;
+    if (!user?.user_metadata?.school) return; // 학교 입력 팝업(SchoolGate)과 겹치지 않게 — 학교를 넣은 뒤에 뜬다
     try {
       if (Number(localStorage.getItem(SNOOZE) || 0) > Date.now()) return;
     } catch {
@@ -54,7 +55,7 @@ export default function SurveyPopup() {
       alive = false;
       clearTimeout(t);
     };
-  }, [uid]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [uid, user?.user_metadata?.school]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!open) return null;
 

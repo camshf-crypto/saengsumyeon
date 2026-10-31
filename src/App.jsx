@@ -10,6 +10,7 @@ import Footer from "./components/Footer";
 import LevelUpHost from "./components/LevelUp";
 import StayTracker from "./components/StayTracker";
 import SurveyPopup from "./components/SurveyPopup";
+import SchoolGate from "./components/SchoolGate";
 import VoiceButton from "./components/VoiceButton";
 import PieceNudge from "./components/PieceNudge";
 import Voice from "./pages/voice/Voice";
@@ -22,6 +23,7 @@ import Signup from "./pages/auth/Signup";
 import AuthCallback from "./pages/auth/AuthCallback";
 import TestLogin from "./pages/auth/TestLogin";
 import MyPage from "./pages/my/MyPage";
+import MyHome from "./pages/my/MyHome";
 import AdminTopics from "./pages/admin/AdminTopics";
 import AdminOrders from "./pages/admin/AdminOrders";
 import InquiryHome from "./pages/inquiry/InquiryHome";
@@ -105,6 +107,7 @@ function Layout({ children }) {
         <LevelUpHost />
         <StayTracker />
         <SurveyPopup />
+        <SchoolGate />
       </main>
     );
 
@@ -116,6 +119,7 @@ function Layout({ children }) {
       <LevelUpHost />
       <StayTracker />
       <SurveyPopup />
+      <SchoolGate />
       <VoiceButton />
       <PieceNudge />
     </div>
@@ -189,6 +193,7 @@ export default function App() {
             {/* 광고 문의 — 아래쪽 링크(환불 규정 옆)에서 들어온다 */}
             <Route path="/advertise" element={<Advertise />} />
             <Route path="/my/level" element={<Level />} />
+            <Route path="/my/home" element={<MyHome />} />
             <Route path="/my" element={<MyPage />} />
 
             {/* 인증 — 구글 로그인 후 /auth/callback으로 돌아온다 */}

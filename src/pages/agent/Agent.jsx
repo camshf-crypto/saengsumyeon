@@ -48,7 +48,6 @@ const FEATURES = [
 ];
 // 수행평가는 준비 중 — 타일을 누르거나 채팅으로 물으면 서버에 보내지 않고 바로 안내 (AI 비용 없음)
 //   '수행평가 주제' · '수행평가 탐구'처럼 주제를 찾는 질문은 그대로 물꼬가 답한다 (탐구주제로 돕기)
-const SOON_TEXT = "**수행평가 도우미는 지금 준비 중이에요.**\n과목별 양식에 맞춰 도와줄 수 있게 만들고 있어요. 열리면 이 화면 타일에서 바로 쓸 수 있어요.\n\n수행평가 **주제**를 찾는 중이라면 지금도 도와줄 수 있어요. '수행평가 탐구주제 추천해 줘'처럼 물어봐 주세요.";
 // 바로 가기 4개 — 메인 화면에 있던 타일(면접 준비 · 선배 생기부 · 생기부 진단 · 입시 플랜)을 물꼬 화면으로 옮겼다 · 누르면 그 화면으로 이동
 const SHORTCUTS = [
   { to: "/prep", title: "수시 면접 준비", desc: "지원 대학별 면접 4단계" },
@@ -56,7 +55,6 @@ const SHORTCUTS = [
   { to: "/my/note", title: "내 생기부 진단", desc: "다 적으면 AI 입시 진단" },
   { to: "/plan", title: "내 입시 플랜", desc: "학년별 · 이번 주 할 일" },
 ];
-const isSoon = (q) => /수행\s*평가/.test(q) && !/주제|탐구|발표/.test(q);
 const EXAMPLES = [
   "간호학과 합격 선배는 고1 때 뭐 했어?",
   "내 생기부로 학종 쓰기 좋은 학교 추천해 줘",
@@ -518,7 +516,7 @@ function Kid({ text }) {
   return <Steps text={text} />;
 }
 
-function Rich({ text }) {
+export function Rich({ text }) { // 내 입시 홈(MyHome)에서도 저장한 답을 같은 모양으로 보여 준다
   const lines = String(text ?? "").replace(/\r/g, "").split("\n");
   const blocks = []; // { type: "p"|"h"|"table"|"item", ... }
   let item = null;
@@ -739,6 +737,69 @@ async function askAgent(payload, onStep) {
   return last ?? { status: 500, result: { error: "답을 받지 못했어요" } };
 }
 
+const OPENING_GAP = 3 * 3600 * 1000; // 먼저 말 걸기 팝업을 닫은 뒤 다시 띄우기까지 (3시간)
+
+/* 물꼬가 먼저 말 걸기 팝업 — 물꼬 캐릭터 + 말풍선 + 버튼 (휴대폰은 아래에서 올라옴) */
+function OpeningPopup({ text, onClose }) {
+  const { body, questions } = splitChoices(text);
+  const opts = questions[0]?.opts ?? [];
+  return (
+    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/45 sm:items-center" onClick={() => onClose()}>
+      <div className="relative w-full max-w-md rounded-t-[28px] bg-[#F4F5F7] px-5 pb-7 pt-4 sm:rounded-[28px]" onClick={(e) => e.stopPropagation()}>
+        <button onClick={() => onClose()} className="absolute right-4 top-3 text-[22px] leading-none text-gray-400" aria-label="닫기">×</button>
+        <div className="flex items-end gap-2">
+          <img src="/images/mulkko.png" alt="물꼬" className="-mb-1 w-24 flex-none select-none" draggable="false" />
+          <p className="mb-3 text-[13px] font-extrabold text-sm-orange">물꼬가 먼저 왔어요 👋</p>
+        </div>
+        <div className="max-h-[52vh] overflow-y-auto rounded-2xl rounded-tl-md bg-white px-4 py-3.5 text-[14px] leading-relaxed text-gray-700 shadow-sm ring-1 ring-black/5">
+          <Rich text={body} />
+        </div>
+        <div className="mt-3 flex flex-col gap-2">
+          {opts.map((o, k) => (
+            <button
+              key={o.label}
+              onClick={() => onClose(o.label)}
+              className={`h-12 w-full rounded-2xl px-4 text-[14.5px] font-extrabold ${k === 0 ? "text-white" : "bg-white ring-1 ring-sm-navy/20"}`}
+              style={k === 0 ? { background: NAVY } : { color: NAVY }}
+            >
+              {o.label}
+            </button>
+          ))}
+          <button onClick={() => onClose()} className="mt-1 text-[13px] font-bold text-gray-400">괜찮아, 그냥 둘러볼게</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* 📌 내 입시 홈에 저장 — 물꼬 답을 내 입시 홈(/my/home)에 모아 둔다 (노트 앱에 복사할 필요 없게) */
+function SaveToHome({ question, answer, chatId }) {
+  const { user } = useAuth();
+  const [state, setState] = useState("idle"); // idle | saving | saved | fail
+  async function save() {
+    if (!user || state === "saving" || state === "saved") return;
+    setState("saving");
+    const title = String(question || answer.split("\n")[0] || "물꼬 답").replace(/\s+/g, " ").trim().slice(0, 80);
+    const { error } = await supabase.from("home_saves").insert({ user_id: user.id, title, body: answer.slice(0, 20000), chat_id: chatId ?? null });
+    setState(error ? "fail" : "saved");
+    if (!error) track("home_save");
+  }
+  return (
+    <div className="mt-1.5 flex items-center gap-2 pl-1 text-[12.5px]">
+      {state === "saved" ? (
+        <>
+          <span className="font-bold text-emerald-600">📌 내 입시 홈에 저장했어요</span>
+          <Link to="/my/home" className="font-bold text-gray-500 underline-offset-2 hover:underline">보러 가기 ›</Link>
+        </>
+      ) : (
+        <button onClick={save} className="font-bold text-gray-400 hover:text-sm-navy">
+          {state === "saving" ? "저장 중…" : state === "fail" ? "저장 못 했어요 · 다시 누르기" : "📌 내 입시 홈에 저장"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function Agent() {
   const { user, loading } = useAuth();
   const [msgs, setMsgs] = useState([]); // [{ role, content }]
@@ -754,6 +815,18 @@ export default function Agent() {
   const [buy, setBuy] = useState(false); // 업그레이드 팝업 (false 또는 { reason, title, desc } 또는 true)
   const [closedCard, setClosedCard] = useState(false); // 질문 카드를 닫았는지 (새 답이 오면 다시 열림)
   const [pending, setPending] = useState(null); // 입금 확인 중인 이용권 주문
+  const [opening, setOpening] = useState(""); // 물꼬가 먼저 거는 말 (팝업 · 지난번에 한 것 → 우리 학교 수행평가 → 이어서 할 순서)
+  const [openPop, setOpenPop] = useState(false); // 먼저 말 걸기 팝업
+  const openingPick = useRef(null); // 팝업에서 누른 버튼 (그 대화에만 물꼬가 먼저 건 말을 붙인다)
+  function closeOpening(pick) {
+    setOpenPop(false);
+    try { localStorage.setItem(`sm_opening_${user.id}`, String(Date.now())); } catch { /* 넘어간다 */ }
+    if (pick) {
+      openingPick.current = pick;
+      track("opening_pick");
+      send(pick);
+    }
+  }
   const [myPlan, setMyPlan] = useState(null); // 내 입시 플랜이 있는지 (null = 모름) — 없으면 [[플랜]] 버튼이 '만들기'로
   useEffect(() => {
     if (!user) return;
@@ -801,6 +874,15 @@ export default function Agent() {
     loadChats();
     const c = Number(params.get("c"));
     const q = (params.get("q") || "").trim();
+    // 물꼬가 먼저 말 걸기 — 팝업 (보던 대화를 여는 게 아닐 때 · 회원마다 · 닫으면 3시간 동안은 다시 안 뜸)
+    let seen = false;
+    try { seen = Date.now() - Number(localStorage.getItem(`sm_opening_${user.id}`) || 0) < OPENING_GAP; } catch { /* 저장소를 못 쓰면 띄운다 */ }
+    if (!c && !q && !seen) supabase.functions.invoke("agent", { body: { action: "opening" } }).then(({ data }) => {
+      if (!data?.text) return;
+      setOpening(data.text);
+      setOpenPop(true);
+      track("opening_view");
+    });
     if (q && !askedRef.current) {
       // 홈 화면 물꼬 입력창에서 넘어온 질문 — 바로 보내지 않고 아래 입력창에 다시 적어 둔다
       //   (처음 화면의 바로 가기 · 할 수 있는 일을 먼저 보고, 보내기를 누르면 그때 물어본다 · 주소에서 지워서 새로고침해도 두 번 안 감)
@@ -861,17 +943,15 @@ export default function Agent() {
     if (!q || busy) return;
     setErr("");
     setInput("");
-    if (isSoon(q)) {
-      setMsgs((m) => [...m, { role: "user", content: q }, { role: "assistant", content: SOON_TEXT }]);
-      return;
-    }
-    setMsgs((m) => [...m, { role: "user", content: q }]);
+    // 수행평가 질문도 서버로 보낸다 — 학교 평가계획이 있으면 물꼬가 그 학교 자료로 답하고, 없으면 서버가 '준비 중'을 돌려준다 (AI 안 부름)
+    const withOpening = msgs.length === 0 && opening && text === openingPick.current ? opening : "";
+    setMsgs((m) => [...(withOpening && !m.length ? [{ role: "assistant", content: withOpening, opening: true }] : []), ...m, { role: "user", content: q }]);
     setBusy(true);
     setSteps([]);
     setStartedAt(Date.now());
     let data = null, error = null;
     try {
-      const r = await askAgent({ message: q, chat_id: chatId }, (t) => setSteps((st) => (st[st.length - 1] === t ? st : [...st, t])));
+      const r = await askAgent({ message: q, chat_id: chatId, ...(withOpening ? { opening: withOpening } : {}) }, (t) => setSteps((st) => (st[st.length - 1] === t ? st : [...st, t])));
       data = r.result;
       if (r.status >= 400) error = { status: r.status };
     } catch (e) {
@@ -882,21 +962,21 @@ export default function Agent() {
     if (data?.need_pay) {
       setNeedPay(true);
       setBuy({ reason: "limit", title: "오늘 무료 사용량을 다 썼어요", desc: "새벽 5시에 다시 채워져요. 지금 바로 계속 쓰려면 1년 이용권으로 물꼬를 무제한 · 광고 없이 써요." });
-      setMsgs((m) => m.slice(0, -1));
+      setMsgs((m) => m.slice(0, withOpening ? -2 : -1));
       setInput(q);
       return;
     }
     if (error || !data?.answer) {
       const msg = data?.error;
       setErr(msg || "답을 받지 못했어요. 잠시 뒤 다시 물어봐 주세요.");
-      setMsgs((m) => m.slice(0, -1));
+      setMsgs((m) => m.slice(0, withOpening ? -2 : -1));
       setInput(q);
       return;
     }
     setChatId(data.chat_id);
     if (String(data.chat_id) !== params.get("c")) setParams({ c: String(data.chat_id) }, { replace: true });
     setMsgs((m) => [...m, { role: "assistant", content: data.answer, at: Date.now() }]);
-    watchMemory(msgs.length + 1); // 방금 받은 답의 번호 (내 질문 다음 칸)
+    watchMemory(msgs.length + (withOpening ? 2 : 1)); // 방금 받은 답의 번호 (내 질문 다음 칸)
     setClosedCard(false);
     loadChats();
   }
@@ -963,6 +1043,7 @@ export default function Agent() {
 
         {/* 사용량 — 컴퓨터는 왼쪽 목록 위 · 휴대폰은 위쪽 ☰ 전체 서비스 안 (components/Header) · 그 사이 폭(태블릿)만 여기 */}
         <div className="hidden sm:block md:hidden"><UsageBar usage={usage} pending={pending} /></div>
+        {openPop && opening && <OpeningPopup text={opening} onClose={closeOpening} />}
         <UpgradeModal
           open={Boolean(buy) && !paid}
           reason={buy?.reason ?? "button"}
@@ -1034,6 +1115,7 @@ export default function Agent() {
                 return (
                   <>
                     {body && <div className="rounded-2xl rounded-bl-md bg-white px-4 py-3 text-[14px] leading-relaxed text-gray-700 ring-1 ring-black/5"><Rich text={body} /></div>}
+                    {body && !m.opening && !(last && busy) && body.length > 80 && <SaveToHome question={msgs[i - 1]?.content} answer={body} chatId={chatId} />}
                     {univReq && <UnivRequestCard key={`u${i}`} req={univReq} question={msgs[i - 1]?.content} />}
                     {routine && body && <RoutineSaveCard key={`r${i}`} text={body} onBuy={() => setBuy(true)} />}
                     {acts.map((id) => <ActionCard key={`a${id}`} id={id} onBuy={() => setBuy(true)} />)}

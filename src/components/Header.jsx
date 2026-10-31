@@ -103,6 +103,7 @@ function AllServices({ onClose, user, isAdmin, pendingOrders, displayName, lv, a
   }, [user]);
 
   const mine = [
+    { to: "/my/home", label: "내 입시 홈", icon: "check", color: "#1E2A5A" },
     { to: "/my/level", label: "내 레벨 · 뱃지", icon: "star", color: "#E8590C" },
     { to: "/my", label: "마이페이지", icon: "user", color: "#18224F" },
   ];
@@ -318,6 +319,10 @@ export default function Header() {
                   <OrdersLink count={pendingOrders} />
                 </>
               )}
+              {/* 내 입시 홈 — 탐구 · 진단 · 물꼬 답이 쌓이는 곳 (컴퓨터 화면 위에 늘 보이게) */}
+              <Link to="/my/home" className="rounded-lg bg-[#EEF2FF] px-3 py-1.5 font-bold text-sm-navy transition hover:bg-[#E0E7FF]">
+                내 입시 홈
+              </Link>
               {/* 사진 · 레벨 · 닉네임 → 마이페이지 (마이페이지 위 탭에서 내 레벨로) */}
               <Link to="/my" title="마이페이지" className="flex items-center gap-2 rounded-full py-1 pl-1 pr-2 transition hover:bg-gray-50">
                 <Avatar src={avatar} nick={displayName} color={lv?.color} size={28} round />
