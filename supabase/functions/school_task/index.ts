@@ -13,6 +13,8 @@
 //   score    : 안내문 · 학교 평가계획 채점 기준으로 채점 (고친 글 content 를 보내면 그 글로)   — 1년 이용권
 //   finalize : 세특 예상 문장                                                             — 1년 이용권
 //   make     : 딸깍 — (가이드가 없으면 가이드) → 초안 → 채점 → 세특 예상 문장을 한 번에    — 1년 이용권
+//   design   : 탐구주제 설계 (물꼬 '탐구 설계') — 흔한가 진단 결과 · 학년 · 이전 활동 · 이을지 고른 답으로
+//              연계형 · 심화형 · 융합형 주제 3개 (analysis.designs) → 고르면 qa 부터 수행평가와 같은 흐름   — 무료 (과제 3개까지)
 //   speech_script : 발표 대본 + PPT 재료 — 완성본을 발표 시간에 맞는 말하기 대본(슬라이드별) · 화면 핵심 문구 ·
 //                   사진 검색어 · 출처 + 발표 뒤 질문 2개 (PPT 파일은 화면에서 만든다 — AI 다시 안 부름) — 1년 이용권
 //   speech_fb     : 발표 연습 코칭 — 학생이 말한 글(음성 인식) · 걸린 시간으로 세움스피치 D-R-R-P
@@ -37,8 +39,9 @@ const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY") ?? "";
 const MODEL = "gpt-4o";
 const FREE_TASKS = 3; // 무료로 분석할 수 있는 과제 수
 const BLANK_RE = /\[\[직접 입력:[^\]]*\]\]/g;
-const PAID_ACTIONS = new Set(["make", "draft", "score", "finalize", "speech_script", "speech_fb"]);
-const PAYWALL = "초안 · 채점 · 세특 예상 문장은 1년 이용권으로 열려요. 분석 · 질의응답 · 학습가이드까지는 무료예요.";
+// 2026-11-01: 완성본 · 채점 · 세특은 무료 과제(3개) 안에서 열고, 가져가는 것(파일 · PDF · 발표 대본 · PPT · 연습)에서 이용권을 받는다
+const PAID_ACTIONS = new Set(["speech_script", "speech_fb"]);
+const PAYWALL = "발표 대본 · PPT · 발표 연습은 1년 이용권으로 열려요. 완성본 · 채점 · 세특 예상 문장까지는 무료예요.";
 
 // AI 사용량 기록 — 관리자 'AI 비용' 칸 (gpt-4o 기준 · 웹 검색은 gpt-4.1)
 const PRICE: Record<string, [number, number]> = { "gpt-4o": [2.5, 10], "gpt-4.1": [2, 8] };
@@ -86,15 +89,18 @@ const gradeLabel = (g: unknown) => { const n = gnum(g); return n ? `고${n}` : s
 //  지원 학과(마이페이지) · 생기부 노트 활동 · 탐구 보고서 · 탐구주제 진단 · 독서 진단 · 끝낸 수행평가
 async function studentContext(db: any, task: any) {
   const uid = task.user_id;
-  const [my, acts, inq, topics, reads, past] = await Promise.all([
+  const [my, acts, inq, topics, reads, past, mem] = await Promise.all([
     db.from("sm_my").select("grade,department").eq("user_id", uid).maybeSingle(),
     db.from("record_activities").select("grade,kind,subject,title,content").eq("user_id", uid).order("created_at", { ascending: false }).limit(30),
     db.from("inquiries").select("grade,subject,department,topic,suggestion,created_at").eq("user_id", uid).order("created_at", { ascending: false }).limit(10),
     db.from("topic_queries").select("grade,subject,department,topic,created_at").eq("user_id", uid).order("created_at", { ascending: false }).limit(10),
     db.from("reading_queries").select("title,author,department,subject,grade").eq("user_id", uid).order("created_at", { ascending: false }).limit(20),
     db.from("school_tasks").select("grade,semester,subject,title,setuk_text").eq("user_id", uid).eq("status", "done").neq("id", task.id).limit(15),
+    // 물꼬 노트 (agent_memory · sql/sm_96) — 채팅에서 학생이 말한 관심 · 목표 · 고민
+    db.from("agent_memory").select("facts,notes").eq("user_id", uid).maybeSingle(),
   ]);
-  const dept = str(my.data?.department, 40);
+  const facts = (mem?.data?.facts ?? {}) as Record<string, string>;
+  const dept = str(my.data?.department, 40) || str(facts["목표 학과"], 40);
   const tg = gnum(task.grade);
   // 학년마다 맞출 깊이 — 고1 넓게(계열 수준) · 고2 학과 개념 · 고3 그 학과 졸업 뒤 직업 현장 문제까지
   const focus = dept ? { level: tg >= 3 ? "직업 현장" : tg === 2 ? "학과" : "계열", value: dept } : null;
@@ -106,6 +112,10 @@ async function studentContext(db: any, task: any) {
     topics: (topics.data ?? []).map((r: any) => ({ grade: gradeLabel(r.grade), subject: str(r.subject, 30), topic: str(r.topic, 120) })),
     readings: (reads.data ?? []).map((b: any) => ({ title: str(b.title, 80), author: str(b.author, 40), subject: str(b.subject, 30) })).filter((b: any) => b.title),
     pastTasks: (past.data ?? []).map((p: any) => ({ grade: gradeLabel(p.grade), semester: p.semester, subject: p.subject, title: p.title, setuk: str(p.setuk_text, 200) })),
+    memory: [
+      ...["계열", "목표 학과", "목표 대학", "고민"].filter((k) => facts[k]).map((k) => `${k}: ${str(facts[k], 80)}`),
+      ...(Array.isArray(mem?.data?.notes) ? mem.data.notes : []).slice(-8).map((n: any) => str(n?.t, 80)).filter(Boolean),
+    ],
   };
 }
 
@@ -322,8 +332,10 @@ async function nextQuestion(db: any, task: any) {
   const answered = arr(task.qa).filter((x: any) => ansOf(x));
   if (answered.length >= 5) return { done: true, task };
   const ctx = await studentContext(db, task);
+  if (task.analysis?.kind === "topic") return topicQuestion(db, task, answered, ctx);
   const system = `너는 학생이 수행평가를 스스로 설계하도록 돕는 코치다. 답을 대신 정하지 않고, 학생이 고르게 한다.
-지금까지의 답을 보고 다음 질문 1개를 만든다. 질문은 4~5개로 끝낸다(이미 ${answered.length}개 답함).
+지금까지의 답을 보고 다음 질문 1개를 만든다. 질문은 4~5개로 끝낸다(이미 ${answered.length}개 답함). 4개 전에는 끝내지 않는다.
+파고들기: 두 번째 질문부터는 바로 앞 답에서 고른 것 '안으로' 한 단계 더 들어간다. 앞 답을 q 에 그대로 짚고("○○를 골랐으니, 그중 …"), 보기 3개는 모두 그 답의 하위 갈래다. 앞 답과 상관없는 새 주제로 넘어가지 않는다.
 질문은 [채점 기준]을 채우는 순서로 만든다. badge 는 그 질문이 채우는 채점 요소 이름(채점 기준에 있는 말 그대로).
 과제 형식별 순서 (채점 기준이 따로 있으면 그쪽이 먼저):
 - 발표: 무엇을 소개할지(정보 선정 · 믿을 만한 출처) → 누구에게 무엇을 남길지(청중 · 목적) → 구성(도입에서 붙잡기 · 전개 순서 · 정리) → 보여 줄 자료(시각 자료 · 매체) → 전달 전략(말하기 · 태도 · 질문 대비).
@@ -338,20 +350,91 @@ async function nextQuestion(db: any, task: any) {
 - 앞선 활동이 적으면 첫 질문은 "이 학생만의 출발점"을 묻는다: 일상에서 겪은 일, 요즘 관심 있는 것, 지원 학과에서 이어지는 것.
 - 앞선 활동이 있으면 그 활동을 이어 가는 보기를 먼저 둔다.
 - 보기마다 학생이 직접 쓸 수 있게 화면에 '직접 입력'이 있으니, 보기는 서로 확실히 다른 방향으로.
-- 보기마다 from 에 어디서 나온 보기인지 짧게: "생기부 노트 · 경제 동아리", "탐구 보고서 · ○○", "독서 · 『넛지』", "지원 학과 · 경제학과". 재료에서 나온 게 아니면 "새 방향".
+- 보기마다 from 에 어디서 나온 보기인지 짧게: "생기부 노트 · 경제 동아리", "탐구 보고서 · ○○", "독서 · 『넛지』", "지원 학과 · 경제학과", "물꼬 기억 · 건축 관심". 재료에서 나온 게 아니면 "새 방향".
+- [물꼬기억]은 학생이 채팅에서 말한 관심 · 목표 · 고민이다. 이번 과목 범위 안에서 이어질 때만 보기로 쓴다 (과목 범위 규칙이 먼저).
 - 첫 질문(지금까지 답이 0개)만: 보기를 4개 만들고, 학생이 1~2개를 골라 섞을 수 있다(multi=true).
 추천(deepen, perSection)은 과목 범위 규칙을 지키는 선에서만 질문에 녹인다.
+4개 답한 뒤 5번째를 할지는 네가 판단한다: 채점 기준 요소가 답에서 모두 채워졌으면 {"done":true}, 아직 비어 있는 요소가 있으면 그 요소로 5번째를 묻는다.
 보기마다 한 줄 설명. 쉬운 말로. 충분히 모였으면 {"done":true}.
 json: {"done":false,"q":"","badge":"","multi":false,"options":[{"label":"","desc":"","from":""}]}`;
-  const user = `과제: ${taskBrief(task)}\n과제 형식: ${task.task_type ?? ""}\n채점 기준: ${JSON.stringify(arr(task.analysis?.criteria))}\n필수 요소: ${JSON.stringify(arr(task.analysis?.required).slice(0, 8))}\n진로 초점(고1 계열 · 고2 학과 · 고3 직업 현장 — 질문도 이 깊이로): ${JSON.stringify(ctx.focus)}\n이 학생만의 재료: ${JSON.stringify({ 생기부노트: ctx.activities.map((a: any) => `${a.subject} ${a.title}`).slice(0, 12), 탐구: [...ctx.inquiries, ...ctx.topics].map((t: any) => t.topic).slice(0, 10), 독서: ctx.readings.map((b: any) => b.title).slice(0, 12) })}\n지금까지: ${JSON.stringify(answered.map((x: any) => ({ q: x.q, a: ansOf(x) })))}`;
+  const user = `과제: ${taskBrief(task)}\n과제 형식: ${task.task_type ?? ""}\n채점 기준: ${JSON.stringify(arr(task.analysis?.criteria))}\n필수 요소: ${JSON.stringify(arr(task.analysis?.required).slice(0, 8))}\n진로 초점(고1 계열 · 고2 학과 · 고3 직업 현장 — 질문도 이 깊이로): ${JSON.stringify(ctx.focus)}\n이 학생만의 재료: ${JSON.stringify({ 생기부노트: ctx.activities.map((a: any) => `${a.subject} ${a.title}`).slice(0, 12), 탐구: [...ctx.inquiries, ...ctx.topics].map((t: any) => t.topic).slice(0, 10), 독서: ctx.readings.map((b: any) => b.title).slice(0, 12), 물꼬기억: ctx.memory })}\n지금까지: ${JSON.stringify(answered.map((x: any) => ({ q: x.q, a: ansOf(x) })))}`;
   const r = await ai(system, user, 0.6);
-  if (r.done) return { done: true, task };
+  if (r.done && answered.length >= 4) return { done: true, task };
   const first = answered.length === 0;
   const item = {
     q: str(r.q, 300), badge: str(r.badge, 60), multi: first, maxPick: first ? 2 : 1,
     options: arr(r.options).slice(0, first ? 4 : 3).map((o: any) => ({ label: str(o?.label, 80), desc: str(o?.desc, 160), from: str(o?.from, 40) })).filter((o: any) => o.label),
     answer: null, custom: null,
   };
+  if (!item.q || !item.options.length) throw new Error("질문을 만들지 못했어요. '다시'를 보내 주세요.");
+  const data = await save(db, task, { qa: [...answered, item], status: "qa" });
+  return { done: false, task: data };
+}
+
+// ---------- 탐구 설계 상담 질문 (analysis.kind = "topic") ----------
+// 고른 탐구를 학생만의 탐구로 좁히는 4~5개 질문. 질문마다: 앞 답에 대한 짧은 반응 + 이 질문이 무엇을 정하는지(lead) · 단계 이름(step)
+// 보기는 '학문 개념 · 관점' 이름 + 그 관점으로 보면 보고서가 어떻게 달라지는지 — 학생이 고른 답이 곧 개인 맞춤의 재료
+// 같은 단계에서 다른 학생들이 고른 답 — 비슷한 주제(제목 낱말 2개 이상 겹침 · 같은 학과)만. 이것과 겹치지 않는 보기를 만들게 한다
+async function othersPicked(db: any, task: any, step: number) {
+  const words = (x: unknown) => new Set((String(x ?? "").match(/[가-힣A-Za-z]{2,}/g) ?? []).map((w) => (w.length > 2 ? w.replace(/(의|을|를|과|와|에|이|가|은|는|로|으로)$/, "") : w)).filter((w) => !/^(탐구|비교|영향|분석|관한|대한|통해|위한|하는|있는|미치는)$/.test(w)));
+  const mine = words(task.title);
+  const dept = String(task.analysis?.dept ?? "");
+  const { data } = await db.from("school_tasks").select("id,title,qa,analysis").eq("analysis->>kind", "topic").neq("id", task.id).order("updated_at", { ascending: false }).limit(300);
+  const cnt = new Map<string, number>();
+  for (const r of data ?? []) {
+    const shared = [...words(r.title)].filter((w) => mine.has(w)).length;
+    if (shared < 2 && !(dept && r.analysis?.dept === dept && shared >= 1)) continue;
+    const a = ansOf(arr(r.qa)[step]);
+    const k = str(Array.isArray(a) ? a.join(" + ") : a, 60);
+    if (k) cnt.set(k, (cnt.get(k) ?? 0) + 1);
+  }
+  return [...cnt.entries()].sort((x, y) => y[1] - x[1]).slice(0, 10).map(([k, n]) => `${k} (${n}명)`);
+}
+
+async function topicQuestion(db: any, task: any, answered: any[], ctx: any) {
+  const an = task.analysis ?? {};
+  const others = await othersPicked(db, task, answered.length).catch(() => [] as string[]);
+  const g = Number(String(task.grade ?? "").match(/[123]/)?.[0] ?? 2);
+  const LEVEL: Record<number, string> = {
+    1: "고1: 교과서에 나오는 개념 이름으로 (통합과학 · 통합사회 수준). 대학 전공 용어는 쓰지 않는다.",
+    2: "고2: 희망 학과 기초 과목에서 배우는 개념 · 이론 이름까지. 처음 나오는 말은 desc 에서 한 줄로 풀어 준다.",
+    3: "고3: 전공 이론 · 연구 방법 이름까지. 졸업 뒤 직업 현장의 실제 문제와 닿게.",
+  };
+  const system = `너는 입시 컨설턴트다. 학생이 고른 탐구주제를 이 학생만의 탐구로 좁히는 상담 질문을 한 번에 1개 만든다. 답을 대신 정하지 않고, 학생이 고르게 한다.
+질문은 모두 4~5개 (이미 ${answered.length}개 답함). 4개 전에는 끝내지 않는다.
+파고들기가 핵심이다: 매 질문은 바로 앞 답에서 고른 것 '안으로' 한 단계 더 들어간다. lead 와 q 에서 앞 답을 그대로 짚고("환경적 불평등으로 보기로 했으니, 그 불평등을 무엇으로 판단할까요?"), 보기 3개는 모두 앞 답의 하위 갈래다. 앞 답과 상관없는 방향으로 넘어가지 않는다.
+아래 순서로, 앞에서 고른 답 위에 쌓는다:
+1) 문제 정의 — 이 주제의 문제를 어떤 개념 · 관점으로 정의할지 (예: 빛공해로 별을 못 보는 문제 → 환경적 불평등 (환경 정의) / 문화 · 교육적 불평등 (향유권) / 제도적 불균형 (공간 정의))
+2) 판단 기준 · 이론 — 1)에서 고른 관점 안에서 무엇을 기준으로 주장할지 (예: 정의의 기준 → 필요에 따른 분배 / 능력에 따른 기회 균등 / 공동선과 사회적 책임)
+3) 탐구 방법 · 자료 — 무엇을 직접 측정 · 비교 · 조사할지 (실측 · 통계 · 설문 · 문헌 · 사례 중 이 주제에 맞는 것, 무엇과 무엇을 비교하는지까지)
+4) 결론 · 해결 방향 — 탐구 결과로 무엇을 주장하거나 제안할지
+5) 진로 연결 — 희망 학과 · 다음 학년 탐구로 어떻게 이어 갈지
+4개 답한 뒤 5번째를 할지는 네가 판단한다: 앞 답들에 이미 희망 학과 · 진로와 닿는 내용이 분명하면 {"done":true}, 진로 연결이 비어 있거나 답이 아직 넓어서 보고서 방향이 하나로 안 모였으면 5번째를 묻는다.
+규칙:
+- lead: 1~2문장. 학생의 앞 답(첫 질문이면 고른 탐구)을 구체적으로 짚고, 이 질문이 보고서에서 무엇을 정하는지 말한다. "정말 신선해요" 같은 과장된 칭찬, 이름 부르기, 이모지 금지. ~해요체.
+- step: 이 질문 단계 이름 10~20자 (예: "불평등의 성격 정하기", "주장의 논리적 근거 고르기").
+- q: 한 문장 질문.
+- options: 정확히 3개. label 은 '개념 · 관점 이름 (학문 용어)' 꼴, 30자 안. desc 는 그 관점으로 보면 이 탐구가 무엇을 다루게 되는지 한 문장, 70자 안. 셋은 확실히 다른 방향.
+흔하지 않게 (가장 중요 — 같은 주제를 고른 학생들이 같은 보기를 보고 같은 걸 고르면 보고서가 다 똑같아진다):
+- [다른 학생들이 이 단계에서 고른 답]과 같거나 비슷한 보기는 만들지 않는다.
+- 교과서에 바로 나오는 뻔한 관점 3개를 나란히 두지 않는다. 세 번째 보기는 덜 알려진 관점(다른 학문의 개념, 거꾸로 보기, 아주 작은 대상으로 좁히기)으로.
+- 보기 3개 중 2개 이상은 이 학생 재료(이전 활동 · 독서 · 물꼬기억 · 관심사 · 앞 답)에 구체적으로 붙인다: desc 에 그 재료를 그대로 넣는다 (예: "고1 단열재 실험 때 쓴 샘플을 손으로 만져 비교해요"). 재료가 없으면 학생 생활에서 고를 수 있는 구체 대상(우리 학교 건물 · 사는 동네 · 자주 가는 곳)으로.
+- 3) 탐구 방법 단계에서는 '무엇을 대상으로 할지'를 학생만 아는 것으로 묻는다 (예: 비교할 건물 두 곳, 측정할 교실). 보기는 예시로 주고, lead 끝에 "네가 아는 곳을 카드 아래 칸에 적으면 그게 가장 흔하지 않은 탐구가 돼요"를 붙인다.
+- from: 학생 재료(이전 활동 · 진단 · 독서 · 물꼬기억 · 지원 학과)에서 나온 보기면 짧게 출처, 아니면 "새 방향".
+- ${LEVEL[g] ?? LEVEL[2]}
+- 학생이 고른 설계 유형(연계형 · 심화형 · 융합형)을 지킨다. 융합형이면 다른 교과 관점을 보기에 둬도 된다.
+- 지어낸 통계 · 논문 · 기관 이름을 쓰지 않는다.
+충분히 모였으면 {"done":true}.
+json: {"done":false,"lead":"","step":"","q":"","options":[{"label":"","desc":"","from":""}]}`;
+  const user = `학년: 고${g}\n희망학과: ${str(an.dept, 30) || ctx.department || "(모름)"}\n과목: ${task.subject ?? "(없음)"}\n고른 탐구: ${JSON.stringify(an.picked ?? { title: task.title })}\n처음 주제 · 흔한가 진단: ${an.origin ? JSON.stringify(an.origin) : "(없음)"}\n이어 갈 활동: ${str(an.link_from, 200) || "(없음)"}\n관심사: ${str(an.interest, 200) || "(없음)"}\n이 학생만의 재료: ${JSON.stringify({ 생기부노트: ctx.activities.map((a: any) => `${a.subject} ${a.title}`).slice(0, 12), 탐구: [...ctx.inquiries, ...ctx.topics].map((t: any) => t.topic).slice(0, 10), 독서: ctx.readings.map((b: any) => b.title).slice(0, 12), 물꼬기억: ctx.memory })}\n학교: ${task.school ?? "(모름)"}\n지금까지: ${JSON.stringify(answered.map((x: any) => ({ 단계: x.step, q: x.q, a: ansOf(x) })))}\n다른 학생들이 이 단계에서 고른 답 (피할 것): ${others.length ? JSON.stringify(others) : "(아직 없음)"}`;
+  const r = await ai(system, user, 0.85);
+  if (r.done && answered.length >= 4) return { done: true, task };
+  const item = {
+    q: str(r.q, 300), lead: str(r.lead, 300), step: str(r.step, 40), badge: str(r.step, 40), multi: false, maxPick: 1,
+    options: arr(r.options).slice(0, 3).map((o: any) => ({ label: str(o?.label, 80), desc: str(o?.desc, 160), from: str(o?.from, 40) })).filter((o: any) => o.label),
+    answer: null, custom: null,
+  };
+  if (!item.q || !item.options.length) throw new Error("질문을 만들지 못했어요. '다시'를 보내 주세요.");
   const data = await save(db, task, { qa: [...answered, item], status: "qa" });
   return { done: false, task: data };
 }
@@ -392,13 +475,26 @@ async function draft(db: any, task: any, formatKey?: string, quick = false) {
     if (picked.length) task = await save(db, task, { sources: picked });
   }
 
+  // 분량 — A4 한 쪽(함초롬바탕 10~11pt · 줄간격 160%)에 본문 약 1,500자
+  // 보고서 디자인으로 낼 때는 한 쪽에 사진 · 도표 칸이 있어 글은 약 700자
+  const pages = Number(task.analysis?.pages) || 0;
+  const perPage = task.analysis?.out === "design" ? 700 : 1500;
+  const perPara = (n: number) => Math.max(3, Math.round(n / fmt.parts.length / 75));
+  const lenRule = pages
+    ? `A4 ${pages}쪽 — 본문 약 ${(pages * perPage).toLocaleString()}자 (제목 · 표 제외). 문단 수는 [글 구조] 그대로 두고, 문단마다 ${perPara(pages * perPage)}~${perPara(pages * perPage) + 2}문장으로 채운다. 모자라지 않게, 넘치지 않게.`
+    : "문단마다 이어지는 글로 4~6문장.";
+  const topicRule = task.analysis?.kind === "topic" || /실험|측정|설문|관찰|조사/.test(`${task.task_type ?? ""} ${fmt.key}`) ? `
+  결과 문단은 이렇게 쓴다: ① "예상 결과(가설)" — 무엇이 어떻게 나올 것 같은지와 그 까닭(개념으로)을 "~할 것으로 예상한다"로 ② 결과를 정리할 마크다운 표 하나(열 이름은 실제 비교할 것, 값 칸은 모두 "측정 후 입력") ③ 결과를 보고 무엇을 해석할지 한두 문장. 고찰 · 결론도 예상 결과를 바탕으로 "~라면 ~라고 볼 수 있다"로 쓰고, 결과를 확정하지 않는다.
+  "측정 후 입력"은 이 표 안에서만 쓴다 (다른 자리표시 금지 규칙의 예외).
+  학생이 고른 탐구 방법(질의응답)과 다른 방법을 쓰지 않는다 (예: 통계 자료 분석을 골랐으면 직접 실험한 것처럼 쓰지 않는다).` : "";
   const system = `학생의 질의응답 답과 학습가이드로 수행평가 "1차 초안 본문"을 마크다운으로 쓴다. 고등학생 문체(~했다, ~이다).
 이건 학생이 그대로 내도 될 만큼 완성된 글이다. 학생은 마지막에 조금만 고친다:
 - 맨 위 제목(#)은 과제 제목 그대로. 안내 문구와 목록을 쓰지 않는다.
 - 글 구조는 [글 구조]를 그대로 따른다: 문단 제목(##)은 그 이름과 순서 그대로("## 참고 자료"만 예외).
 - 채점 요소 · 필수 항목마다 어느 문단에서 채울지 정해, 그 문단 안에서 빠짐없이 다룬다. 채점 기준표의 만점 기준 문장을 충족하게 쓴다.
 - 같은 말을 문단마다 되풀이하지 않는다. 문단마다 새 내용(개념 → 예시 → 분석 → 나의 생각 순으로 깊어지게).
-- 문단마다 이어지는 글로 4~6문장. 불릿 목록으로 쪼개지 않는다(안내문이 표·목록을 요구할 때만 예외).
+- 분량: ${lenRule}
+- 불릿 목록으로 쪼개지 않는다(안내문이 표·목록을 요구할 때만 예외).
 - 추천의 deepen.how 와 perSection 을 해당 문단에 반영(앞선 활동에서 이어지는 문장 한두 개).
 - 나의 생각·느낀 점: 질의응답에서 학생이 고른 답을 바탕으로 2~3곳에 학생 목소리로.
 - [나만의 이야기]와 질의응답의 "내 생각"은 학생이 직접 쓴 것이다. 빠짐없이 글에 녹이고, 학생이 쓴 표현과 경험을 최대한 살린다 (다른 학생 글과 달라지는 핵심).
@@ -407,11 +503,96 @@ async function draft(db: any, task: any, formatKey?: string, quick = false) {
 - [참고할 자료]에 없는 숫자·통계·기사·법령 조항·인용을 새로 만들지 않는다.
 - 글 맨 끝 "## 참고 자료"에 쓴 책과 자료(발행처, 「제목」, 주소)를 적는다.
 금지: 빈칸·자리표시([[...]], (직접 입력), ○○, OO, ___). 토론·발표처럼 실제로 일어난 일을 "~했다"로 꾸며 내지 않는다.
+지어내지 않기 (가장 중요):
+- 학생이 하지 않은 경험 · 활동을 만들지 않는다 ("고1 때 ~한 경험" 등). 앞선 활동은 [이 학생 재료]에 그대로 있는 것만 쓴다.
+- 실험 · 측정 · 설문 · 관찰 결과(수치, "~가 더 높았다", "~경향을 보였다")를 지어내지 않는다. 학생은 아직 탐구를 하지 않았다. 학생이 질의응답 · [나만의 이야기]에 직접 적은 결과만 결과로 쓴다.${topicRule}
+
 json: {"content":"마크다운"}`;
-  const r = await ai(system, `과제: ${taskBrief(task)}\n질의응답: ${JSON.stringify(arr(task.qa).map((x: any) => ({ q: x.q, a: ansOf(x) })))}\n학습가이드: ${str(task.guide, 6000)}\n진로 초점: ${JSON.stringify(ctx.focus)}\n독서 진단한 책: ${JSON.stringify(ctx.readings)}\n참고할 자료: ${JSON.stringify(picked)}\n[나만의 이야기] ${str(task.my_story, 2000) || "(없음)"}\n[글 구조] ${fmt.label}\n${outline}`, 0.6);
+  const r = await ai(system, `과제: ${taskBrief(task)}\n이 학생 재료(앞선 활동 — 이것만 사실): ${JSON.stringify([...ctx.activities.map((x: any) => `${x.grade ?? ""} ${x.subject ?? ""} ${x.title ?? ""}`), ...[...ctx.inquiries, ...ctx.topics].map((x: any) => `${x.grade ?? ""} ${x.topic ?? ""}`)].slice(0, 20))}\n질의응답: ${JSON.stringify(arr(task.qa).map((x: any) => ({ q: x.q, a: ansOf(x) })))}\n학습가이드: ${str(task.guide, 6000)}\n진로 초점: ${JSON.stringify(ctx.focus)}\n독서 진단한 책: ${JSON.stringify(ctx.readings)}\n참고할 자료: ${JSON.stringify(picked)}\n[나만의 이야기] ${str(task.my_story, 2000) || "(없음)"}\n[글 구조] ${fmt.label}\n${outline}`, 0.6);
   const content = str(r.content, 20000).replace(BLANK_RE, "").replace(/\(\s*\)/g, "").replace(/[ \t]{2,}/g, " ");
   const data = await save(db, task, { draft: content, draft_round: (task.draft_round ?? 0) + 1, score: null, status: "writing" });
   return { task: data };
+}
+
+// ---------- structure: 글 구조 추천 (14가지 중 이 학생 답에 맞는 순서) ----------
+async function structureReco(db: any, task: any) {
+  const system = `학생 과제에 맞는 글 구조(양식)를 고른다. [글 구조 목록]에서만 고른다. JSON만.
+- ranked: 어울리는 순서로 key 8개.
+- why: ranked 앞 3개만, 이 학생의 질의응답 답(특히 탐구 방법 · 결론 방향)과 연결해 왜 맞는지 한 줄 (25자 안, ~해요체).
+- 학생이 고른 방법을 따른다: 통계 · 자료 분석 → analysis, 직접 실험 · 측정 → experiment, 설문 · 인터뷰 → survey, 문헌 정리 → review, 사례 → case, 제안 → proposal.
+json: {"ranked":["key"],"why":{"key":"한 줄"}}`;
+  const list = FORMATS.map((f) => `${f.key}: ${f.label} — ${f.hint} (${f.parts.map(([p]) => p).join(" → ")})`).join("\n");
+  const r = await ai(system, `과제: ${taskBrief(task)}\n질의응답: ${JSON.stringify(arr(task.qa).map((x: any) => ({ q: x.q, a: ansOf(x) })))}\n[글 구조 목록]\n${list}`, 0.2);
+  const keys = [...new Set([...arr(r.ranked).map((k: any) => String(k)), recommendFormat(task), ...FORMATS.map((f) => f.key)])].filter((k) => formatOf(k));
+  const reco = keys.map((k, i) => {
+    const f = formatOf(k)!;
+    return { key: f.key, label: f.label, hint: f.hint, parts: f.parts.map(([p]) => p), why: i < 3 ? str(r.why?.[k], 60) : "" };
+  });
+  const data = await save(db, task, { analysis: { ...(task.analysis ?? {}), structure_reco: reco.slice(0, 3).map((x) => x.key), structure_view: "top" } });
+  return { task: data, structures: reco };
+}
+
+// ---------- to_report: 완성본 → 탐구보고서 디자인(/inquiry/:id/report) ----------
+// 기억에 남는 탐구보고서의 디자인 30개가 쓰는 report 모양으로 바꿔 inquiries 한 줄을 만든다 (다시 누르면 내용만 새로 — 디자인 · 사진 · 옮긴 자리는 그대로)
+const REPORT_METHOD: Record<string, string> = {
+  experiment: "exp", project: "exp", analysis: "data", survey: "survey", case: "case", field: "obs",
+  review: "lit", reading: "lit", critique: "lit", thesis: "lit", basic: "lit", argument: "lit", inquiry: "lit", proposal: "lit",
+};
+async function toReport(db: any, task: any) {
+  if (!str(task.draft)) throw new Error("완성본이 먼저 있어야 디자인할 수 있어요.");
+  const an = task.analysis ?? {};
+  const fkey = formatOf(an.structure)?.key ?? recommendFormat(task);
+  const method = REPORT_METHOD[fkey] ?? "lit";
+  const ctx = await studentContext(db, task);
+  const system = `학생의 탐구 보고서 완성본을 디자인 보고서 칸에 나눠 담는다. JSON만.
+원칙:
+- 완성본에 있는 내용만 옮긴다. 새 결과 · 수치 · 자료 · 경험을 만들지 않는다.
+- 결과: 완성본에 실제 측정 · 조사 값이 없으면 results.text 는 "", results.finding 은 "예상: ~ (측정 후 바꾸기)"처럼 예상임을 밝힌다.
+- 학생 목소리 칸(motive · difficulty · career)은 완성본에 학생 경험 · 생각이 있으면 다듬어 text 에, 없으면 text 는 ""로 두고 guide(무엇을 쓸지) · starter(시작 문장 예시)만.
+- memory: 몇 달 뒤에도 기억나는 핵심 두 줄 (l1 12자 안팎, l2 12자 안팎). 결과를 모르면 질문이나 예상으로.
+- 보고서 문체(~했다, ~이다). 짧은 문장.
+json: {"titles":["제목 후보 3개 (20자 안팎, 질문형 · 숫자형 · 반전형)"],
+"question":"출발 질문 한 문장",
+"motive":{"text":"","guide":"","starter":""},
+"concepts":[{"term":"개념","explain":"두 문장"}],
+"method":{"summary":"두 문장","steps":[{"title":"단계","detail":"한 문장"}]},
+"results":{"text":"","finding":""},
+"interpretation":"세 문장",
+"difficulty":{"text":"","guide":"","starter":""},
+"mine":"학생 생각 한두 문장",
+"limits":"두 문장","next":"다음 질문 한 문장",
+"career":{"text":"","guide":"","starter":""},
+"memory":{"l1":"","l2":""},
+"summary":{"motive":"","method":"","next":"","career":""}}`;
+  const r = await ai(system, `학년 ${task.grade ?? ""} · 과목 ${task.subject ?? ""} · 희망학과 ${str(an.dept, 30) || ctx.department || ""}\n탐구 제목: ${task.title}\n질의응답: ${JSON.stringify(arr(task.qa).map((x: any) => ({ q: x.q, a: ansOf(x) })))}\n나만의 이야기: ${str(task.my_story, 1500) || "(없음)"}\n완성본:\n${str(task.draft, 14000)}`, 0.3);
+  if (!r?.method || !r?.memory) throw new Error("보고서 칸을 채우지 못했어요. 잠시 뒤 다시 눌러 주세요.");
+  const base = {
+    ...r,
+    title: str(arr(r.titles)[0], 60) || task.title,
+    subtitle: task.title,
+    references: arr(task.sources).map((x: any) => ({ title: str(x.title, 200), url: str(x.url, 500), publisher: str(x.publisher, 80) })),
+    meta: { department: str(an.dept, 30) || ctx.department || "", grade: task.grade, term: task.semester ? `${task.semester}학기` : null, subject: task.subject, method },
+    gen_count: 1, generated_at: new Date().toISOString(), from_task: task.id,
+  };
+  // 이미 만든 디자인이 있으면 — 학생이 꾸민 것(디자인 · 사진 · 자리 · 글씨 · 학생 정보)은 두고 내용만 바꾼다
+  const KEEP = ["layout", "extras", "hidden", "styles", "texts", "font", "photos", "student_info", "student"];
+  const old = an.inquiry_id ? (await db.from("inquiries").select("id,report,user_id").eq("id", an.inquiry_id).maybeSingle()).data : null;
+  let inquiryId = old?.user_id === task.user_id ? old.id : null;
+  if (inquiryId) {
+    const keep = Object.fromEntries(KEEP.filter((k) => old.report?.[k] != null).map((k) => [k, old.report[k]]));
+    const { error } = await db.from("inquiries").update({ report: { ...base, ...keep }, method, suggestion: task.title, stage: "design" }).eq("id", inquiryId);
+    if (error) throw new Error(`디자인을 새로 고치지 못했어요. (${error.message})`);
+  } else {
+    const { data: row, error } = await db.from("inquiries").insert({
+      user_id: task.user_id, school_task_id: task.id, query_id: an.origin?.query_id ?? null,
+      department: str(an.dept, 30) || ctx.department || null, grade: task.grade, term: task.semester ? `${task.semester}학기` : null, subject: task.subject,
+      focus: "career", topic: str(an.origin?.topic, 200) || task.title, suggestion: task.title, method, stage: "design", paid: false, report: base,
+    }).select("id").single();
+    if (error || !row) throw new Error(`디자인을 만들지 못했어요. (${error?.message ?? "저장 실패"})`);
+    inquiryId = row.id;
+  }
+  const data = await save(db, task, { analysis: { ...an, inquiry_id: inquiryId, inquiry_round: task.draft_round ?? 1 } });
+  return { task: data, inquiryId };
 }
 
 // ---------- score: 채점 ----------
@@ -558,6 +739,50 @@ json: {"good":"","diag":"","why":"","fix_before":"","fix_after":"","practice":""
   const attempt = { at: new Date().toISOString(), seconds: st.seconds, spm: st.spm, fillers: st.fillers, diag: fb.diag };
   const data = await save(db, task, { speech: { ...sp, minutes, attempts: [...arr(sp.attempts), attempt].slice(-5) } });
   return { task: data, stats: { ...st, slides }, prev, feedback: fb };
+}
+
+// ---------- design: 탐구주제 설계 (연계형 · 심화형 · 융합형 3개) ----------
+// task.analysis = { kind: "topic", origin: { topic, score, reason, better }, link: "link"|"new"|"auto", link_from }
+async function designTopics(db: any, task: any) {
+  const ctx = await studentContext(db, task);
+  const an = task.analysis ?? {};
+  const g = gnum(task.grade) || 2;
+  const earlier = [
+    ...ctx.activities.map((a: any) => ({ 종류: "생기부 노트", 학년: a.grade, 과목: a.subject, 활동: a.title, 한일: a.did })),
+    ...ctx.inquiries.map((a: any) => ({ 종류: "탐구 보고서", 학년: a.grade, 과목: a.subject, 활동: a.topic })),
+    ...ctx.pastTasks.map((p: any) => ({ 종류: "끝낸 수행평가 · 탐구", 학년: p.grade, 과목: p.subject, 활동: p.title })),
+  ].filter((x) => x.활동).slice(0, 20);
+  const GRADE: Record<number, string> = {
+    1: "고1: 희망학과가 속한 계열 전반으로 넓게. 교과서 개념으로 할 수 있게. 방법은 자료 조사 · 사례 비교 · 학교에서 하는 간단한 실험까지. 세 개는 기본형(이 과목 개념을 한 단계) · 관심 연결형(관심사 · 진로와 잇기) · 융합형(다른 과목 하나를 곁들이기).",
+    2: "고2: 고1 활동을 한 단계 깊게 잇는 게 중심. 희망학과 전공에서 배우는 개념과 닿게. 세 개는 연계형(고1 활동의 질문을 이어 다음 질문으로) · 심화형(같은 소재를 이 과목 개념으로 더 깊게) · 융합형(다른 과목 관점을 더해 넓히기).",
+    3: "고3: 고1 · 고2 활동에서 남은 한계 · 풀지 못한 질문을 해결하는 심화. 희망학과 졸업 뒤 직업 현장의 실제 문제와 닿게. 세 개는 연계형(앞선 탐구의 다음 단계) · 심화형(앞선 탐구의 한계를 측정 · 분석으로 보완) · 융합형(전공 현장 문제와 잇기).",
+  };
+  const LINK: Record<string, string> = {
+    link: `학생이 이전 활동과 이어 가겠다고 했다 (이을 활동: ${str(an.link_from, 200) || "아래 이전 활동 중 가장 잘 이어지는 것"}). 세 개 모두 그 활동에서 출발하되, 같은 내용을 되풀이하지 않고 한 단계 나아간다.`,
+    new: "학생이 이전 활동과 따로 새 분야를 하겠다고 했다. 이전 활동을 되풀이하지 않는다.",
+    auto: "학생이 이어 갈지 물꼬가 판단해 달라고 했다. 이전 활동 중 학문적으로 이어지고 단순 반복이 아니며 실제로 할 수 있는 게 있으면 이어 가고, 없으면 새로 잡는다. 판단 결과를 decision 에 한 문장으로.",
+  };
+  const system = `너는 학생의 생기부 흐름을 설계하는 입시 컨설턴트다. 학생 한 명에게 맞춘 탐구주제 3개를 설계한다. JSON만.
+규칙:
+- ${GRADE[g] ?? GRADE[2]}
+- ${LINK[an.link] ?? LINK.auto}
+- 과목 범위: [과목]이 있으면 그 과목 교과서 단원 개념 안에서 질문을 세운다. 희망학과 연결은 결과를 해석 · 활용하는 데서 가볍게.
+- 흔함: [흔한가 진단]의 이유(흔한 까닭)를 피해 간다. 대상 · 조건 · 방법을 분명히 해서 흔하지 않게.
+- 난이도: 학생이 쓰지 않은 대학 전공 용어 · 공정 이름 · 통계 기법을 넣지 않는다. 고등학생이 학교 실험실 · 무료 자료로 할 수 있게.
+- 이전 활동을 쓸 때는 from 에 그 활동 이름을 그대로 적는다 (지어내지 않는다). 이어지지 않으면 from 은 "".
+- title: 40~60자 한 문장, "~하는 탐구"로 끝. 연도 · 날짜 숫자 금지.
+- why: 왜 이 학생에게 맞는지 한 줄 (학과 · 진단 결과 · 관심사와 연결해서). 이전 활동은 [이전 활동] 목록에 그대로 있는 것만 말한다. 새 분야를 골랐거나 목록이 비었으면 "고1 때 ~한 경험"처럼 학생 과거를 말하지 않는다 (지어내면 생기부와 안 맞아 면접에서 들킨다). how: 무엇을 어떻게 하는지 한 줄 (자료 · 방법 · 비교 대상).
+- method: experiment | survey | review | analysis | case | project | inquiry 중 하나.
+- 쉬운 말, "~해요"체.
+json: {"decision":"","designs":[{"type":"연계형|심화형|융합형|기본형|관심 연결형","title":"","why":"","how":"","from":"","method":""}]}`;
+  const user = `학년: 고${g}\n희망학과: ${str(an.dept, 30) || ctx.department || "(모름)"}\n과목: ${task.subject ?? "(없음)"}\n관심사 (학생이 적음): ${str(an.interest, 200) || "(없음)"}\n처음 주제: ${str(an.origin?.topic, 200) || "(없음)"}\n흔한가 진단: ${an.origin ? JSON.stringify({ 점수: an.origin.score, 이유: an.origin.reason, 바꾼주제: an.origin.better }) : "(안 함)"}\n이전 활동: ${JSON.stringify(earlier)}\n물꼬 기억: ${JSON.stringify(ctx.memory)}\n읽은 책: ${JSON.stringify(ctx.readings.map((b: any) => b.title).slice(0, 8))}`;
+  const r = await ai(system, user, 0.6);
+  const designs = arr(r.designs).map((d: any) => ({
+    type: str(d?.type, 10) || "설계", title: str(d?.title, 90), why: str(d?.why, 160), how: str(d?.how, 200), from: str(d?.from, 60), method: str(d?.method, 12),
+  })).filter((d: any) => d.title).slice(0, 3);
+  if (!designs.length) throw new Error("탐구를 설계하지 못했어요. 잠시 뒤 다시 해 주세요.");
+  const data = await save(db, task, { analysis: { ...an, designs, decision: str(r.decision, 200) } });
+  return { task: data, designs, decision: str(r.decision, 200) };
 }
 
 // ---------- make: 딸깍 — 가이드(없으면) → 초안 → 채점 → 세특 예상 문장 ----------
@@ -717,7 +942,19 @@ Deno.serve(async (req) => {
     // 무료는 과제 3개까지 분석 (이미 분석한 과제는 다시 분석해도 됨)
     if (action === "analyze" && !paid && task.status === "draft") {
       const { count } = await db.from("school_tasks").select("id", { count: "exact", head: true }).eq("user_id", user.id).neq("status", "draft");
-      if ((count ?? 0) >= FREE_TASKS) return json({ paywall: true, error: `무료로는 수행평가 ${FREE_TASKS}개까지 분석할 수 있어요. 1년 이용권이면 개수 제한 없이 초안 · 채점까지 끝까지 해요.` }, 402);
+      if ((count ?? 0) >= FREE_TASKS) return json({ paywall: true, error: `무료로는 수행평가 · 탐구를 ${FREE_TASKS}개까지 완성할 수 있어요. 1년 이용권이면 개수 제한 없이 하고, 파일 · PDF로도 받아요.` }, 402);
+    }
+
+    // 완성본은 무료 과제 3개까지 (처음 쓸 때만 센다 — 같은 과제를 다시 쓰는 건 괜찮다) · 어느 길로 시작했든 여기서 센다
+    if ((action === "draft" || action === "make") && !paid && !str(task.draft)) {
+      const { count } = await db.from("school_tasks").select("id", { count: "exact", head: true }).eq("user_id", user.id).not("draft", "is", null).neq("id", task.id);
+      if ((count ?? 0) >= FREE_TASKS) return json({ paywall: true, error: `무료 완성본 ${FREE_TASKS}개를 다 썼어요. 1년 이용권이면 개수 제한 없이 완성하고, 한글 · PDF 파일로도 받아요.` }, 402);
+    }
+
+    // 탐구 설계도 무료는 과제 3개까지 (처음 설계할 때만 센다)
+    if (action === "design" && !paid && !arr(task.analysis?.designs).length) {
+      const { count } = await db.from("school_tasks").select("id", { count: "exact", head: true }).eq("user_id", user.id).neq("status", "draft").neq("id", task.id);
+      if ((count ?? 0) >= FREE_TASKS) return json({ paywall: true, error: `무료로는 수행평가 · 탐구를 ${FREE_TASKS}개까지 설계할 수 있어요. 1년 이용권이면 개수 제한 없이 설계 · 완성본까지 끝까지 해요.` }, 402);
     }
 
     let out: any;
@@ -730,6 +967,9 @@ Deno.serve(async (req) => {
       case "draft":    out = await draft(db, task, format, quick === true); break;
       case "score":    out = await score(db, task, content); break;
       case "finalize": out = await finalize(db, task, content); break;
+      case "design":   out = await designTopics(db, task); break;
+      case "structure": out = await structureReco(db, task); break;
+      case "to_report": out = await toReport(db, task); break;
       case "speech_script": out = await speechScript(db, task); break;
       case "speech_fb":     out = await speechFeedback(db, task, transcript, seconds, slideTimes); break;
       default: return json({ error: `모르는 action: ${action}` }, 400);

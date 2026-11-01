@@ -118,7 +118,10 @@ function splitChoices(text) {
   const prep = /\[\[\s*면접준비\s*\]\]/.test(rest2); // 면접 기출 · 예상질문 → 수시 면접 준비(/prep) 버튼
   const note = /\[\[\s*노트\s*\]\]/.test(rest2); // 지난 학년 활동이 없을 때 → 생기부 노트(/my/note) 버튼
   const voice = /\[\[\s*건의함\s*\]\]/.test(rest2); // 없는 자료 → 생수면 의견함(/voice) 버튼
-  const suhaeng = /\[\[\s*수행평가\s*\]\]/.test(rest2); // 수행평가 하나를 끝까지 → 수행평가 완성(/suhaeng) 버튼
+  const suhaeng = /\[\[\s*수행평가\s*\]\]/.test(rest2);
+  const tamgu = /\[\[\s*탐구설계\s*\]\]/.test(rest2); // 탐구 이야기 → 탐구 설계 시작 버튼 (주제 정하기 → 질문 → 쪽수 · 양식 → 완성본 → 보고서 디자인) // 수행평가 하나를 끝까지 → 수행평가 완성(/suhaeng) 버튼
+  const designTask = Number(rest2.match(/\[\[\s*디자인\s*[:：]\s*(\d+)\s*\]\]/)?.[1] ?? 0); // 완성본 → 보고서 디자인하러 가기 (DesignGo)
+  const reportId = Number(rest2.match(/\[\[\s*보고서디자인\s*[:：]\s*(\d+)\s*\]\]/)?.[1] ?? 0); // 완성본 → 탐구보고서 디자인(/inquiry/:id/report) 버튼
   const practiceTask = Number(rest2.match(/\[\[\s*연습화면\s*[:：]\s*(\d+)\s*\]\]/)?.[1] ?? 0); // 발표 연습 화면 열기 버튼
   const docM = rest2.match(/\[\[\s*문서\s*[:：]\s*(\d+)\s*\|\s*(hwp|docx|pdf)\s*\]\]/); // 완성본 → 한글 · 워드 · PDF (DocButton)
   const docFile = docM ? { id: Number(docM[1]), kind: docM[2] } : null;
@@ -126,7 +129,7 @@ function splitChoices(text) {
   const speech = Number(rest2.match(/\[\[\s*발표연습\s*[:：]\s*(\d+)\s*\]\]/)?.[1] ?? 0); // 발표 연습 카드 (분) → SpeechCard
   const schoolChg = /\[\[\s*학교바꾸기\s*\]\]/.test(rest2); // 학교 · 학년이 다를 때 → 학교 바꾸기 창 (components/SchoolGate)
   const acts = [...new Set([...rest2.matchAll(/\[\[\s*할일\s*[:：]\s*(\d+)\s*\]\]/g)].map((x) => Number(x[1])))].slice(0, 3);
-  return { body: rest2.replace(/\[\[\s*할일\s*[:：]\s*\d+\s*\]\]/g, "").replace(/\[\[\s*(이용권|친구초대|플랜|루틴저장|선배|면접준비|노트|건의함|수행평가|학교바꾸기)\s*\]\]/g, "").replace(/\[\[\s*발표연습\s*[:：]\s*\d+\s*\]\]/g, "").replace(/\[\[\s*PPT\s*[:：]\s*\d+\s*\]\]/g, "\n@@PPT@@\n").replace(/\[\[\s*문서\s*[:：][^\]]*\]\]/g, "").replace(/\[\[\s*연습화면\s*[:：]\s*\d+\s*\]\]/g, "").trim(), questions: qs.slice(0, 3), pass, form, invite, univReq, plan, routine, acts, senior, prep, note, voice, suhaeng, schoolChg, speech, pptTask, docFile, practiceTask };
+  return { body: rest2.replace(/\[\[\s*할일\s*[:：]\s*\d+\s*\]\]/g, "").replace(/\[\[\s*(이용권|친구초대|플랜|루틴저장|선배|면접준비|노트|건의함|수행평가|학교바꾸기|탐구설계)\s*\]\]/g, "").replace(/\[\[\s*발표연습\s*[:：]\s*\d+\s*\]\]/g, "").replace(/\[\[\s*PPT\s*[:：]\s*\d+\s*\]\]/g, "\n@@PPT@@\n").replace(/\[\[\s*문서\s*[:：][^\]]*\]\]/g, "").replace(/\[\[\s*연습화면\s*[:：]\s*\d+\s*\]\]/g, "").replace(/\[\[\s*보고서디자인\s*[:：]\s*\d+\s*\]\]/g, "").replace(/\[\[\s*디자인\s*[:：]\s*\d+\s*\]\]/g, "").trim(), questions: qs.slice(0, 3), pass, form, invite, univReq, plan, routine, acts, senior, prep, note, voice, suhaeng, schoolChg, speech, pptTask, docFile, practiceTask, reportId, designTask, tamgu };
 }
 
 /* 입력 카드 — 원래 흔한가 화면처럼 학과·과목·주제를 직접 적어서 한 번에 보낸다 */
@@ -137,6 +140,7 @@ const HINT = {
   탐구주제: "예: 노인 낙상 사고를 줄이는 병실 환경 조사",
   대학: "예: 가천대 · 안 정했으면 비워 두세요",
   지원동기: "지원동기를 30자 이상 그대로 붙여 넣어 주세요",
+  자기소개: "면접에서 말할 자기소개를 그대로 붙여 넣어 주세요 (30자 이상)",
   "책 제목": "예: 이기적 유전자",
   저자: "예: 리처드 도킨스 · 몰라도 돼요",
   활동: "예: 생명과학 효소 실험 보고서 / 보건 동아리 / 내신 2.8 — 한 것을 생각나는 대로",
@@ -151,8 +155,8 @@ const HINT = {
 const CHIPS = {
   "틀리는 이유": ["개념을 잘 몰라요", "알았는데 실수해요", "시간이 모자라요", "문제를 잘못 읽어요", "외워도 까먹어요", "어디서 틀리는지 몰라요"],
 };
-const LONG = /지원동기|탐구주제|주제|활동|면접 질문|내 답변|지금 공부 방법|안내문/;
-const MIN = (name) => (/지원동기/.test(name) ? 30 : /내 답변/.test(name) ? 15 : 1);
+const LONG = /지원동기|자기소개|탐구주제|주제|활동|면접 질문|내 답변|지금 공부 방법|안내문/;
+const MIN = (name) => (/지원동기|자기소개/.test(name) ? 30 : /내 답변/.test(name) ? 15 : 1);
 function InputCard({ form, onSubmit, onClose, onPhotos, uploading = false }) {
   const isNotice = /수행평가 안내문/.test(form.title); // 수행평가 안내문 카드 — 사진 · PDF로도 올릴 수 있다
   const [vals, setVals] = useState(() => form.fields.map((f) => f.value));
@@ -182,8 +186,8 @@ function InputCard({ form, onSubmit, onClose, onPhotos, uploading = false }) {
               </span>
               <Tag
                 value={vals[k]}
-                rows={long ? (/지원동기|내 답변|활동|안내문/.test(f.name) ? 5 : 2) : undefined}
-                onChange={(e) => setVals((v) => v.map((x, j) => (j === k ? e.target.value.slice(0, /안내문/.test(f.name) ? 3000 : /지원동기|내 답변|활동/.test(f.name) ? 1200 : 300) : x)))}
+                rows={long ? (/지원동기|자기소개|내 답변|활동|안내문/.test(f.name) ? 5 : 2) : undefined}
+                onChange={(e) => setVals((v) => v.map((x, j) => (j === k ? e.target.value.slice(0, /안내문/.test(f.name) ? 3000 : /지원동기|자기소개|내 답변|활동/.test(f.name) ? 1200 : 300) : x)))}
                 onKeyDown={(e) => { if (!long && e.key === "Enter" && !e.nativeEvent.isComposing) submit(); }}
                 placeholder={HINT[f.name] ?? ""}
                 className="w-full resize-none rounded bg-[#F8F9FB] px-3 py-2 text-[13.5px] leading-relaxed text-gray-900 outline-none ring-1 ring-transparent placeholder:text-gray-400 focus:ring-gray-300"
@@ -548,7 +552,39 @@ function Kid({ text }) {
 // 내 말풍선 — 사진 경로 표시([[사진: …]])는 숨긴다
 /* 완성본 → 한글 · 워드 · PDF 받기 (lib/taskDoc · docx 는 누를 때만 불러온다 · AI 다시 안 부름) */
 const DOC_LABEL = { hwp: "한글 파일 받기", docx: "워드 파일 받기", pdf: "PDF로 저장하기" };
-function DocButton({ taskId, kind }) {
+/* 보고서 디자인하러 가기 — 완성본을 디자인 보고서 칸에 담고(school_task to_report) 바로 /inquiry/:id/report 로 */
+function DesignGo({ taskId }) {
+  const nav = useNavigate();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  async function go() {
+    if (busy) return;
+    setBusy(true);
+    setErr("");
+    const { data, error } = await supabase.functions.invoke("school_task", { body: { action: "to_report", taskId } });
+    setBusy(false);
+    if (error || !data?.inquiryId) {
+      let msg = data?.error ?? "";
+      try { msg = msg || (await error?.context?.json?.())?.error || ""; } catch { /* 무시 */ }
+      return setErr(msg || "디자인을 열지 못했어요. 잠시 뒤 다시 눌러 주세요.");
+    }
+    nav(`/inquiry/${data.inquiryId}/report`, { state: { from: "agent" } });
+  }
+  return (
+    <div className="mt-3">
+      <button onClick={go} disabled={busy} className="flex w-full items-center justify-between gap-3 rounded border border-gray-200 bg-white p-4 text-left hover:border-gray-400 disabled:opacity-60">
+        <span>
+          <b className="block text-[14.5px] font-extrabold text-gray-900">보고서 디자인하러 가기</b>
+          <small className="text-[12.5px] text-gray-500">{busy ? "완성본을 디자인 칸에 옮기는 중 (20초쯤)…" : "디자인 30가지 · 사진 · 글씨체 · 색 바꾸기 · PDF 저장"}</small>
+        </span>
+        <span className="flex h-9 flex-none items-center rounded bg-gray-800 px-3.5 text-[13px] font-extrabold text-white">{busy ? "옮기는 중" : "열기 ›"}</span>
+      </button>
+      {err && <p className="mt-1.5 text-[12.5px] font-bold text-red-600">{err}</p>}
+    </div>
+  );
+}
+
+function DocButton({ taskId, kind, paid = true, onBuy }) {
   const [state, setState] = useState(""); // "" · making · done · fail · popup · copied
   async function getTask() {
     const { data } = await supabase.from("school_tasks").select("title,subject,draft").eq("id", taskId).maybeSingle();
@@ -556,6 +592,11 @@ function DocButton({ taskId, kind }) {
     return data;
   }
   async function make() {
+    // 완성본은 무료로 보여 주고, 파일로 가져갈 때 1년 이용권
+    if (!paid) {
+      track("paywall_doc", kind);
+      return onBuy?.({ reason: "doc", title: "완성본 파일은 1년 이용권으로 받아요", desc: "완성본 · 채점 · 세특 예상 문장까지는 무료예요. 한글 · 워드 · PDF 파일로 받으려면 1년 이용권이 필요해요." });
+    }
     setState("making");
     try {
       const t = await getTask();
@@ -878,7 +919,7 @@ function UsageBar({ usage, pending, className = "mt-3" }) {
     <div className={`${className} rounded bg-white px-4 py-3 ring-1 ring-black/5`}>
       <div className="flex items-center justify-between gap-2 whitespace-nowrap text-[12.5px]">
         <p className="font-bold text-gray-800">{reset ? "이번 주 사용량" : usage.free_daily ? "오늘 무료 사용량" : "무료 맛보기"}</p>
-        <p className="font-extrabold" style={{ color: full ? PINK : NAVY }}>{usage.pct}% 사용됨</p>
+        <p className="font-extrabold" style={{ color: full ? PINK : NAVY }}>{usage.paid_until || usage.left_q == null ? `${usage.pct}% 사용됨` : full ? "다 썼어요" : `질문 약 ${usage.left_q}개 남음`}</p>
       </div>
       {usage.paid_until && <p className="mt-1 inline-block rounded bg-[#EEF2FF] px-1.5 py-0.5 text-[11px] font-bold" style={{ color: NAVY }}>이용권 · {until}까지</p>}
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-100">
@@ -1435,7 +1476,7 @@ export default function Agent() {
           ) : (
             <div key={i} ref={i === msgs.length - 1 ? lastBotRef : undefined} className="mr-4 scroll-mt-24">
               {(() => {
-                const { body, questions, pass, form, invite: inv, univReq, plan, routine, acts, senior, prep, note, voice, suhaeng, schoolChg, speech, pptTask, docFile, practiceTask } = splitChoices(m.content);
+                const { body, questions, pass, form, invite: inv, univReq, plan, routine, acts, senior, prep, note, voice, suhaeng, schoolChg, speech, pptTask, docFile, practiceTask, reportId, designTask, tamgu } = splitChoices(m.content);
                 const last = i === msgs.length - 1;
                 return (
                   <>
@@ -1486,6 +1527,15 @@ export default function Agent() {
                         <span className="flex h-9 flex-none items-center rounded px-3.5 text-[13px] font-extrabold text-white" style={{ background: NAVY }}>바꾸기 ›</span>
                       </button>
                     )}
+                    {tamgu && (
+                      <button onClick={() => send("탐구주제 하자")} disabled={busy} className="mt-2 flex w-full items-center justify-between gap-3 rounded border border-gray-200 bg-white p-4 text-left hover:border-gray-400">
+                        <span>
+                          <b className="block text-[14.5px] font-extrabold text-gray-900">탐구 설계 시작하기</b>
+                          <small className="text-[12.5px] text-gray-500">내 주제 · 흔한가 진단 · 추천 중 골라서 → 질문 4~5개 → 완성본 → 보고서 디자인</small>
+                        </span>
+                        <span className="flex h-9 flex-none items-center rounded bg-gray-800 px-3.5 text-[13px] font-extrabold text-white">시작 ›</span>
+                      </button>
+                    )}
                     {suhaeng && (
                       <button onClick={() => send("수행평가 완성하기")} disabled={busy} className="mt-2 flex w-full items-center justify-between gap-3 rounded bg-white p-4 text-left ring-1 ring-black/10 hover:ring-black/20">
                         <span>
@@ -1525,7 +1575,7 @@ export default function Agent() {
                     {pass && !paid && (pending
                       ? <p className="mt-2 rounded bg-[#FFF7ED] px-3 py-2.5 text-[12.5px] font-bold text-[#C2410C]">이용권 입금 확인 중이에요. 확인되면 바로 광고가 없어져요.</p>
                       : <button onClick={() => setBuy({ reason: "card" })} className="mt-2 inline-flex h-9 items-center rounded bg-white px-4 text-[13px] font-extrabold ring-1 ring-sm-navy/30 hover:ring-sm-navy" style={{ color: NAVY }}>요금제 보기 ›</button>)}
-                    {docFile && <DocButton taskId={docFile.id} kind={docFile.kind} />}
+                    {docFile && <DocButton taskId={docFile.id} kind={docFile.kind} paid={Boolean(paid)} onBuy={(b) => setBuy(b)} />}
                     {practiceTask > 0 && (
                       <button onClick={() => setPractice(practiceTask)} disabled={busy} className="mt-3 flex w-full items-center justify-between gap-3 rounded border border-gray-200 bg-white p-4 text-left hover:border-gray-400">
                         <span>
@@ -1535,6 +1585,15 @@ export default function Agent() {
                         <span className="flex h-9 flex-none items-center rounded bg-gray-800 px-3.5 text-[13px] font-extrabold text-white">열기 ›</span>
                       </button>
                     )}
+                    {reportId > 0 && (
+                      <Link to={`/inquiry/${reportId}/report`} state={{ from: "agent" }} className="mt-3 flex items-center justify-between gap-3 rounded border border-gray-200 bg-white p-4 hover:border-gray-400">
+                        <span>
+                          <b className="block text-[14.5px] font-extrabold text-gray-900">보고서 디자인하러 가기</b>
+                          <small className="text-[12.5px] text-gray-500">디자인 30가지 · 사진 · 글씨체 · 색 바꾸기 · PDF 저장</small>
+                        </span>
+                        <span className="flex h-9 flex-none items-center rounded bg-gray-800 px-3.5 text-[13px] font-extrabold text-white">열기 ›</span>
+                      </Link>
+                    )}
                     {speech > 0 && last && !busy && <SpeechCard minutes={speech} onDone={(t) => send(t)} />}
                     {form && last && !busy && !closedCard && (
                       <InputCard key={`f${i}`} form={form} onSubmit={(t) => send(t)} onClose={() => setClosedCard(true)} onPhotos={uploadPhotos} uploading={uploading} />
@@ -1542,6 +1601,7 @@ export default function Agent() {
                     {!form && questions.length > 0 && last && !busy && !closedCard && (
                       <QuestionCard key={i} questions={questions} onSubmit={(t) => send(t)} onClose={() => setClosedCard(true)} onPhotos={uploadPhotos} uploading={uploading} />
                     )}
+                    {designTask > 0 && <DesignGo taskId={designTask} />}
                   </>
                 );
               })()}

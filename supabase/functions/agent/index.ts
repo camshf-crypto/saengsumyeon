@@ -26,15 +26,17 @@ const json = (body: unknown, status = 200) =>
 
 const MODEL = "gpt-5-mini"; // 답이 아쉬우면 "gpt-5" (질문 1개당 비용 약 4~5배)
 const KRW = 1400; // 달러 → 원
-const FREE_WON = 100; // 무료 처음 맛보기 — 한 번 (무거운 질문 약 8개)
-const FREE_DAILY_WON = 60; // 맛보기를 다 쓴 다음부터 매일 새벽 5시(한국)에 다시 채워지는 양 (무거운 질문 약 5개)
+// 2026-11-01 두 배로 (2주 시험: 다시 오는 학생 · 결제 · 비용을 보고 되돌릴 수 있게 숫자만 바꾼다)
+const FREE_WON = 200; // 무료 처음 맛보기 — 한 번 (평균 질문 약 26개 · 질문 하나 평균 약 7.8원)
+const FREE_DAILY_WON = 120; // 맛보기를 다 쓴 다음부터 매일 새벽 5시(한국)에 다시 채워지는 양 (평균 질문 약 15개)
+const WON_PER_Q = 8; // 화면에 '질문 약 N개 남음'으로 보여 줄 때 쓰는 질문 하나 평균 비용
 const FREE_RESET_HOUR = 5; // 하루가 바뀌는 시각 — 학원 끝나고 밤늦게 공부하는 학생이 자정에 두 번 받지 않게 새벽 5시
 const FREE_FROM = "2026-10-26T15:00:00Z"; // 이때(한국 10/27 0시)부터 쓴 것을 센다 — 그 전에 쓴 건 안 셈
 const FRIEND_WON = 75; // 친구 1명이 내 링크로 가입할 때마다 늘어나는 주간 한도 (2026-10-29 절반 · 150 → 75)
 const FRIEND_MAX = 4; // 친구 보너스는 4명까지
 const PAID_WON = 3000; // 이용권 주간 한도 (보통 질문 약 100개 — 사실상 무제한, 과다 사용만 막음)
 const MAX_ROUNDS = 6; // 한 질문에 DB 찾기 최대 횟수
-const HISTORY = 12; // 이전 대화 몇 개까지 기억할지
+const HISTORY = 20; // 이전 대화 몇 개까지 기억할지 (10번 주고받기) · 최근 4개 밖의 물꼬 답은 앞 900자만 (비용)
 const clean = (v: unknown, n = 600) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 
 /* OpenAI 부르기 — 바쁠 때(429) · 서버 오류(5xx)면 1초 · 3초 쉬고 최대 2번 다시 */
@@ -407,15 +409,26 @@ async function passOrAdmin(db: any, userId: string) {
 
 /* 생수면의 다른 서버 기능(진단)을 학생 로그인 그대로 부른다 */
 async function callFn(fn: string, body: unknown, token: string, pass = false) {
-  const res = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/${fn}`, {
-    method: "POST",
-    // x-agent-key: 이 기능의 무료 횟수 대신 에이전트 주간 사용량(토큰)으로 계산하라는 표시 (서버끼리만)
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, apikey: Deno.env.get("SUPABASE_ANON_KEY") ?? "", "x-agent-key": Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "", "x-agent-pass": pass ? "1" : "0" },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok && !data?.error) return { error: "진단하지 못했어요. 잠시 뒤 다시 해 주세요" };
-  return data;
+  // 서버 쪽 일시 오류(5xx · 연결 끊김)면 1.5초 뒤 한 번 더 — 학생에게 "서버 오류"를 덜 보이게 (횟수 초과 · 입력 오류 같은 4xx 는 다시 안 함)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/${fn}`, {
+        method: "POST",
+        // x-agent-key: 이 기능의 무료 횟수 대신 에이전트 주간 사용량(토큰)으로 계산하라는 표시 (서버끼리만)
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, apikey: Deno.env.get("SUPABASE_ANON_KEY") ?? "", "x-agent-key": Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "", "x-agent-pass": pass ? "1" : "0" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status >= 500 && attempt === 0) { await new Promise((r) => setTimeout(r, 1500)); continue; }
+      if (!res.ok && !data?.error) return { error: "진단하지 못했어요. 잠시 뒤 다시 해 주세요" };
+      return data;
+    } catch (e) {
+      if (attempt === 0) { await new Promise((r) => setTimeout(r, 1500)); continue; }
+      console.error("callFn", fn, e);
+      return { error: "진단하지 못했어요. 잠시 뒤 다시 해 주세요" };
+    }
+  }
+  return { error: "진단하지 못했어요. 잠시 뒤 다시 해 주세요" };
 }
 
 /* 진단 결과에서 답에 필요한 것만 (너무 길면 AI 비용만 늘어남) */
@@ -453,6 +466,9 @@ function formatCheck(kind: string, r: any, args: any) {
     if (!args?.__paid && r.today_left !== null && r.today_left !== undefined) {
       L.push("", `오늘 남은 탐구주제 흔한가: ${r.today_left}번${r.bonus_left ? ` · 추가 ${r.bonus_left}번` : ""}`);
     }
+    // 진단에서 끝나지 않게 — 바로 탐구 설계로 (학년 · 이전 활동 맞춤 3개 → 보고서 · PPT · 발표)
+    L.push("", "이 주제를 학년 · 이전 활동에 맞춰 탐구로 설계하고, 보고서 · PPT · 발표 연습까지 이어서 할 수 있어.",
+      `[[질문: 이 주제로 뭘 할까? | ${[r.better_topic ? "바꾼 주제로 탐구 설계하기 — 위 '덜 흔하게 바꾼 주제'에서 출발" : "", "이 주제로 탐구 설계하기 — 내가 쓴 주제에서 출발", "다른 주제 진단하기 — 새 주제 넣기"].filter(Boolean).join(" | ")}]]`);
   } else if (kind === "motive") {
     const u = r.univ;
     if (u?.name) {
@@ -569,6 +585,10 @@ async function runTool(db: any, userId: string, name: string, args: any, token =
     if (r?.error) return { error: r.error, done: r.done ?? undefined };
     const tails = (r?.turns ?? []).filter((t: any) => t.q).length;
     return { tail_question: r?.turn?.q, why: r?.turn?.why, tip: r?.turn?.tip, step: tails, max: r?.max ?? 6 };
+  }
+  if ((name === "check_topic" || name === "check_reading") && !SEUL[clean(args?.grade, 3)]) {
+    const g = await gradeOf(db, userId).catch(() => "");
+    if (SEUL[g]) args = { ...args, grade: g };
   }
   if (name === "check_topic") {
     const topic = clean(args?.topic, 100);
@@ -1126,7 +1146,7 @@ async function studentContext(db: any, userId: string, meta: any = {}) {
   const p = prof.data ?? {}, m = my.data ?? {};
   // 가입할 때 적은 정보 + 마이페이지 '내 정보' (마이페이지 화면과 같은 순서: 내 정보 학년 → 가입 학년)
   const grade = m.grade || meta?.grade || p.grade || "모름";
-  L.push(`[가입·마이페이지 정보] 학년: ${grade} · 학교: ${p.school || meta?.school || "모름"} · 희망 학과: ${m.department || meta?.major || "모름"}`
+  L.push(`[가입·마이페이지 정보] 학년: ${grade} · 학교: ${meta?.school || p.school || "모름"} (학생이 '학교 · 학년 바꾸기'로 저장한 학교 — 이것만 쓴다) · 희망 학과: ${m.department || meta?.major || "모름"}`
     + ` (가입 때 적은 학년: ${meta?.grade || p.grade || "없음"}${m.grade ? ` · 마이페이지 내 정보 학년: ${m.grade}` : ""})`);
   // 학년 상태 — 지난 학년 활동을 생기부 노트에 적었는지 (고2면 고1, 고3이면 고1·고2)
   {
@@ -1171,7 +1191,7 @@ async function studentContext(db: any, userId: string, meta: any = {}) {
   if (pl?.data) L.push(`[내 입시 플랜] 있음 — ${pl.data.grade}${pl.data.department ? ` · ${pl.data.department}` : ""} (${String(pl.data.created_at).slice(0, 10)} 만듦)`);
   const tl = tails.data ?? [];
   if (tl.length) L.push("[꼬리질문 연습한 대학] " + [...new Set(tl.map((r: any) => `${r.univ} ${r.department ?? ""}`.trim()))].join(", "));
-  const mem = memoryText(await memoryOf(db, userId).catch(() => ({ facts: {}, notes: [] })));
+  const mem = memoryText(await memoryOf(db, userId).catch(() => ({ facts: {}, notes: [] })), meta?.school || p.school || "");
   return `${mem}\n\n${L.join("\n")}`.slice(0, 8000);
 }
 
@@ -1184,10 +1204,17 @@ async function memoryOf(db: any, userId: string) {
   const { data } = await db.from("agent_memory").select("facts,notes,updated_at").eq("user_id", userId).maybeSingle();
   return { facts: (data?.facts ?? {}) as Record<string, string>, notes: (Array.isArray(data?.notes) ? data.notes : []) as any[], updated_at: data?.updated_at ?? null };
 }
-function memoryText(m: { facts: Record<string, string>; notes: any[] }) {
+// 노트에 저장된 학교와 지금 학교가 다르면 그 노트는 넘기지 않는다 (예전에 한 번 말한 학교로 안내하는 것 막기)
+const schoolKey = (x: string) => String(x ?? "").replace(/\s/g, "").replace(/(등학교|교)$/, "");
+function otherSchool(text: string, school: string) {
+  const names = String(text ?? "").match(/[가-힣]{1,8}고(등학교)?(?=[\s,.·이가은는을를에의도로와과)]|$)/g) ?? [];
+  const mine = schoolKey(school);
+  return names.some((n) => !/^(최고|제고|재고|참고|광고|사고|보고|경고|신고|원고|마감고)/.test(n) && schoolKey(n) !== mine && !(mine && mine.startsWith(schoolKey(n))));
+}
+function memoryText(m: { facts: Record<string, string>; notes: any[] }, school = "") {
   const L: string[] = [];
-  for (const k of MEM_KEYS) if (m.facts?.[k]) L.push(`- ${k}: ${clean(m.facts[k], 120)}`);
-  for (const n of (m.notes ?? []).slice(-12)) if (n?.t) L.push(`- ${clean(n.t, 80)}${n.at ? ` (${String(n.at).slice(5, 10)})` : ""}`);
+  for (const k of MEM_KEYS) if (m.facts?.[k] && !otherSchool(m.facts[k], school)) L.push(`- ${k}: ${clean(m.facts[k], 120)}`);
+  for (const n of (m.notes ?? []).slice(-12)) if (n?.t && !otherSchool(n.t, school)) L.push(`- ${clean(n.t, 80)}${n.at ? ` (${String(n.at).slice(5, 10)})` : ""}`);
   return L.length ? `[물꼬 노트 — 지난 대화에서 이 학생에 대해 기억한 것. 아래 다른 정보와 다르면 더 최근 것을 따른다]\n${L.join("\n")}` : "[물꼬 노트] 아직 기억한 것 없음 (처음 이야기하는 학생)";
 }
 async function updateMemory(db: any, userId: string, message: string, answer: string) {
@@ -1302,7 +1329,8 @@ function systemPrompt(student: string) {
 - 이모지 · 아이콘 문자(📝 ✅ 👉 등)는 쓰지 않는다. 글과 **굵게** · 목록 · 표로만 정리한다.
 - PPT · 한글 · 워드 같은 파일을 직접 만들어 주겠다고 하거나 "파일로 만들어 줄까?"라고 묻지 않는다. 파일이 필요하면 "'PPT 만들어 줘' · '한글 파일로 줘' · '워드로 줘' · 'PDF로 줘'라고 보내면 수행평가 완성본을 그 파일로 받을 수 있어요 (PPT면 발표 대본 · 연습까지)"라고 안내한다. 학생이 올린 사진을 PPT 배경에 넣어 주겠다는 말도 하지 않는다.
 - 학생의 학년 · 과목을 혼자 짐작하지 않는다. [학생 정보]에 학년이 없고 답에 학년이 필요하면 먼저 "몇 학년이야?"를 묻는다. 과목 이름은 학생이 말한 이름이나 그 학교 평가계획에 있는 이름만 쓴다 (예: '국어'라고만 하면 '공통국어2'로 바꾸지 말고 평가계획의 국어 과목 중 어느 것인지 묻는다).
-- 학교 이름은 [학생 정보]의 학교와 학생이 말한 학교만 쓴다. 대화에 나오지 않은 학교 이름을 지어내지 않는다.
+- 학교 이름은 [가입·마이페이지 정보]의 학교(학생이 '학교 · 학년 바꾸기'로 저장한 학교)만 쓴다. 물꼬 노트 · 예전 대화에 다른 학교가 나와도 그 학교로 안내하지 않는다. 학생이 이번 대화에서 다른 학교를 말했을 때만 그 학교를 쓰고 [[학교바꾸기]]를 붙인다. 대화에 나오지 않은 학교 이름을 지어내지 않는다.
+- 탐구주제 · 탐구 보고서와 수행평가는 다르다. 수행평가는 선생님 안내문 사진을 올려서 하고, 탐구는 학생이 하고 싶은 주제를 깊게 해서 보고서 디자인까지 만든다. 탐구 이야기에는 [[수행평가]]를 붙이지 않고, 탐구 계획 · 실험 절차 · 보고서 초안을 채팅에서 직접 길게 짜 주지 말고 답 끝에 [[탐구설계]]를 붙인다 (누르면 탐구 설계가 시작된다: 주제 정하기 → 질문 4~5개 → 쪽수 · 양식 → 완성본 → 보고서 디자인).
 - 학생이 [학생 정보]와 다른 학교 · 학년을 말하면 (예: "나 개포고야", "2학년인데") 학생이 말한 것을 따르고, 답 끝에 [[학교바꾸기]] 를 붙여 저장된 학교 · 학년을 바꾸게 한다.
 - 학교 평가계획이 있으면 "자료가 없다"고 하지 않는다. 학년 · 과목이 맞지 않아 못 찾았으면 학년 · 과목을 다시 묻는다.
 - 대학 입시 정보(모집인원·전형·수능최저·면접·바뀐 점·입결)는 반드시 도구로 DB를 찾아서 답한다. 기억으로 지어내지 않는다.
@@ -1359,7 +1387,7 @@ function systemPrompt(student: string) {
 - 되묻기는 한 번이면 충분하다. 바로 앞 답에서 이미 카드로 물었고 학생이 답했으면(학생 글에 "→" 가 있거나 "학과: …" 처럼 칸을 채워 보냈으면) 또 묻지 않는다. 그 답과 [학생 정보]로 바로 결과를 준다. 빠진 게 있으면 알맞게 정해서 쓰고 "(과목은 ○○ 기준으로 골랐어요)"처럼 한 줄로 밝힌다.
 - 학과·과목·주제·대학·책 제목·지원동기처럼 학생이 직접 적어야 하는 것은 보기 카드 대신 [입력 카드]로 한 번에 받는다 (원래 흔한가 화면처럼):
   [[입력: 카드 제목 | 칸 이름=미리 채울 값 | 칸 이름 | 칸 이름 (선택)]]
-  · 칸 이름은 이 중에서만 쓴다: 학년, 학과, 과목, 탐구주제, 대학, 지원동기, 책 제목, 저자, 활동, 면접 질문, 내 답변
+  · 칸 이름은 이 중에서만 쓴다: 학년, 학과, 과목, 탐구주제, 대학, 지원동기, 자기소개, 책 제목, 저자, 활동, 면접 질문, 내 답변
   · [학생 정보]로 아는 값은 '=' 뒤에 미리 채운다 (예: 학과=간호학과). 모르면 비워 둔다.
   · 꼭 없어도 되는 칸은 이름 뒤에 (선택)을 붙인다.
   · 학생이 카드를 보내면 "학과: … / 과목: …" 처럼 한 줄씩 온다. 그 값을 그대로 쓰고 다시 묻지 않는다.
@@ -1487,7 +1515,22 @@ function systemPrompt(student: string) {
 - 마지막에 출처를 한 줄로: "자료: ○○대 2028 시행계획" 처럼.
 - 입시와 상관없는 질문이면 정중히 입시 상담 범위를 안내한다.
 - 답 끝에 "원하면 ○○도 확인해 줄게요", "볼까요?", "더 알려 드릴까요?" 같은 제안·되묻기를 붙이지 않는다. 할 말을 다 했으면 출처 한 줄로 끝낸다. (넓은 질문을 좁힐 때의 질문 카드만 예외)
-- 학생을 "당신"이라고 부르지 않는다. 학년을 말할 때는 "고3이라 2027학년도 기준이에요"처럼 쓴다.
+- 학생을 "당신"이라고 부르지 않는다. "고3이라 2027학년도 기준이에요" 같은 학년도 문구는 입결 · 전형 · 모집 · 수능최저 · 대학별 바뀐 점처럼 학년도에 따라 답이 달라지는 입시 제도 답에만 한 번 쓴다. 탐구주제 · 보고서 · 독서 · 세특 · 면접 답변 다듬기에는 쓰지 않는다.
+
+[답하는 법 — 실제 학생 대화에서 나온 불만을 고친 규칙 (위 규칙보다 먼저 지킨다)]
+- 답을 "물꼬 입시 AI예요"로 시작하지 않는다 (이름을 물을 때만 말한다). "좋아요 —" 같은 맞장구도 매번 쓰지 않고 바로 본론부터.
+- 학생이 말한 조건은 대화가 끝날 때까지 지킨다: 이미 한 실험 · 활동(다시 하라고 하지 않는다), 글자 수 · 칸 제한, 할 수 없는 방법(예: 설문조사 못 함), 꼭 연결해야 하는 과목 · 단원 · 대주제, 학년 수준, "원래 내용 그대로". 새 답을 쓰기 전에 대화에서 이런 조건을 먼저 찾아 본다.
+- 학생이 "내가 보낸 내용으로", "그대로", "이걸로 하고 싶은데"라고 하면 내용 · 사실은 바꾸지 않는다. "괜찮아?"라고 물으면 먼저 "써도 돼요 / 이 부분은 고치는 게 좋아요"로 판단부터 말하고, 고칠 곳만 짚는다. 학생 글을 그대로 다시 돌려주지 않는다.
+- 학생이 후보를 말하고 "뭐가 나아? · 뭐가 제일 좋아? · 너가 추천해 줘"라고 하면 카드로 되묻지 말고 하나를 골라 "○○를 추천해요"로 시작해 이유 2~3줄을 쓴다.
+- 앞에서 보여 준 목록 · 카드 · 글을 "다시 보여 줘 · 아까 그거"라고 하면 대화 기록에서 찾아 그대로 다시 보여 준다. 대화 기록에 없으면 없다고 말한다.
+- 난이도: 고1 · 고2에게는 교과서에 나오는 말로 쓴다. 대학 전공 용어 · 통계 기법(ANOVA · 회귀분석 · 선형대수 · 사영변환 · 특정 공정 이름 등)을 주제나 방법으로 내지 않는다. 꼭 필요한 말은 괄호로 쉬운 말을 붙인다. 실험 · 조사는 학교 실험실 · 무료 자료로 할 수 있는 수준만.
+- 과목 연계: 학생이 과목 · 단원 · 대주제를 말했으면 그 과목 교과서 단원 개념 안에서 먼저 제안하고, 지원 학과 연결은 한 줄로만 붙인다. 과목과 학과가 부딪히면 과목이 먼저다.
+- 대학 이름 하나처럼 짧은 말만 오면: 바로 앞 카드의 칸을 채운 답일 때만 그 흐름으로 쓰고, 아니면 그 말에 대한 새 질문으로 본다 (앞 대화의 예상질문 · 진단 틀에 억지로 끼워 넣지 않는다).
+- 링크(https://…)는 열어 볼 수 없다. 카드로 되묻지 말고 "링크는 열어 볼 수 없어요. 기사 본문을 붙여 넣어 주면 바로 볼게요"라고 한 줄로 말한다.
+- 이미지 · 카드뉴스 그림은 직접 만들 수 없다. 장마다 들어갈 문구와 배치까지만 써 준다.
+- "느려 · 왜 안 돼" 같은 말에는 지어낸 이유를 대지 않는다. "늦어서 미안해요" 한 줄 뒤 바로 이어서 할 일을 한다.
+- 진단 도구가 error 를 돌려주면 "서버 오류" 같은 말 대신 "지금 진단이 잘 안 됐어요. '다시'라고 보내면 같은 내용으로 다시 해 볼게요"라고 쓴다. 학생이 바로 다음에 "다시 · 다시 시도해 줘 · 해 줘"라고 하면, 대화 기록에서 바로 전 진단에 쓴 학과 · 과목 · 주제(또는 지원동기 · 책)를 찾아 같은 도구를 다시 부른다.
+- [[입력: 자기소개 흔한가 진단 | …]] 카드로 온 글("자기소개: …")은 그 글을 motive 로 넣어 check_motive 로 진단하되, 답에서는 '지원동기' 대신 '자기소개'라고 부른다.
 
 [학생 정보]
 ${student}`;
@@ -1537,6 +1580,7 @@ async function usageOf(db: any, userId: string, paid: string | null) {
   const pct = Math.min(100, Math.round((used / limit) * 100));
   return {
     pct, reset_at: null, paid_until: paid, invite: null,
+    left_q: Math.max(0, Math.floor((limit - used) / WON_PER_Q)), // 남은 질문 수 (대략)
     free_once: !daily,                     // 처음 맛보기 중
     free_daily: daily,                     // 하루치 무료 중
     free_reset_at: tomorrow.toISOString(), // 다 쓰면 다시 채워지는 때 (맛보기를 오늘 다 써도 내일 0시부터 하루치)
@@ -1842,11 +1886,19 @@ function shOutRec(t: any) {
   return "hwp"; // 학교 제출은 한글이 가장 많다
 }
 const shKindOf = (m: string) => (/ppt|피피티|파워\s*포인트|슬라이드|발표/i.test(m) ? "ppt" : /pdf|피디에프/i.test(m) ? "pdf" : /(?<!키)워드|docx/i.test(m) ? "docx" : /한글|hwp/i.test(m) ? "hwp" : "");
+// 탐구 · 보고서 과제 — 완성본 뒤에 '보고서 디자인하기'(기억에 남는 탐구보고서 디자인)를 먼저 권한다
+const SH_REPORT_KEYS = ["experiment", "analysis", "inquiry", "thesis", "project", "case", "survey", "review", "field", "reading"];
+const shIsReport = (t: any) => !shIsTalk(t) && (t?.analysis?.kind === "topic" || /보고서|탐구|실험/.test(`${t?.task_type ?? ""} ${t?.title ?? ""}`) || SH_REPORT_KEYS.includes(t?.analysis?.structure));
 const shNextCard = (t: any, done = "") => {
   const rec = shOutRec(t);
   const kinds = ["ppt", "hwp", "docx", "pdf"].filter((k) => k !== done).sort((a, b) => (a === rec ? -1 : b === rec ? 1 : 0));
   const outs = kinds.map((k) => `${SH_OUT[k].label} — ${k === rec && !done ? "추천 · " : ""}${SH_OUT[k].desc}`);
-  return `[[질문: 다음은? | ${[...outs, "다른 구조로 다시 쓰기 — 논술 · 탐구 보고서 등으로", "새 수행평가 하기 — 다른 과목도 이어서"].slice(0, 6).join(" | ")}]]`;
+  const again = t?.analysis?.kind === "topic" ? "새 탐구 설계하기 — 다른 주제도 이어서" : "새 수행평가 하기 — 다른 과목도 이어서";
+  if (shIsReport(t)) {
+    const design = done === "design" ? "보고서 디자인 다시 맞추기 — 고친 완성본을 디자인에 다시 담기" : `보고서 디자인하기 — ${t?.analysis?.out && t.analysis.out !== "design" ? "" : "추천 · "}디자인 30가지 · 사진 · PDF`;
+    return `[[질문: 다음은? | ${[design, ...outs.map((o) => o.replace("추천 · ", "")), again].slice(0, 6).join(" | ")}]]`;
+  }
+  return `[[질문: 다음은? | ${[...outs, "다른 구조로 다시 쓰기 — 논술 · 탐구 보고서 등으로", again].slice(0, 6).join(" | ")}]]`;
 };
 const shMin = (sec: number) => `${Math.floor(sec / 60)}분 ${sec % 60}초`;
 // 발표 기본기 — 시선처리 · 복식호흡 (세움스피치 · 대본 아래에 늘 같이 보여 준다)
@@ -1963,9 +2015,11 @@ async function shSubjectSummary(db: any, schoolName: string, subjectId: number) 
   return `**${schoolName} ${s.grade}학년 ${s.subject}** — 수행평가 ${s.perf_total ?? "?"}%${[s.exam_mid ? `중간 ${s.exam_mid}` : "", s.exam_final ? `기말 ${s.exam_final}` : ""].filter(Boolean).length ? ` (${[s.exam_mid ? `중간 ${s.exam_mid}` : "", s.exam_final ? `기말 ${s.exam_final}` : ""].filter(Boolean).join(" · ")})` : ""}\n${lines.join("\n")}`;
 }
 const shNoticeCard = (subject: string) =>
-  `[[입력: 수행평가 안내문 | 과목=${shSafe(subject, 30)} | 안내문 내용 (붙여 넣기)]]`;
+  `[[입력: 수행평가 안내문 사진 올리기 | 과목=${shSafe(subject, 30)}]]`;
+const SH_PHOTO_ONLY = (subject: string) =>
+  `수행평가는 **선생님 안내문 사진**이 꼭 있어야 해 — 과제 주제 · 채점 기준이 안내문에만 있거든. 아래 카드의 사진 올리기 버튼으로 찍어 올려 줘 (여러 장 가능).\n안내문을 아직 못 받았으면 받은 뒤에 다시 와 줘. 그 사이에 하고 싶은 주제를 깊게 파 보고 싶으면 '탐구주제 하자'라고 해.\n\n${shNoticeCard(subject)}`;
 const shAskNotice = (summary: string, subject: string) =>
-  `${summary ? `${summary}\n\n` : ""}평가계획에는 비율 · 배점 · 채점 기준만 있고 **실제 과제 주제는 선생님이 준 안내문**에 있어.\n선생님이 준 **안내문 종이를 사진 찍어 올려 줘** — 아래 카드의 사진 올리기 버튼 (여러 장 가능). 글로 붙여 넣어도 돼.\n안내문이 아직 없으면 '${SH_NOSRC}'라고 보내 줘. 평가계획 기준으로 할게.\n\n${shNoticeCard(subject)}`;
+  `${summary ? `${summary}\n\n` : ""}평가계획에는 비율 · 배점 · 채점 기준만 있고 **실제 과제 주제는 선생님이 준 안내문**에 있어.\n선생님이 준 **안내문 종이를 사진 찍어 올려 줘** — 아래 카드의 사진 올리기 버튼 (여러 장 가능). 수행평가는 안내문 사진이 있어야 시작할 수 있어.\n\n${shNoticeCard(subject)}`;
 
 // 질문 하나 → 카드
 function shQuestionText(t: any) {
@@ -1973,8 +2027,66 @@ function shQuestionText(t: any) {
   const cur = qa.find((x: any) => !(Array.isArray(x.answer) ? x.answer.length : x.answer) && !x.custom);
   if (!cur) return "";
   const n = qa.indexOf(cur) + 1;
-  const opts = (cur.options ?? []).slice(0, 4).map((o: any) => `${shSafe(o.label, 60)} — ${shSafe([o.desc, o.from && `(${o.from})`].filter(Boolean).join(" "), 90)}`);
-  return `**질문 ${n}/5**${cur.badge ? ` · ${clean(cur.badge, 30)}` : ""}${n === 1 ? "\n보기에 없는 내 생각이 있으면 카드 아래 칸에 직접 적어도 돼. 두 개를 섞고 싶으면 'A + B'처럼." : ""}\n\n[[질문: ${shSafe(cur.q, 120)} | ${[...opts, ...(n >= 3 ? [`여기까지 하고 완성본 만들기 — 지금까지 고른 답으로`] : [])].join(" | ")}]]`;
+  // 보기 설명 앞에 어디서 온 보기인지 — 앞선 활동 · 물꼬 기억에서 이어지면 "이어 가기 · …", 아니면 "새로 시작"
+  const tag = (f: string) => (!f ? "" : /새\s*방향/.test(f) ? "새로 시작" : `이어 가기 · ${f}`);
+  const opts = (cur.options ?? []).slice(0, 4).map((o: any) => `${shSafe(o.label, 60)} — ${shSafe([tag(clean(o.from, 40)), o.desc].filter(Boolean).join(". "), 110)}`);
+  if (t.analysis?.kind === "topic") {
+    // 탐구 설계 상담 — 지난 단계(고른 답) · 이번 단계 이름 · 짧은 반응 + 무엇을 정하는지 · 질문 카드
+    const doneSteps = qa.slice(0, n - 1).map((x: any, i: number) => `${i + 1}. ${clean(x.step || x.q, 30)} — ${clean(Array.isArray(x.answer) ? x.answer.join(" + ") : x.answer || x.custom, 60)}`);
+    return `${doneSteps.length ? `${doneSteps.join("\n")}\n\n` : ""}**질문 ${n} · ${clean(cur.step || cur.badge || "탐구 좁히기", 30)}**\n${clean(cur.lead, 300)}${n === 1 ? "\n보기에 없는 생각은 카드 아래 칸에 직접 적어도 돼요." : ""}\n\n[[질문: ${shSafe(cur.q, 120)} | ${[...opts, ...([] as string[])].join(" | ")}]]`;
+  }
+  return `**질문 ${n}**${cur.badge ? ` · ${clean(cur.badge, 30)}` : ""}${n === 1 ? "\n보기에 없는 내 생각이 있으면 카드 아래 칸에 직접 적어도 돼. 두 개를 섞고 싶으면 'A + B'처럼." : ""}\n\n[[질문: ${shSafe(cur.q, 120)} | ${[...opts, ...([] as string[])].join(" | ")}]]`;
+}
+// 질문이 끝나면 — 발표 과제가 아니면 A4 분량 → 글 구조 → 너만의 이야기
+const shPagesQ = (out = "") => `[[질문: A4 몇 쪽으로 쓸까? | 1쪽 — 핵심만 짧게 | 2쪽 — 가장 많이 내는 분량 | 3쪽 — 자료 · 표까지 넉넉히 | 4쪽 이상 — ${out === "design" ? "4쪽으로 쓰고 디자인에서 사진 · 표로 늘리기" : "4쪽으로 쓰고 표 · 그림으로 늘리기"} | 정해진 분량 없음 — 물꼬가 알맞게]]`;
+async function shAfterQa(db: any, t: any) {
+  const qa = (t.qa ?? []).filter((x: any) => (Array.isArray(x.answer) ? x.answer.length : x.answer) || x.custom);
+  if (shIsTalk(t)) {
+    await shSave(db, t, { qa, status: "story" });
+    return shStoryText();
+  }
+  // 탐구 설계는 무조건 보고서 디자인으로 — 형태는 묻지 않고 바로 쪽수
+  if (t.analysis?.kind === "topic") {
+    const nt = await shSave(db, t, { qa, status: "pages", analysis: { ...(t.analysis ?? {}), out: "design" } });
+    return `질문은 여기까지야. 이 탐구는 **보고서 디자인**으로 만들어 (디자인 30가지 · 사진 · 도표 칸 · PDF).\n\n${shPagesText({ ...nt, analysis: { ...(nt.analysis ?? {}), out: "design" } })}`;
+  }
+  await shSave(db, t, { qa, status: "outform" });
+  return `질문은 여기까지야. 쓰기 전에 **어떻게 낼지**부터 정하자. 그에 따라 분량이 달라져.\n보고서 디자인은 사진 · 도표 칸이 있어서 같은 쪽수여도 글이 절반쯤이고, 한글 · 워드 파일은 글로 쪽을 채워.\n\n${shOutCard(t)}`;
+}
+// 제출 형태 카드 — 탐구 · 보고서면 '보고서 디자인'을 추천으로 맨 앞에
+function shOutCard(t: any) {
+  const rec = shOutRec(t);
+  const kinds = ["hwp", "docx", "pdf", "ppt"].sort((a, b) => (a === rec ? -1 : b === rec ? 1 : 0));
+  const outs = kinds.map((k) => `${SH_OUT[k].label} — ${!shIsReport(t) && k === rec ? "추천 · " : ""}${SH_OUT[k].desc}`);
+  const design = shIsReport(t) ? ["보고서 디자인 — 추천 · 디자인 30가지 · 사진 · 도표 칸 · PDF"] : [];
+  return `[[질문: 어떻게 낼 거야? | ${[...design, ...outs].join(" | ")}]]`;
+}
+const shOutKey = (a: string) => (/^보고서 디자인/.test(a) ? "design" : shKindOf(a));
+const SH_PAGE_CHARS: Record<string, number> = { design: 700, hwp: 1500, docx: 1500, pdf: 1500 };
+function shPagesText(t: any) {
+  const out = t.analysis?.out ?? "hwp";
+  const head = out === "design"
+    ? "**A4 몇 쪽**으로 할까? 보고서 디자인은 한 쪽에 글 약 700자 + 사진 · 도표 칸이야 (기본 틀은 표지 · 방법 · 결과 · 결론 4장)."
+    : `**A4 몇 쪽**으로 쓸까? ${SH_OUT[out]?.label ?? "한글 파일"}은 한 쪽에 글 약 1,500자야 (글자 크기 10~11pt).`;
+  return `${head}\n선생님이 분량을 정해 줬으면 그대로 골라 줘.\n\n${shPagesQ(out)}`;
+}
+// 글 구조 3개 추천 (school_task structure) — 구조마다 문단 순서를 같이 보여 준다
+async function shStructure(db: any, t: any, token: string, emit: (s: string) => void) {
+  emit("고른 답에 맞는 글 구조 고르는 중");
+  const r: any = await shCall("structure", t.id, token);
+  const list = (r?.structures ?? []) as any[];
+  if (!list.length) {
+    await shSave(db, t, { status: "story" });
+    return `구조 추천을 못 불러와서 고른 답에 가장 맞는 구조로 쓸게.\n\n${shStoryText()}`;
+  }
+  const top = list.slice(0, 3);
+  return [
+    `**글 구조 고르기** — 구조마다 문단 순서가 달라. 네가 고른 답에 맞는 걸 3개 골랐어.`,
+    "",
+    ...top.map((x, i) => `${i + 1}. **${clean(x.label, 30)}**${i === 0 ? " (추천)" : ""} — ${clean(x.why || x.hint, 60)}\n   ${x.parts.map((p: string) => clean(p, 14)).join(" → ")}`),
+    "",
+    `[[질문: 어떤 구조로 쓸까? | ${[...top.map((x, i) => `${shSafe(x.label, 30)} — ${i === 0 ? "추천 · " : ""}${shSafe(x.why || x.hint, 50)}`), `다른 구조 보기 — ${list.length}가지 전부`].join(" | ")}]]`,
+  ].join("\n");
 }
 const shStoryText = () =>
   `거의 다 됐어. 마지막으로 **너만의 이야기**가 있으면 적어 줘. 이 과제와 관련해 겪은 일 · 느낀 점 · 꼭 넣고 싶은 말을 적으면 글에 그대로 넣어서, 친구들과 다른 글이 돼.\n\n[[질문: 너만의 이야기 있어? (카드 아래 칸에 적어 줘) | ${SH_MAKE} — 지금까지 고른 답으로 쓸게]]`;
@@ -2006,9 +2118,12 @@ async function shFirstQuestion(task: any, token: string, emit: (s: string) => vo
     an.criteria?.length ? `채점 기준: ${an.criteria.map((c: any) => `${clean(c.name, 24)}${c.points ? ` ${c.points}점` : ""}`).join(" · ")}` : "",
     tk.reco?.deepen?.how ? `이어 가기: ${clean(tk.reco.deepen.how, 200)}` : "",
     "",
-    "질문 몇 개만 고르면 바로 완성본을 만들어 줄게.",
-  ].join("\n");
-  return `${head}\n\n${shQuestionText(tk)}`;
+    an.kind === "topic"
+      ? "이제 질문 4~5개로 이 탐구를 너만의 탐구로 좁혀 볼게. 고른 답이 보고서의 관점 · 근거 · 방법이 돼."
+      : "질문 4~5개를 고르면 바로 완성본을 만들어 줄게. 앞 답에서 한 단계씩 더 들어가며 물어볼게.",
+  ].filter((x, i, a) => x || (i > 0 && a[i - 1])).join("\n");
+  const qt = shQuestionText(tk);
+  return `${head}\n\n${qt || `첫 질문을 만들지 못했어. '다시'를 보내면 이어서 물어볼게.${q?.error ? ` (${clean(q.error, 80)})` : ""}`}`;
 }
 
 // 완성본 → 채팅 글 (초안 · 기준별 채점 · 세특)
@@ -2023,20 +2138,301 @@ async function shMake(db: any, t: any, token: string, emit: (s: string) => void)
   const f: any = await shCall("finalize", t.id, token);
   const task = f?.task ?? s?.task ?? d.task;
   const sc = task.score;
+  // 무료(이용권 없음)는 채팅에 미리보기 — 첫 문단은 다, 나머지는 문단마다 앞 두 문장. 전체는 보고서 디자인 화면 · 이용권으로 파일 받기
+  const pass = await passOrAdmin(db, t.user_id).catch(() => false);
+  const preview = (md: string) => {
+    const parts = String(md ?? "").split(/\n(?=## )/);
+    return parts.map((p, i) => {
+      if (i <= 1 || /^## 참고 자료/.test(p)) return p;
+      const [head, ...rest] = p.split("\n");
+      const body = rest.join(" ").replace(/\s+/g, " ").trim();
+      const two = (body.match(/[^.!?。]+[.!?。]/g) ?? [body]).slice(0, 2).join(" ").trim();
+      return `${head}\n${two}${body.length > two.length ? " …" : ""}`;
+    }).join("\n");
+  };
+  const shown = pass ? String(task.draft ?? "") : preview(task.draft);
+  const previewNote = pass ? "" : task.analysis?.out === "design"
+    ? "\n> 채팅에는 미리보기만 보여 줘. **전체 글은 보고서 디자인 화면**에서 볼 수 있고, PDF로 저장할 때 1년 이용권이 필요해."
+    : "\n> 채팅에는 미리보기만 보여 줘. **전체 글을 한글 · 워드 · PDF 파일로 받을 때** 1년 이용권이 필요해.";
   const scoreText = sc?.items?.length
     ? `### 기준별 점검 ${sc.total} / ${sc.max}점\n${sc.items.map((i: any) => `- ${clean(i.name, 30)} **${i.got}/${i.max}**${i.tip ? ` — ${clean(i.tip, 160)}` : ""}`).join("\n")}`
     : "";
   return [
     `**완성본이 나왔어.** 아래 점검에서 짚은 곳을 고쳐서 내 말투로 다듬으면 돼. (저장하면 내 입시 홈에도 남아)`,
     "",
-    String(task.draft ?? ""),
+    shown,
+    previewNote,
     "",
     scoreText,
     task.setuk_text ? `\n### 세특 예상 문장\n${clean(task.setuk_text, 1200)}` : "",
     "",
-    `**어떤 형태로 낼 거야?** 안내문에 맞는 걸 골라 줘. 고르면 바로 파일로 받을 수 있어.`,
-    shNextCard(task),
+    shOutNext(task),
   ].join("\n");
+}
+
+// 완성본 다음 — 쓰기 전에 고른 제출 형태대로 바로 버튼 (안 골랐으면 고르게)
+function shOutNext(task: any) {
+  const out = task.analysis?.out;
+  if (out === "design") {
+    // 완성본 맨 끝에 버튼 하나만 — 다른 카드를 밑에 붙이지 않는다 (한글 · PPT 는 말로 하면 받을 수 있음)
+    return `이제 **보고서 디자인**하러 가자. 아래 버튼을 누르면 이 완성본이 디자인 보고서에 들어가. 디자인 30가지 중에 고르고 사진 · 글씨체 · 색을 바꾼 뒤 PDF로 저장하면 돼.\n한글 파일이나 PPT 발표도 필요하면 "한글 파일 줘", "PPT 만들어 줘"라고 말해.\n\n[[디자인: ${task.id}]]`;
+  }
+  if (out === "hwp" || out === "docx" || out === "pdf") {
+    return `**${SH_OUT[out].label}**로 내기로 했지. 아래 버튼으로 받아서 학번 · 이름 칸만 채우면 돼.\n\n[[문서: ${task.id} | ${out}]]\n${shNextCard(task, out)}`;
+  }
+  if (out === "ppt") {
+    return `**PPT 발표**로 내기로 했지. 이제 이 완성본으로 발표 대본 · PPT를 만들자.\n\n[[질문: 다음은? | PPT 발표 — 발표 대본 · PPT 파일 · 발표 연습 | 한글 파일 — 완성본을 문서로도 받기]]`;
+  }
+  return `**어떤 형태로 낼 거야?** 안내문에 맞는 걸 골라 줘. 고르면 바로 파일로 받을 수 있어.\n${shNextCard(task)}`;
+}
+
+/* ───────── 탐구 설계 — 탐구주제 흔한가 진단 → 학년 · 이전 활동 맞춤 3개 설계 → (고르면) 수행평가와 같은 흐름 ─────────
+ * 아는 건 다시 묻지 않는다: 진단에 쓴 학과 · 과목 · 주제 · 진단 결과 · 가입 학년을 그대로 이어받는다
+ * 고1: 바로 설계 · 고2: 고1 활동과 이을지 · 고3: 고1 · 고2 활동을 심화할지 — 기록이 있으면 그 활동을 보기로 먼저 보여 준다
+ * 상태: tp_need(주제 · 과목 받기) → tp_grade(학년) → tp_link(이을지) → tp_pick(3개 중 고르기) → analyzed(질문부터 수행평가와 같음)
+ * school_tasks.analysis.kind = "topic" · 끝낸 탐구는 다음 학년 설계 때 '이어 가기' 후보가 된다
+ */
+const TP_START = /탐구\s*(주제)?\s*(설계|디자인)|탐구\s*보고서\s*(써|쓰|만들|완성|작성|하자|할래)|그 탐구주제로 보고서|탐구\s*주제\s*(찾아|추천)|탐구\s*주제\s*(로|를|는)?\s*(할래|하자|할게|정했|해\s*볼래|시작)|(이걸로|이거로|이\s*주제로)\s*(탐구|할래|하자|할게)|탐구\s*(시작|하자|할래|해\s*보자)/;
+// '탐구' 이야기면 탐구 설계로 — 수행평가 · 흔한가 진단 요청 · 카드 답은 빼고
+const TP_INTENT = (m: string) =>
+  /탐구/.test(m) && !/수행\s*평가/.test(m) && !/흔한가|흔한지|진단/.test(m) && !/^\[\[|→/.test(m) &&
+  (TP_START.test(m) || /(해야|하고\s*싶|써야|쓰고\s*싶|준비|도와|할래|하자|할게|시작|정했|추천|찾아|골라|설계|디자인|써\s*줘|만들|어떻게|뭐\s*하지|뭘\s*하지)/.test(m));
+// 학생이 주제를 같이 적었는지 — 시작 말이 아닌 줄 중 가장 긴 것 (따옴표 안이 있으면 그것)
+function tpTopicIn(msg: string) {
+  const q = msg.match(/["'“‘「](.{6,120}?)["'”’」]/)?.[1];
+  if (q) return clean(q, 120);
+  const lines = msg.split(/\n+/).map((x) => x.trim()).filter((x) => x.length >= 8 && !TP_START.test(x) && !TP_INTENT(x) && !/^(야|음|그럼)\s/.test(x) && !/^[가-힣 ()]{1,12}\s*[:：]/.test(x) && !/^탐구\s*(주제|보고서)?\s*\S{0,8}$/.test(x));
+  return clean(lines.sort((a, b) => b.length - a.length)[0] ?? "", 120);
+}
+const TP_FROM_DIAG = /^이 주제로 뭘 할까\?\s*→\s*(이 주제로|바꾼 주제로) 탐구 설계/;
+const TP_METHOD: Record<string, string> = { experiment: "실험", survey: "설문", review: "문헌 조사", analysis: "통계 분석", case: "사례", project: "제작", inquiry: "탐구" };
+const tpPrev = (g: number) => (g >= 3 ? "고1 · 고2" : "고1");
+
+async function tpStart(db: any, uid: string, meta: any, msg: string, t: any, token = "", emit: (s: string) => void = () => {}) {
+  if (t) await db.from("school_tasks").update({ in_chat: false }).eq("id", t.id);
+  const { school } = await schoolMeta(db, uid, meta);
+  const grade = await gradeOf(db, uid, meta).catch(() => "");
+  const mon = termNow().month;
+  // 바로 전 탐구주제 흔한가 진단 (2주 안) — 학과 · 과목 · 주제 · 결과를 그대로 이어받는다
+  const fromDiag = TP_FROM_DIAG.exec(msg);
+  const given = fromDiag ? "" : tpTopicIn(msg);
+  if (given) return tpStartGiven(db, uid, meta, given, t);
+  const useDiag = fromDiag || /그 탐구주제|이 주제|진단한 주제/.test(msg);
+  const { data: dq } = useDiag
+    ? await db.from("topic_queries").select("id,department,grade,subject,topic,score,result,created_at").eq("user_id", uid).gte("created_at", new Date(Date.now() - 14 * 86400000).toISOString()).order("created_at", { ascending: false }).limit(1).maybeSingle()
+    : { data: null };
+  const better = clean(dq?.result?.suggestion?.topic, 120);
+  const topic = fromDiag?.[1] === "바꾼 주제로" && better ? better : clean(dq?.topic, 120);
+  const gnum = Number(String(grade || dq?.grade || "").match(/[123]/)?.[0] ?? 0);
+  const origin = dq ? { query_id: dq.id, topic, score: dq.score, reason: clean(dq.result?.reason, 300), better } : null;
+  const base: any = {
+    user_id: uid, school: school || null, grade: gnum ? `고${gnum}` : null, semester: mon >= 3 && mon <= 8 ? 1 : 2, in_chat: true,
+    status: dq ? (gnum ? "tp_direct" : "tp_grade") : "tp_need", subject: clean(dq?.subject, 30) || null, title: topic || "탐구",
+    task_type: "보고서", analysis: { kind: "topic", origin, dept: clean(dq?.department, 30), ...(dq ? { direct: true, go: true, picked: { title: topic } } : {}) },
+  };
+  const { data: nt, error } = await db.from("school_tasks").insert(base).select().single();
+  if (!nt) { console.error("tp insert", error); return `탐구 설계를 시작하지 못했어. 잠시 뒤 다시 해 줘. (${clean(error?.message, 80)})`; }
+  if (!dq) {
+    if (/추천|찾아|골라|뭐\s*하지|뭘\s*하지/.test(msg)) return tpRecoForm(db, uid, meta, nt);
+    await shSave(db, nt, { status: "tp_how" });
+    return `탐구는 **네가 하고 싶은 주제를 깊게** 하는 거야. 먼저 주제를 어떻게 정할지 골라 줘.\n\n${TP_HOW_Q}`;
+  }
+  // 진단에서 고른 주제 — 이미 정했으니 바로 질문으로 (학년을 모르면 학년만)
+  if (!gnum) return `**${clean(topic, 80)}**로 탐구를 할게. 먼저 몇 학년이야? (학년마다 깊이가 달라)\n\n[[질문: 몇 학년이야? | 고1 | 고2 | 고3]]`;
+  return tpGo(db, nt, token, emit);
+}
+const TP_HOW_Q = `[[질문: 탐구주제를 어떻게 정할까? | 내 주제로 바로 — 하고 싶은 주제를 적으면 그걸 깊게 | 흔한가 진단 먼저 — 진단 보고 내 주제 · 바꾼 주제 중 고르기 | 주제 추천 받기 — 아직 주제가 없어요]]`;
+async function tpRecoForm(db: any, uid: string, meta: any, t: any) {
+  await shSave(db, t, { status: "tp_need", analysis: { ...(t.analysis ?? {}), mode: "reco" } });
+  const d = await deptOf(db, uid, meta);
+  return `학과 · 과목을 적어 줘. 학년 · 이전 활동에 맞춰 주제 3개를 설계해 줄게.\n\n[[입력: 탐구 설계 시작 | ${d ? `학과=${d}` : "학과"} | 과목]]`;
+}
+// 주제가 정해졌으면 바로 질문 4~5개 (설계 3개 없이)
+async function tpGo(db: any, t: any, token: string, emit: (s: string) => void) {
+  const d = t.analysis?.picked ?? { title: t.title };
+  const txt = `${t.title} ${d.how ?? ""}`;
+  const format = TP_METHOD[d.method] ?? (/실험|측정/.test(txt) ? "실험" : /설문|인터뷰/.test(txt) ? "설문" : /통계|자료|비교/.test(txt) ? "통계 분석" : "탐구");
+  t = await shSave(db, t, { status: "analyzed", analysis: { ...(t.analysis ?? {}), direct: true, picked: d, summary: clean(d.how || d.why, 300), format, overview: clean(d.why, 200) } });
+  return shFirstQuestion(t, token, emit);
+}
+const tpDiagForm = async (db: any, uid: string, meta: any, topic = "", subject = "") => {
+  const d = await deptOf(db, uid, meta);
+  return `주제를 적고 보내면 흔한가 진단을 해 줄게. 결과를 보고 **내 주제 그대로** 할지, **덜 흔하게 바꾼 주제**로 할지 고르면 돼.\n\n[[입력: 탐구주제 흔한가 진단 | ${d ? `학과=${d}` : "학과"} | ${subject ? `과목=${shSafe(subject, 30)}` : "과목"} | ${topic ? `탐구주제=${shSafe(topic, 120)}` : "탐구주제"}]]`;
+};
+
+// 학생이 주제를 정해서 왔을 때 — 같은 주제의 진단 · 지난 설계에서 학과 · 과목을 찾아 이어받고, 그대로 할지 3개 설계를 받을지 묻는다
+async function tpStartGiven(db: any, uid: string, meta: any, topic: string, t: any) {
+  if (t) await db.from("school_tasks").update({ in_chat: false }).eq("id", t.id);
+  const key = (x: unknown) => String(x ?? "").replace(/[\s·.,]/g, "");
+  const since = new Date(Date.now() - 60 * 86400000).toISOString();
+  const [{ data: qs }, { data: ts }] = await Promise.all([
+    db.from("topic_queries").select("id,department,grade,subject,topic,score,result,created_at").eq("user_id", uid).gte("created_at", since).order("created_at", { ascending: false }).limit(20),
+    db.from("school_tasks").select("subject,grade,title,analysis,updated_at").eq("user_id", uid).order("updated_at", { ascending: false }).limit(20),
+  ]);
+  const dq = (qs ?? []).find((q: any) => key(q.topic) === key(topic) || key(q.result?.suggestion?.topic) === key(topic));
+  const prev = (ts ?? []).find((x: any) => x.analysis?.kind === "topic" && (key(x.title) === key(topic) || (x.analysis?.designs ?? []).some((d: any) => key(d.title) === key(topic))));
+  const picked = (prev?.analysis?.designs ?? []).find((d: any) => key(d.title) === key(topic)) ?? null;
+  const { school } = await schoolMeta(db, uid, meta);
+  const grade = await gradeOf(db, uid, meta).catch(() => "");
+  const gnum = Number(String(grade || dq?.grade || prev?.grade || "").match(/[123]/)?.[0] ?? 0);
+  const mon = termNow().month;
+  const an: any = {
+    kind: "topic", direct: true, dept: clean(dq?.department ?? prev?.analysis?.dept, 30) || (await deptOf(db, uid, meta)),
+    origin: dq ? { query_id: dq.id, topic: clean(dq.topic, 120), score: dq.score, reason: clean(dq.result?.reason, 300), better: clean(dq.result?.suggestion?.topic, 120) } : prev?.analysis?.origin ?? { topic },
+    picked: picked ?? { title: topic },
+  };
+  const { data: nt, error } = await db.from("school_tasks").insert({
+    user_id: uid, school: school || null, grade: gnum ? `고${gnum}` : null, semester: mon >= 3 && mon <= 8 ? 1 : 2, in_chat: true,
+    status: gnum ? "tp_direct" : "tp_grade", subject: clean(dq?.subject ?? prev?.subject, 30) || null, title: topic, task_type: "보고서", analysis: an,
+  }).select().single();
+  if (!nt) return `탐구를 시작하지 못했어. 잠시 뒤 다시 해 줘. (${clean(error?.message, 80)})`;
+  if (!gnum) return `**${clean(topic, 80)}**로 탐구를 할게. 먼저 몇 학년이야? (학년마다 깊이가 달라)\n\n[[질문: 몇 학년이야? | 고1 | 고2 | 고3]]`;
+  return tpDirectCard(nt);
+}
+const tpDirectCard = (t: any) =>
+  `좋아, **${clean(t.title, 90)}**${t.subject ? ` (${clean(t.subject, 20)})` : ""}로 탐구를 할게.\n이 주제 그대로 깊게 할지, 흔한가 진단을 먼저 받아 보고 정할지 골라 줘.\n\n[[질문: 이 주제로 어떻게 할까? | 이 주제 그대로 시작 — 질문 4~5개로 깊게 | 흔한가 진단 먼저 — 흔하면 덜 흔하게 바꾼 주제도 받기]]`;
+
+// 이전 학년 활동 — 생기부 노트 · 탐구 보고서 · 끝낸 수행평가 · 탐구 (지금 학년보다 앞선 것만)
+async function tpEarlier(db: any, uid: string, g: number) {
+  const [acts, inq, done] = await Promise.all([
+    db.from("record_activities").select("grade,subject,title").eq("user_id", uid).order("created_at", { ascending: false }).limit(60),
+    db.from("inquiries").select("grade,subject,topic").eq("user_id", uid).order("created_at", { ascending: false }).limit(20),
+    db.from("school_tasks").select("grade,subject,title").eq("user_id", uid).eq("status", "done").order("updated_at", { ascending: false }).limit(20),
+  ]);
+  const gn = (x: unknown) => Number(String(x ?? "").match(/[123]/)?.[0] ?? 0);
+  const all = [
+    ...(done.data ?? []).map((r: any) => ({ g: gn(r.grade), subject: clean(r.subject, 16), title: clean(r.title, 40) })),
+    ...(inq.data ?? []).map((r: any) => ({ g: gn(r.grade), subject: clean(r.subject, 16), title: clean(r.topic, 40) })),
+    ...(acts.data ?? []).map((r: any) => ({ g: gn(r.grade), subject: clean(r.subject, 16), title: clean(r.title, 40) })),
+  ].filter((x) => x.title && x.g && x.g < g);
+  const seen = new Set<string>();
+  return all.filter((x) => (seen.has(x.title) ? false : (seen.add(x.title), true)));
+}
+
+async function tpLinkQuestion(db: any, uid: string, t: any) {
+  const g = Number(String(t.grade ?? "").match(/[123]/)?.[0] ?? 0);
+  // 주제를 고르기 전에 묻는 질문 — 이어 갈 활동이 정해져야 그 위에 주제 3개를 설계한다
+  const head = `탐구주제를 고르기 전에 방향부터 정하자. 고${g}${t.subject ? ` · ${clean(t.subject, 20)}` : ""}${t.analysis?.dept ? ` · ${clean(t.analysis.dept, 20)}` : ""}에 맞춰 주제 3개를 설계해 줄게.`;
+  if (g <= 1) {
+    await shSave(db, t, { status: "tp_link", analysis: { ...(t.analysis ?? {}), link: "auto" } });
+    return `${head} 고1은 계열을 넓게 보면서 교과서 개념으로 할 수 있게 설계해.\n\n[[질문: 어떤 쪽으로 설계할까? | 물꼬가 골라 줘 — 학과 · 과목으로 3개 | 내 관심사도 넣을래 — 카드 아래 칸에 한 줄로]]`;
+  }
+  const items = (await tpEarlier(db, uid, g)).slice(0, 3);
+  await shSave(db, t, { status: "tp_link", analysis: { ...(t.analysis ?? {}), link_items: items } });
+  const why = g >= 3 ? "고3은 앞선 탐구에서 풀지 못한 것을 심화하면 전공 적합성이 가장 잘 보여." : "고2는 고1 활동을 한 단계 깊게 이으면 생기부 흐름이 생겨.";
+  if (!items.length) {
+    return `${head}\n${why} 그런데 생수면에 ${tpPrev(g)} 기록이 아직 없어. ${tpPrev(g)} 때 한 탐구 · 활동이 있으면 카드 아래 칸에 한 줄로 적어 줘 (예: 고1 통합과학 · 구리 산화 실험).\n\n[[질문: ${tpPrev(g)} 때 한 활동과 이어 갈까? | 새로운 분야로 — 이전 활동 없이 시작 | 물꼬가 골라 줘 — 진단 결과 · 학과로 설계]]`;
+  }
+  return `${head}\n${why} 생수면 기록에서 이어 갈 만한 걸 찾았어.\n\n[[질문: ${tpPrev(g)} 때 한 활동과 이어 갈까? | ${[
+    ...items.map((x) => `이어 가기: ${shSafe(x.title, 40)} — 고${x.g}${x.subject ? ` · ${shSafe(x.subject, 14)}` : ""}`),
+    "새로운 분야로 — 이전 활동과 따로",
+    "물꼬가 골라 줘 — 이어 갈지 판단해 줄게",
+  ].join(" | ")}]]`;
+}
+
+async function tpDesign(db: any, t: any, token: string, emit: (s: string) => void) {
+  emit("학년 · 이전 활동 · 진단 결과로 탐구 3개 설계하는 중 (20초쯤)");
+  const r: any = await shCall("design", t.id, token);
+  if (r?.paywall) return shPaywall(r);
+  if (r?.error || !r?.designs?.length) return `탐구를 설계하지 못했어. ${clean(r?.error, 120)}\n\n[[질문: 어떤 탐구로 할까? | 다시 설계 — 한 번 더]]`;
+  await shSave(db, r.task ?? t, { status: "tp_pick" });
+  const list = r.designs.map((d: any, i: number) =>
+    [`**${i + 1}. [${clean(d.type, 8)}] ${clean(d.title, 90)}**`, d.why ? `왜 너에게: ${clean(d.why, 160)}` : "", d.how ? `어떻게: ${clean(d.how, 200)}` : "", d.from ? `이어지는 활동: ${clean(d.from, 60)}` : ""].filter(Boolean).join("\n")).join("\n\n");
+  return `맞춤으로 3개를 설계했어.${r.decision ? `\n${clean(r.decision, 200)}` : ""}\n\n${list}\n\n하나를 고르면 질문 몇 개로 너만의 탐구로 다듬고, 보고서 · PPT · 발표 연습까지 이어서 해 줄게.\n\n[[질문: 어떤 탐구로 할까? | ${[
+    ...r.designs.map((d: any, i: number) => `${i + 1}번 — ${shSafe(d.title, 70)}`),
+    "다시 설계 — 다른 3개로",
+    "직접 고칠래 — 카드 아래 칸에 주제 적기",
+  ].join(" | ")}]]`;
+}
+
+// 탐구 설계 단계 처리 (진행 중인 과제가 탐구일 때) — 처리 안 하면 null
+async function tpStep(db: any, uid: string, meta: any, t: any, msg: string, ans: string, token: string, emit: (s: string) => void) {
+  if (t.status === "tp_need") {
+    const pick = (k: string) => msg.match(new RegExp(`^${k}[^:：\\n]*[:：]\\s*(.*)$`, "m"))?.[1]?.trim() ?? "";
+    const dept = pick("학과"), subj = pick("과목"), topic = pick("탐구주제");
+    if (!dept && !subj && !topic) return null;
+    const ok = (v: string) => v && v !== "없음";
+    const grade = await gradeOf(db, uid, meta).catch(() => "");
+    const gnum = Number(String(grade).match(/[123]/)?.[0] ?? 0);
+    const has = Boolean(ok(topic) && !/^\(?선택\)?$/.test(topic));
+    t = await shSave(db, t, {
+      subject: ok(subj) ? clean(subj, 30) : t.subject, title: has ? clean(topic, 120) : "관심 분야 탐구", grade: gnum ? `고${gnum}` : t.grade,
+      status: gnum ? (has ? "tp_direct" : "tp_link") : "tp_grade",
+      analysis: { ...(t.analysis ?? {}), dept: ok(dept) ? clean(dept, 30) : "", origin: has ? { topic: clean(topic, 120) } : null, ...(has ? { direct: true, picked: { title: clean(topic, 120) } } : {}) },
+    });
+    if (t.analysis?.mode === "mine" && !has) return `탐구주제 칸을 채워 줘. 거칠게 적어도 돼.\n\n[[입력: 내 탐구주제 | ${ok(dept) ? `학과=${shSafe(dept, 30)}` : "학과"} | ${ok(subj) ? `과목=${shSafe(subj, 30)}` : "과목"} | 탐구주제]]`;
+    if (!gnum) {
+      if (has) await shSave(db, t, { status: "tp_grade", analysis: { ...(t.analysis ?? {}), direct: true, go: true } });
+      return `몇 학년이야? (학년마다 깊이가 달라)\n\n[[질문: 몇 학년이야? | 고1 | 고2 | 고3]]`;
+    }
+    return has ? tpGo(db, t, token, emit) : tpLinkQuestion(db, uid, t);
+  }
+  if (t.status === "tp_grade") {
+    const g = Number((ans || msg).match(/^고?\s*([123])\s*(학년)?$/)?.[1] ?? 0);
+    if (!g) return ans ? `고1 · 고2 · 고3 중에 골라 줘.\n\n[[질문: 몇 학년이야? | 고1 | 고2 | 고3]]` : null;
+    t = await shSave(db, t, { grade: `고${g}`, ...(t.analysis?.direct && !t.analysis?.go ? { status: "tp_direct" } : {}) });
+    if (t.analysis?.go || (t.analysis?.origin?.query_id && t.analysis?.direct && TP_FROM_DIAG.test(String(t.analysis?.from_msg ?? "")))) return tpGo(db, t, token, emit);
+    return t.analysis?.direct ? tpDirectCard(t) : tpLinkQuestion(db, uid, t);
+  }
+  if (t.status === "tp_direct") {
+    if (!ans) return null;
+    if (/^흔한가 진단/.test(ans)) {
+      await db.from("school_tasks").update({ in_chat: false }).eq("id", t.id);
+      return tpDiagForm(db, uid, meta, t.title, t.subject ?? "");
+    }
+    if (/^3가지로 설계/.test(ans)) {
+      t = await shSave(db, t, { analysis: { ...(t.analysis ?? {}), link: "auto" } });
+      return tpDesign(db, t, token, emit);
+    }
+    return tpGo(db, t, token, emit);
+  }
+  // 주제를 어떻게 정할까? — 내 주제 · 흔한가 진단 먼저 · 추천
+  if (t.status === "tp_how") {
+    if (!ans) return null;
+    if (/^흔한가 진단/.test(ans)) {
+      await db.from("school_tasks").update({ in_chat: false }).eq("id", t.id);
+      return tpDiagForm(db, uid, meta);
+    }
+    if (/^주제 추천/.test(ans)) return tpRecoForm(db, uid, meta, t);
+    if (/^내 주제로/.test(ans)) {
+      await shSave(db, t, { status: "tp_need", analysis: { ...(t.analysis ?? {}), mode: "mine" } });
+      const d = await deptOf(db, uid, meta);
+      return `하고 싶은 탐구주제를 적어 줘. 거칠게 적어도 돼 — 질문 4~5개로 깊게 다듬어 줄게.\n\n[[입력: 내 탐구주제 | ${d ? `학과=${d}` : "학과"} | 과목 | 탐구주제]]`;
+    }
+    // 카드 아래 칸에 주제를 바로 적은 경우
+    if (ans.length >= 6) {
+      t = await shSave(db, t, { title: clean(ans, 120), analysis: { ...(t.analysis ?? {}), mode: "mine", origin: { topic: clean(ans, 120) }, picked: { title: clean(ans, 120) } } });
+      if (!t.grade) { await shSave(db, t, { status: "tp_grade", analysis: { ...(t.analysis ?? {}), direct: true, go: true } }); return `몇 학년이야? (학년마다 깊이가 달라)\n\n[[질문: 몇 학년이야? | 고1 | 고2 | 고3]]`; }
+      return tpGo(db, t, token, emit);
+    }
+    return `${TP_HOW_Q}`;
+  }
+  if (t.status === "tp_link") {
+    if (!ans) return null;
+    const an = t.analysis ?? {};
+    let link = "auto", from = "";
+    if (/^이어 가기\s*[:：]/.test(ans)) { link = "link"; from = ans.replace(/^이어 가기\s*[:：]\s*/, "").split(" — ")[0]; }
+    else if (/^새로운 분야/.test(ans)) link = "new";
+    else if (/^(물꼬가 골라|내 관심사도)/.test(ans)) link = "auto";
+    else { link = Number(String(t.grade).match(/[123]/)?.[0]) <= 1 ? "auto" : "link"; from = clean(ans, 200); } // 직접 적은 활동 · 관심사
+    t = await shSave(db, t, { analysis: { ...an, link, link_from: from, interest: link === "auto" && from ? from : an.interest } });
+    return tpDesign(db, t, token, emit);
+  }
+  if (t.status === "tp_pick") {
+    if (!ans) return null;
+    if (/^다시 설계/.test(ans)) return tpDesign(db, t, token, emit);
+    const designs = (t.analysis?.designs ?? []) as any[];
+    const n = Number(ans.match(/^(\d)번/)?.[1] ?? 0);
+    const d = n ? designs[n - 1] : null;
+    const title = d ? clean(d.title, 120) : /^직접 고칠래/.test(ans) ? "" : clean(ans, 120);
+    if (!title) return `고칠 주제를 카드 아래 칸에 적어 줘.\n\n[[질문: 어떤 탐구로 할까? | ${designs.map((x: any, i: number) => `${i + 1}번 — ${shSafe(x.title, 70)}`).join(" | ")}]]`;
+    t = await shSave(db, t, {
+      title, status: "analyzed",
+      analysis: { ...(t.analysis ?? {}), picked: d ?? { title }, summary: clean(d?.how || d?.why, 300), format: TP_METHOD[d?.method] ?? "탐구", overview: clean(d?.why, 200) },
+    });
+    return shFirstQuestion(t, token, emit);
+  }
+  return null;
 }
 
 async function suhaengChat(db: any, user: any, message: string, token: string, emit: (s: string) => void): Promise<string | null> {
@@ -2046,6 +2442,20 @@ async function suhaengChat(db: any, user: any, message: string, token: string, e
   const photo = msg.match(SH_PHOTO);
   let t = await shActive(db, uid);
   const mon = termNow().month;
+
+  // ⓪ 탐구 설계 — 진단 결과 카드 · '탐구 설계 / 보고서 써 줘 / 탐구주제 찾아 줘' · '새 탐구 설계하기'
+  if (/^이 주제로 뭘 할까\?\s*→\s*다른 주제 진단/.test(msg)) {
+    const d = await deptOf(db, uid, meta);
+    return `새 주제를 적고 보내면 바로 진단해요.\n[[입력: 탐구주제 흔한가 진단 | ${d ? `학과=${d}` : "학과"} | 과목 | 탐구주제]]`;
+  }
+  if (TP_FROM_DIAG.test(msg) || /^다음은\?\s*→\s*새 탐구 설계/.test(msg)) return tpStart(db, uid, meta, msg, t, token, emit);
+  if (t && /^tp_/.test(t.status)) {
+    const r = await tpStep(db, uid, meta, t, msg, ans, token, emit);
+    if (r !== null) return r;
+  }
+  if (!ans && (TP_START.test(msg) || TP_INTENT(msg)) && (!t || ["done", "writing", "speech"].includes(t.status) || /^tp_/.test(t.status) || TP_INTENT(msg)) && !SH_START.test(msg) && !SH_PPT.test(msg) && !SH_DOC.test(msg)) {
+    return tpStart(db, uid, meta, msg, t, token, emit);
+  }
 
   // ① 시작 — '수행평가 하자' · 팝업 '○○ 준비하기' · 안내문 사진을 바로 올림 · '새 수행평가 하기'
   const prep = msg.match(SH_PREP);
@@ -2147,14 +2557,9 @@ async function suhaengChat(db: any, user: any, message: string, token: string, e
 
   // ③ 안내문 받기 (사진 · 글 · 없음)
   if (t.status === "need_source") {
-    if (/안내문\s*(이\s*)?(아직\s*)?(없|못\s*받)/.test(ans || msg)) {
-      if (!t.eval_subject_id) return `평가계획 자료도 없어서 안내문이 꼭 필요해. 선생님이 준 종이를 찍어 올려 줘.\n\n${shNoticeCard(t.subject ?? "")}`;
-      const { data: ts } = await db.from("school_eval_tasks").select("id,title,points,period").eq("subject_id", t.eval_subject_id).order("sort");
-      const list = (ts ?? []).slice(0, 6);
-      if (list.length === 1) { t = await shSave(db, t, { status: "draft", eval_task_id: list[0].id, title: list[0].title }); return shAnalyze(db, t, token, emit); }
-      await shSave(db, t, { status: "pick_task", analysis: { candidates: list.map((x: any) => ({ id: x.id, label: shSafe(x.title, 50) })) } });
-      return `그럼 평가계획 기준으로 하자. 어떤 수행평가야?\n\n[[질문: 어떤 수행평가야? | ${list.map((x: any) => `${shSafe(x.title, 50)} — ${x.points ?? "?"}점 · ${clean(x.period, 14) || "시기 미정"}`).join(" | ")}]]`;
-    }
+    if (/안내문\s*(이\s*)?(아직\s*)?(없|못\s*받)/.test(ans || msg)) return SH_PHOTO_ONLY(t.subject ?? "");
+    // 안내문은 사진으로만 — 글만 보내면 사진을 다시 부탁한다
+    if (!photo && /^(과목\s*[:：]|안내문 내용)/m.test(msg)) return SH_PHOTO_ONLY(t.subject ?? "");
     const subj = msg.match(/^과목\s*[:：]\s*(.*)$/m)?.[1]?.trim() ?? "";
     const body = msg.match(/^안내문 내용[^:：]*[:：]\s*([\s\S]*)$/m)?.[1]?.trim() ?? "";
     if (!photo && (body.length < 10 || body === "없음")) return null;
@@ -2199,17 +2604,32 @@ async function suhaengChat(db: any, user: any, message: string, token: string, e
 
   // ⑤ 객관식 질문
   if (t.status === "analyzed" || t.status === "qa") {
+    // 질문은 최소 4개 — 한 답에서 더 파고들어야 학생마다 다른 결과가 나온다
+    const qa0 = Array.isArray(t.qa) ? t.qa : [];
+    const done0 = qa0.filter((x: any) => (Array.isArray(x.answer) ? x.answer.length : x.answer) || x.custom).length;
+    const open0 = qa0.some((x: any) => !(Array.isArray(x.answer) ? x.answer.length : x.answer) && !x.custom);
     if (wantMake && !ans) {
-      await shSave(db, t, { qa: (t.qa ?? []).filter((x: any) => x.answer || x.custom), status: "story" });
-      return shStoryText();
+      if (done0 < 4) {
+        if (open0) return `질문 4개는 답해야 너만의 결과가 나와. 지금 ${done0}개 답했어.\n\n${shQuestionText(t)}`;
+      } else {
+        return shAfterQa(db, t);
+      }
+    }
+    // 질문 만들기가 실패했으면 '다시'로 다음 질문을 다시 만든다
+    if (!open0 && /^(다시|다음 질문|계속)\s*(해\s*줘|해|요)?[.!]?$/.test(msg)) {
+      emit("다음 질문 만드는 중");
+      const r: any = await shCall("qa", t.id, token);
+      if (r?.done && r?.task) return shAfterQa(db, r.task);
+      if (!r?.task) return `질문을 만들지 못했어. 잠시 뒤 '다시'를 보내 줘. (${clean(r?.error, 80)})`;
+      return shQuestionText(r.task);
     }
     if (!ans) return null;
     const qa = Array.isArray(t.qa) ? [...t.qa] : [];
     const i = qa.findIndex((x: any) => !(Array.isArray(x.answer) ? x.answer.length : x.answer) && !x.custom);
-    if (ans.startsWith("여기까지 하고 완성본") || i < 0) {
-      await shSave(db, t, { qa: qa.filter((x: any) => x.answer || x.custom), status: "story" });
-      return shStoryText();
+    if ((ans.startsWith("여기까지 하고 완성본") && done0 >= 4) || (i < 0 && done0 >= 4)) {
+      return shAfterQa(db, { ...t, qa });
     }
+    if (i < 0) return null;
     const cur = qa[i];
     const labels = (cur.options ?? []).map((o: any) => shSafe(o.label, 60));
     const parts = ans.split(/\s*\+\s*/).map((x) => x.trim()).filter(Boolean);
@@ -2219,11 +2639,60 @@ async function suhaengChat(db: any, user: any, message: string, token: string, e
     t = await shSave(db, t, { qa });
     emit("다음 질문 만드는 중");
     const r: any = await shCall("qa", t.id, token);
-    if (r?.done || !r?.task) {
-      await shSave(db, r?.task ?? t, { status: "story" });
-      return shStoryText();
-    }
+    if (r?.done && r?.task) return shAfterQa(db, r.task);
+    if (!r?.task) return `다음 질문을 만들지 못했어. '다시'를 보내면 이어서 물어볼게. (${clean(r?.error, 80)})`;
     return shQuestionText(r.task);
+  }
+
+  // ⑤-1 제출 형태 (쓰기 전에 — 분량이 달라진다)
+  if (t.status === "outform") {
+    if (wantMake && !ans) { t = await shSave(db, t, { status: "story" }); return shMake(db, t, token, emit); }
+    if (!ans && !SH_DOC.test(msg) && !SH_PPT.test(msg) && !/디자인/.test(msg)) return null;
+    const out = shOutKey(ans || msg);
+    if (!out) return `어떻게 낼지 골라 줘.\n\n${shOutCard(t)}`;
+    if (out === "ppt") {
+      // 발표 — 쪽수 대신 발표 시간으로 대본을 만든다. 완성본(발표 내용) 구조만 고른다
+      t = await shSave(db, t, { status: "structure", analysis: { ...(t.analysis ?? {}), out } });
+      return `**PPT 발표**로 낼게. 완성본(발표 내용)을 쓰고 나서 발표 대본 · PPT · 발표 연습으로 이어 갈게.\n\n${await shStructure(db, t, token, emit)}`;
+    }
+    t = await shSave(db, t, { status: "pages", analysis: { ...(t.analysis ?? {}), out } });
+    return shPagesText(t);
+  }
+  // ⑤-2 A4 분량
+  if (t.status === "pages") {
+    if (wantMake && !ans) { t = await shSave(db, t, { status: "story" }); return shMake(db, t, token, emit); }
+    if (!ans && !/^\s*\d\s*(쪽|장|페이지|p)/i.test(msg)) return null;
+    const said = ans || msg;
+    const n = Number(said.match(/(\d)\s*(쪽|장|페이지|p)?/i)?.[1] ?? 0);
+    if (!n && !/정해진 분량 없음|모르|상관없/.test(said)) return shPagesText(t);
+    t = await shSave(db, t, { status: "structure", analysis: { ...(t.analysis ?? {}), pages: Math.min(4, n) || 0, pages_said: n } });
+    return `${n > 4 ? `${n}쪽은 채팅에서 한 번에 쓰기엔 길어서 **4쪽**으로 쓸게. 보고서 디자인에서 사진 · 표 · 그래프를 넣으면 ${n}쪽이 돼.\n\n` : ""}${await shStructure(db, t, token, emit)}`;
+  }
+  // ⑤-3 글 구조
+  if (t.status === "structure") {
+    if (wantMake && !ans) { t = await shSave(db, t, { status: "story" }); return shMake(db, t, token, emit); }
+    if (!ans && !/^\s*\d{1,2}\s*(번)?\s*$/.test(msg)) return null;
+    const f: any = await shCall("formats", t.id, token);
+    const all = (f?.formats ?? []) as any[];
+    if (/^다른 구조 보기/.test(ans)) {
+      await shSave(db, t, { analysis: { ...(t.analysis ?? {}), structure_view: "all" } });
+      const reco = (t.analysis?.structure_reco ?? []) as string[];
+      const more = all.filter((x) => !reco.includes(x.key)).slice(0, 5);
+      return [
+        `글 구조 ${all.length}가지야. 번호나 이름을 카드 아래 칸에 적어도 돼.`,
+        "",
+        ...all.map((x, i) => `${i + 1}. **${clean(x.label, 30)}** — ${clean(x.hint, 40)} (${x.parts.map((p: string) => clean(p, 12)).join(" → ")})`),
+        "",
+        `[[질문: 어떤 구조로 쓸까? | ${[...reco.map((k) => all.find((x) => x.key === k)).filter(Boolean).map((x: any) => `${shSafe(x.label, 30)} — 추천 · ${shSafe(x.hint, 40)}`), ...more.map((x) => `${shSafe(x.label, 30)} — ${shSafe(x.hint, 40)}`)].slice(0, 6).join(" | ")}]]`,
+      ].join("\n");
+    }
+    const said = (ans || msg).trim();
+    const num = Number(said.match(/^(\d{1,2})\s*(번)?\b/)?.[1] ?? 0);
+    const shown = t.analysis?.structure_view === "all" ? all : ((t.analysis?.structure_reco ?? []) as string[]).map((k) => all.find((x) => x.key === k)).filter(Boolean);
+    const pick = num ? (shown[num - 1] ?? all[num - 1]) : all.find((x) => shSafe(x.label, 30) === said.split(" — ")[0].trim() || said.startsWith(shSafe(x.label, 30)) || said.includes(x.label));
+    if (!pick) return `목록에 있는 구조를 골라 줘.\n\n${await shStructure(db, t, token, emit)}`;
+    t = await shSave(db, t, { status: "story", analysis: { ...(t.analysis ?? {}), structure: pick.key } });
+    return `**${clean(pick.label, 30)}** 구조로 쓸게 (${pick.parts.map((p: string) => clean(p, 12)).join(" → ")}).\n\n${shStoryText()}`;
   }
 
   // ⑥ 나만의 이야기 → 완성본
@@ -2283,6 +2752,22 @@ async function suhaengChat(db: any, user: any, message: string, token: string, e
     // 상태는 'done'(완성) 그대로 둔다 — 내 입시 홈 · 관리자 숫자가 '완성'으로 보이게 · 발표 기록은 speech 칸에
     await shSave(db, r.task ?? t, {}); // 이어 하기 시간(12시간)만 다시 잰다
     return shSpeechPack(t, r.speech, `**${clean(t.title, 60)}**${t.subject ? ` (${clean(t.subject, 20)})` : ""} 완성본으로 발표 준비를 시작할게. `);
+  }
+
+  // ⑦-1 보고서 디자인 — 기억에 남는 탐구보고서 디자인 30개(/inquiry/:id/report)로 넘긴다
+  if (t.draft && (/^다음은\?\s*→\s*보고서 디자인/.test(msg) || (!ans && /보고서\s*(를\s*)?(디자인|꾸미|예쁘게)/.test(msg)))) {
+    emit("완성본을 디자인 보고서 칸에 나눠 담는 중 (20초쯤)");
+    const r: any = await shCall("to_report", t.id, token);
+    if (r?.error || !r?.inquiryId) return `보고서 디자인을 열지 못했어. ${clean(r?.error, 140)}\n\n[[질문: 다시 해 볼까? | 보고서 디자인하기 — 다시 시도]]`.replace("다시 해 볼까?", "다음은?");
+    return [
+      `**${clean(t.title, 60)}** 완성본을 보고서 디자인에 옮겼어.`,
+      `- 디자인 30가지 중에 고르고, 사진 칸 · 글씨체 · 색을 직접 바꿀 수 있어. 고른 뒤에도 언제든 바꿔져.`,
+      `- 측정 · 조사 결과는 비워 뒀어. 탐구를 하고 나서 결과 칸을 채우면 돼.`,
+      `- 노트북 · 태블릿에서 보기 편해. 완성하면 PDF로 저장해.`,
+      "",
+      `[[보고서디자인: ${r.inquiryId}]]`,
+      shNextCard(r.task ?? t, "design"),
+    ].join("\n");
   }
 
   // ⑦-2 제출 파일 (한글 · 워드 · PDF) — 화면이 [[문서: 과제번호 | 종류]] 로 파일을 만든다
@@ -2348,7 +2833,8 @@ async function quickForm(db: any, userId: string, meta: any, message: string) {
   if (t.length > 40) return null; // 학생이 내용까지 적었으면 AI가 읽는다
   const check = /흔한가|흔한지|흔해|흔함/.test(t);
   let kind = "";
-  if (check && /지원\s*동기/.test(t)) kind = "motive";
+  if (check && /자기\s*소개/.test(t)) kind = "intro";
+  else if (check && /지원\s*동기/.test(t)) kind = "motive";
   else if (check && /독서|책/.test(t)) kind = "reading";
   else if (check) kind = "topic";
   else if (/꼬리\s*질문/.test(t)) kind = "tail";
@@ -2358,6 +2844,8 @@ async function quickForm(db: any, userId: string, meta: any, message: string) {
   if (kind === "topic") return `학과·과목·탐구주제를 적고 보내면 바로 진단해요.\n[[입력: 탐구주제 흔한가 진단 | ${d} | 과목 | 탐구주제]]`;
   // 지원동기도 탐구주제처럼 — 묻지 않고 바로 대학·학과·지원동기 적는 칸 (학과는 프로필에서 채운다)
   if (kind === "motive") return `대학·학과·지원동기를 적고 보내면 바로 진단해요.\n${motiveForm("", dept, "")}`;
+  // 자기소개 — 지원동기 진단과 같은 방식(면접관이 매년 듣는 흔한 표현인지)으로 본다
+  if (kind === "intro") return `면접 자기소개를 적어 보내면, 면접관이 많이 듣는 흔한 표현인지 지원동기 진단과 같은 기준으로 봐 드려요.\n[[입력: 자기소개 흔한가 진단 | 대학 (선택) | ${d} | 자기소개]]`;
   if (kind === "reading") return `책과 학과·과목을 적고 보내면 바로 진단해요.\n[[입력: 독서 흔한가 진단 | 책 제목 | 저자 (선택) | ${d} | 과목]]`;
   return `면접 질문과 내 답변을 적고 보내면 그 대학 면접관처럼 꼬리질문을 드려요.\n[[입력: 면접 꼬리질문 연습 | 대학 | ${d} | 면접 질문 | 내 답변]]`;
 }
@@ -3117,7 +3605,11 @@ ${PLAN_GUIDE}
     // 줄바꿈은 살린다 — 입력 카드는 "학년: …\n활동: …" 처럼 한 줄씩 온다 (clean 은 줄바꿈까지 없애서 카드가 안 읽혔다)
     const message = String(body.message ?? "").replace(/\r/g, "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, 4000); // 수행평가 안내문을 통째로 붙여 넣을 수 있게 넉넉히
     if (message.length < 2) return json({ error: "질문을 적어 주세요" }, 400);
-    if (usage.pct >= 100) return json(paid ? { error: "이번 주 사용량을 다 썼어요. 월요일 0시에 다시 채워져요", usage } : { need_pay: true, usage });
+    // 사용량을 다 썼어도 하던 수행평가 · 탐구(카드 답 · 안내문 사진 · 완성본 · 디자인)는 끝까지 이어 간다
+    //   — 그 단계들은 물꼬 사용량이 아니라 과제 개수(무료 3개)로 센다. 중간에 막히면 학생은 다음 과제(한두 달 뒤)에나 돌아온다
+    //   일반 질문만 막는다 (아래 work 안에서 suhaengChat 이 처리하지 않은 말일 때)
+    const overLimit = usage.pct >= 100;
+    const limitBody = paid ? { error: "이번 주 사용량을 다 썼어요. 월요일 0시에 다시 채워져요", usage } : { need_pay: true, usage };
 
     // 대화 불러오기
     let chatRow: any = null;
@@ -3128,16 +3620,23 @@ ${PLAN_GUIDE}
     // 물꼬가 먼저 건 말(opening)에 답하는 거면 그 말을 대화 첫머리로 둔다 — '그 주제로 보고서 쓰기'가 무슨 말인지 알게
     const opening = !chatRow && typeof body.opening === "string" ? String(body.opening).slice(0, 2000) : "";
     if (opening) chatRow = { id: null, messages: [{ role: "assistant", content: opening, at: new Date().toISOString() }] };
-    const history = ((chatRow?.messages ?? []) as any[]).slice(-HISTORY).map((m) => ({ role: m.role, content: m.content }));
+    const histAll = ((chatRow?.messages ?? []) as any[]).slice(-HISTORY);
+    const history = histAll.map((m, k) => ({
+      role: m.role,
+      // 학생 말은 그대로(조건 · 사실을 잊지 않게), 오래된 물꼬 답은 줄여서
+      content: m.role === "assistant" && k < histAll.length - 4 && String(m.content ?? "").length > 900 ? `${String(m.content).slice(0, 900)} …(줄임)` : m.content,
+    }));
 
     // 답 만들기 — emit 으로 지금 하는 일을 화면에 알린다 (stream: true 일 때)
     const work = async (emit: (t: string) => void) => {
       // '내 입시 플랜 짜기' 입력 카드를 보냈으면 (학년: … / 학과: … / 활동: …) — AI 대화 없이 바로 플랜을 만든다
       const isPlanCard = /^학년\s*[:：]/m.test(message) && /^활동\s*[:：]/m.test(message);
+      if (overLimit && isPlanCard) return { status: 200, body: limitBody };
       if (isPlanCard) { emit("내 활동 · 생기부 노트 읽는 중"); emit("목표 대학 권장과목 · 전형 · 공부법 찾는 중"); emit("목표에 맞게 입시 플랜 짜는 중 (30초쯤 걸려요)"); }
       const planDirect = isPlanCard ? await planFromCard(db, user, message, usage, paid) : null;
       // 수행평가 완성 (채팅 안에서 고르기 → 질문 → 완성본) — 진행 중이면 카드 답을 여기서 받는다
       const suh = isPlanCard ? null : await suhaengChat(db, user, message, token, emit).catch((e) => { console.error("suhaeng", e); return null; });
+      if (overLimit && !suh) return { status: 200, body: limitBody }; // 하던 과제가 아닌 일반 질문만 막는다
       const quick = planDirect ?? suh ?? await quickForm(db, user.id, user.user_metadata ?? {}, message);
       if (quick && !isPlanCard && !suh) emit("적을 칸 준비하는 중");
       else for (const st of await openingSteps(db, message)) emit(st);
@@ -3200,6 +3699,8 @@ ${PLAN_GUIDE}
         if (/\[\[\s*플랜\s*\]\]/.test(answer) && !(await hasPlan(db, user.id))) {
           answer = answer.replace(/\[\[\s*플랜\s*\]\]/g, "").trim() + `\n\n목표 대학 · 학과를 알려 주면 그 목표에 맞춰 플랜을 짜 드릴게요.\n${await planCard(db, user.id, user.user_metadata ?? {})}`;
         }
+        // 탐구 이야기에 수행평가 버튼이 붙으면 탐구 설계 버튼으로 바꾼다 (수행평가는 안내문 사진, 탐구는 내 주제를 깊게 — 섞이지 않게)
+        if (/탐구/.test(message) && !/수행\s*평가/.test(message)) answer = answer.replace(/\[\[\s*수행평가\s*\]\]/g, "[[탐구설계]]");
         // 자료가 없다고 했으면 — '11월 안에 넣어요 + 건의함에 남겨 주세요' 와 건의함 버튼 (예전 [[대학요청]] 카드는 건의함으로 바꾼다)
         answer = answer.replace(/\[\[\s*대학요청\s*[:：]?[^\]]*\]\]/g, "").replace(/필요하면 아래에서 자료 추가를 요청해 주세요\.?/g, "").trim();
         //   수행평가 · 평가계획 답에는 붙이지 않는다 (안내문 사진으로 하면 되니까) · 한 답에 한 번만

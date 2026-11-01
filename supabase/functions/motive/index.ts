@@ -58,7 +58,12 @@ const SYSTEM = `고3 학생의 대입 지원동기가 얼마나 흔한지 진단
 - 누구나 쓰는 다짐: "사회에 기여하고 싶다", "~에 이바지하고 싶다", "최고의 OO이 되겠다", "사람들을 돕고 싶다"
 - 학교 홍보 문구 되풀이: "우수한 교수진", "체계적인 커리큘럼", "글로벌 인재 양성"
 - 구체적 경험·행동·배운 점이 없고 감정만 있음
-score 0~100 (높을수록 흔함): 거의 모든 문장이 위 표현 85~100 / 대부분 흔하고 구체 경험이 조금 65~84 / 반반 40~64 / 구체 경험이 중심이고 흔한 표현이 조금 15~39 / 자기만의 장면·행동·배운 점으로 채워짐 0~14
+점수는 서버가 계산한다 — 너는 아래를 센다 (감으로 점수를 정하지 않는다):
+- sentences: 글의 문장 수 (마침표 · 물음표 · 줄바꿈 기준)
+- cliche: 그중 위 흔한 표현이 핵심인 문장 수 (자기 행동 없이 흔한 말만 있는 문장)
+- scenes: 학생이 직접 한 일이 언제 · 무엇을 · 어떻게까지 드러난 장면 수 (같은 장면은 1개로)
+- reflection: 그 경험 뒤 바뀐 생각 · 배운 점이 자기 말로 구체적이면 true
+score 도 참고로 0~100 (높을수록 흔함)을 함께 적는다.
 
 [대학 면접 데이터]가 있으면 그 대학 기준으로도 본다 (없으면 univ_factors는 [], univ_summary·univ_question은 "")
 - univ_factors: [대학 면접 데이터]의 평가요소마다 1개씩 (주어진 요소만, 주어진 순서대로)
@@ -70,7 +75,7 @@ score 0~100 (높을수록 흔함): 거의 모든 문장이 위 표현 85~100 / �
 
 모든 글은 쉬운 말, "~예요" 존댓말.
 
-{"invalid":false,"score":0,
+{"invalid":false,"sentences":0,"cliche":0,"scenes":0,"reflection":false,"score":0,
 "univ_factors":[{"factor":"","seen":0,"evidence":"","tip":""}],"univ_summary":"","univ_question":""}`;
 
 /* AI 사용량 기록 — 관리자 화면의 'AI 비용·실패' 칸에 쓴다 (기록이 실패해도 진단에는 영향 없음) */
@@ -258,7 +263,13 @@ ${motive}${univBlock}`,
     if (!ai) return json({ error: "진단하지 못했어요. 잠시 후 다시 시도해 주세요." }, 502);
     if (ai.invalid) return json({ invalid: true, invalid_reason: clean(ai.invalid_reason, 120) });
 
-    const score = Math.max(0, Math.min(100, Math.round(Number(ai.score) || 0)));
+    // 흔함 점수 = 흔한 문장 비율에서 직접 한 장면 · 자기 성찰만큼 뺀다 (AI가 감으로 정한 숫자가 한 값에 몰리던 문제 — 2026-11)
+    const sent = Math.max(1, Math.round(Number(ai.sentences) || 0));
+    const cli = Math.min(sent, Math.max(0, Math.round(Number(ai.cliche) || 0)));
+    const scenes = Math.max(0, Math.round(Number(ai.scenes) || 0));
+    const counted = Number(ai.sentences) > 0;
+    const calc = Math.round(15 + 80 * (cli / sent) - Math.min(scenes, 3) * 10 - (ai.reflection === true ? 8 : 0));
+    const score = Math.max(0, Math.min(100, counted ? calc : Math.round(Number(ai.score) || 0)));
     const result = {
       score,
       verdict_level: verdictLevel(score),

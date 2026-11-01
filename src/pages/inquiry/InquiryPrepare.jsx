@@ -818,6 +818,8 @@ export default function InquiryPrepare() {
       }
       const { data, error } = await supabase.from("inquiries").select("*").eq("id", id).maybeSingle();
       if (error || !data) return setErr("탐구를 찾지 못했어요.");
+      // 물꼬 탐구 설계에서 온 보고서는 준비 단계가 없다 — 바로 보고서 디자인으로
+      if (data.school_task_id) return nav(`/inquiry/${data.id}/report`, { replace: true });
       setInq(data);
       track("pack_view");
     })();

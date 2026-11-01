@@ -45,6 +45,7 @@ import Study from "./pages/study/Study";
 import Tail from "./pages/tail/Tail";
 import Agent from "./pages/agent/Agent";
 import Pricing from "./pages/pricing/Pricing";
+import ParentPay from "./pages/pricing/ParentPay"; // 부모님 결제 화면 (학생이 카톡으로 보낸 링크 · 로그인 없이)
 import Prep from "./pages/prep/Prep";
 import Plan from "./pages/plan/Plan";
 import Advertise from "./pages/ads/Advertise";
@@ -118,10 +119,15 @@ function Layout({ children }) {
       <Footer />
       <LevelUpHost />
       <StayTracker />
-      <SurveyPopup />
-      <SchoolGate />
-      <VoiceButton />
-      <PieceNudge />
+      {/* 부모님 결제 화면(/pay/코드)에는 학생용 팝업 · 의견 버튼을 띄우지 않는다 */}
+      {!pathname.startsWith("/pay/") && (
+        <>
+          <SurveyPopup />
+          <SchoolGate />
+          <VoiceButton />
+          <PieceNudge />
+        </>
+      )}
     </div>
   );
 }
@@ -187,6 +193,7 @@ export default function App() {
             <Route path="/agent" element={<Agent />} />
             {/* 요금제 — 무료 vs 1년 이용권 (업그레이드 팝업의 [요금제 보기]가 여기로) */}
             <Route path="/pricing" element={<Pricing />} />
+            <Route path="/pay/:code" element={<ParentPay />} />
             <Route path="/prep" element={<Prep />} />
             {/* 내 입시 플랜 — 학년별 계획 · 이번 주 할 일 체크 */}
             <Route path="/plan" element={<Plan />} />
@@ -194,7 +201,6 @@ export default function App() {
             <Route path="/advertise" element={<Advertise />} />
             <Route path="/my/level" element={<Level />} />
             <Route path="/my/home" element={<MyHome />} />
-            <Route path="/suhaeng" element={<Navigate to="/agent?sh=1" replace />} />
             <Route path="/my" element={<MyPage />} />
 
             {/* 인증 — 구글 로그인 후 /auth/callback으로 돌아온다 */}

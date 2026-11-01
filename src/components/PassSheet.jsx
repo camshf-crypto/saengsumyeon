@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../lib/AuthContext";
+import { track } from "../lib/track";
 import { BANK, PASS_BENEFITS, PASS_PRODUCTS, PLANS, PLANS_ON_SALE, hasPass, perMonth } from "../lib/pass";
 
 /*
@@ -17,6 +18,82 @@ import { BANK, PASS_BENEFITS, PASS_PRODUCTS, PLANS, PLANS_ON_SALE, hasPass, perM
  *   onUnlocked — 이용권이 열렸을 때
  *   onOrdered  — 입금 신청을 접수했을 때 (주문 정보)
  */
+/*
+ * 부모님께 결제 요청 보내기 — 학생이 카톡으로 링크를 보내면 부모님이 로그인 없이 /pay/코드 에서 입금 신청 (sql/sm_114)
+ * 카카오 JS 키(VITE_KAKAO_JS_KEY)가 있으면 카톡 카드 메시지 · 없으면 휴대폰 공유 창(카톡 고르기) · 컴퓨터는 링크 복사
+ */
+const KAKAO_KEY = import.meta.env.VITE_KAKAO_JS_KEY;
+function loadKakao() {
+  if (!KAKAO_KEY) return Promise.resolve(null);
+  if (window.Kakao) {
+    if (!window.Kakao.isInitialized()) window.Kakao.init(KAKAO_KEY);
+    return Promise.resolve(window.Kakao);
+  }
+  return new Promise((ok) => {
+    const s = document.createElement("script");
+    s.src = "https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js";
+    s.onload = () => { try { window.Kakao.init(KAKAO_KEY); ok(window.Kakao); } catch { ok(null); } };
+    s.onerror = () => ok(null);
+    document.head.appendChild(s);
+  });
+}
+export function ParentAskButton({ className = "" }) {
+  const [state, setState] = useState(""); // "" · busy · sent · copied · fail
+  const [link, setLink] = useState("");
+  async function ask() {
+    if (state === "busy") return;
+    setState("busy");
+    const { data: code, error } = await supabase.rpc("pay_request_make");
+    if (error || !code) { setState("fail"); return; }
+    const url = `${window.location.origin}/pay/${code}`;
+    setLink(url);
+    track("parent_ask", "make");
+    const title = "생수면 이용권 결제를 부탁드려요";
+    const text = "생기부 · 수행평가 · 탐구 · 면접 준비를 돕는 생수면 1년 이용권이에요. 눌러서 무엇인지 보고 결제해 주세요.";
+    const K = await loadKakao();
+    if (K?.Share) {
+      try {
+        K.Share.sendDefault({
+          objectType: "feed",
+          content: { title, description: text, imageUrl: `${window.location.origin}/og.png`, link: { mobileWebUrl: url, webUrl: url } },
+          buttons: [{ title: "결제 안내 보기", link: { mobileWebUrl: url, webUrl: url } }],
+        });
+        track("parent_ask", "kakao");
+        return setState("sent");
+      } catch { /* 아래로 */ }
+    }
+    if (navigator.share) {
+      try {
+        await navigator.share({ title, text, url });
+        track("parent_ask", "share");
+        return setState("sent");
+      } catch { /* 취소하면 복사로 */ }
+    }
+    try {
+      await navigator.clipboard.writeText(`${title}\n${text}\n${url}`);
+      track("parent_ask", "copy");
+      setState("copied");
+    } catch {
+      window.prompt("이 링크를 부모님께 보내 주세요", url);
+      setState("copied");
+    }
+  }
+  return (
+    <div className={className}>
+      <button onClick={ask} disabled={state === "busy"} className="h-11 w-full border border-gray-300 bg-white text-[14px] font-extrabold text-gray-800 hover:border-gray-500 disabled:opacity-60">
+        {state === "busy" ? "링크 만드는 중…" : "부모님께 결제 요청 보내기"}
+      </button>
+      <p className="mt-1.5 text-center text-[11.5px] text-gray-500">
+        {state === "sent" ? "보냈어요. 부모님이 입금하면 확인되는 대로 열려요."
+          : state === "copied" ? "링크를 복사했어요. 카톡에 붙여 넣어 부모님께 보내 주세요."
+          : state === "fail" ? "링크를 만들지 못했어요. 잠시 뒤 다시 눌러 주세요."
+          : "카톡으로 링크를 보내면 부모님이 로그인 없이 보고 결제해요"}
+      </p>
+      {state === "copied" && link && <p className="mt-1 break-all text-center text-[11px] text-gray-400">{link}</p>}
+    </div>
+  );
+}
+
 export default function PassSheet({ open, onClose, title, headline, onUnlocked, onOrdered }) {
   const { user, profile } = useAuth();
   const [code] = useState(() => String(Math.floor(1000 + Math.random() * 9000)));
@@ -163,6 +240,7 @@ export default function PassSheet({ open, onClose, title, headline, onUnlocked, 
               className="mt-2 h-11 w-full rounded-xl border-2 border-sm-orange px-3 text-[15px] font-extrabold text-sm-navy outline-none"
             />
             <p className="mt-1 text-[11.5px] text-gray-500">부모님이 입금해도 괜찮아요. 입금자명만 똑같이 적어 주세요.</p>
+            <ParentAskButton className="mt-3" />
             <label className="mt-4 flex items-center gap-2 font-bold text-gray-800">
               <input type="checkbox" checked={done} onChange={(e) => setDone(e.target.checked)} className="h-4 w-4" />
               {picked.label} {picked.price.toLocaleString()}원을 입금했어요

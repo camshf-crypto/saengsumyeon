@@ -817,7 +817,8 @@ export default function InquiryReport() {
   const free = inq ? Boolean(inq.free_trial) : null;
   // 결과 분석 · 보고서는 이용권(또는 예전에 결제한 탐구)만 — 무료 체험은 탐구 준비까지 (isAdmin 이 null 이면 아직 확인 중)
   const oldTrial = Boolean(inq?.free_trial) && String(inq?.created_at) < "2026-10-29T15:00:00Z"; // 바꾸기 전에 시작한 무료 체험은 끝까지 열어 둔다
-  const locked = inq && !inq.paid && !oldTrial && isAdmin === false;
+  // 물꼬 탐구 설계에서 온 보고서(school_task_id)는 디자인까지 열고, PDF 저장할 때만 이용권
+  const locked = inq && !inq.paid && !oldTrial && !inq.school_task_id && isAdmin === false;
   const [pdfWall, setPdfWall] = useState(false); // PDF 저장을 눌렀을 때 결제 창
 
   if (authLoading) return <div className="py-40 text-center text-gray-400">불러오는 중…</div>;
@@ -853,7 +854,11 @@ export default function InquiryReport() {
 
       <header className="flex h-[60px] items-center gap-6 border-b border-gray-200 bg-white px-6">
         <button onClick={() => nav("/")} className="text-[20px] font-extrabold text-sm-navy">생수면<span className="text-sm-orange">.</span></button>
-        <div className="hidden md:block"><StepBar active={3} id={inq?.id ?? id} stage={inq?.stage} /></div>
+        {inq?.school_task_id ? (
+          <button onClick={() => nav("/agent")} className="hidden text-[13px] font-bold text-gray-500 hover:text-gray-800 md:block">← 물꼬로 돌아가기</button>
+        ) : (
+          <div className="hidden md:block"><StepBar active={3} id={inq?.id ?? id} stage={inq?.stage} /></div>
+        )}
         <div className="ml-auto flex items-center gap-2">
         {inq?.template && r && (
           <div className="flex items-center gap-2">
@@ -890,7 +895,7 @@ export default function InquiryReport() {
       {inq && !inq.format_mode && (
         <div className="mx-auto mt-10 max-w-3xl rounded-2xl border border-gray-200 bg-white p-7">
           <p className="text-[20px] font-extrabold text-sm-navy">보고서 형식을 골라주세요</p>
-          <p className="mt-1 text-[13px] text-gray-500">고르면 1~3단계에서 모은 내용으로 4장 분량을 채워요. 결과·자료는 내가 넣은 것만 쓰고, ‘내가 쓸 곳’은 비워 둬요.</p>
+          <p className="mt-1 text-[13px] text-gray-500">{inq.school_task_id ? "물꼬에서 쓴 완성본이 이미 들어 있어요. 형식만 고르면 4장으로 보여 드려요. 결과 칸은 탐구를 한 뒤 채워요." : "고르면 1~3단계에서 모은 내용으로 4장 분량을 채워요. 결과·자료는 내가 넣은 것만 쓰고, ‘내가 쓸 곳’은 비워 둬요."}</p>
           <div className="mt-5 grid gap-3 md:grid-cols-2">
             <button onClick={() => update({ format_mode: "school" })} className="rounded-2xl border-2 border-gray-200 p-5 text-left hover:border-sm-navy">
               <p className="text-[17px] font-extrabold text-sm-navy">선생님 형식</p>

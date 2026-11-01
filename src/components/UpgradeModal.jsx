@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { track } from "../lib/track";
+import { useAuth } from "../lib/AuthContext";
+import { ParentAskButton } from "./PassSheet";
 
 /*
  * 업그레이드 팝업 — ChatGPT '플랜 업그레이드' 창처럼 화면 가운데 뜬다
@@ -21,6 +23,7 @@ const POINTS = [
 
 export default function UpgradeModal({ open, onClose, reason = "", title, desc }) {
   const nav = useNavigate();
+  const { user } = useAuth();
   useEffect(() => {
     if (open) track("upgrade_modal", reason);
   }, [open, reason]);
@@ -62,6 +65,7 @@ export default function UpgradeModal({ open, onClose, reason = "", title, desc }
         <button onClick={go} className="mt-6 h-[52px] w-full rounded-2xl bg-sm-navy text-[15.5px] font-extrabold text-white">
           요금제 보기 ›
         </button>
+        {user && <ParentAskButton className="mt-2" />}
         <button onClick={onClose} className="mt-2 h-10 w-full text-[13px] font-bold text-gray-400">
           나중에
         </button>

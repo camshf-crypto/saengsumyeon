@@ -29,7 +29,7 @@ export default function InquirySwitcher({ currentId, label = "내 탐구", varia
     if (!open || !user) return;
     supabase
       .from("inquiries")
-      .select("id, suggestion, stage, method, created_at")
+      .select("id, suggestion, stage, method, created_at, school_task_id")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(50)
@@ -57,7 +57,7 @@ export default function InquirySwitcher({ currentId, label = "내 탐구", varia
   function go(x) {
     setOpen(false);
     if (x.id === currentId) return;
-    window.location.assign(`/inquiry/${x.id}`);
+    window.location.assign(x.school_task_id ? `/inquiry/${x.id}/report` : `/inquiry/${x.id}`); // 물꼬에서 온 보고서는 디자인 화면으로
   }
 
   const mobile = variant === "mobile";
