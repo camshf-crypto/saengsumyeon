@@ -15,10 +15,11 @@ import { ParentAskButton } from "./PassSheet";
  *   desc     — 제목 아래 한 줄
  */
 const POINTS = [
-  ["💬", "물꼬 입시 AI 무제한", "광고 없이 · 사용량 걱정 없이"],
-  ["📝", "탐구 보고서 끝까지", "결과 분석 → 보고서 PDF 완성"],
-  ["🎤", "면접 준비", "생기부 예상질문 · 기출 6곳 · 꼬리질문 무제한"],
-  ["📅", "입시 플랜 · 학습 플랜", "매주 미션 · 학습 다이어리 · 자기주도학습법"],
+  ["물꼬 입시 AI 무제한", "기다리지 않고 · 광고 없이"],
+  ["완성본을 파일로", "수행평가 한글 · 워드 · PDF · 탐구 보고서 디자인 PDF"],
+  ["발표 준비", "발표 대본 · PPT · 발표 연습 코칭"],
+  ["면접 준비", "생기부 예상질문 · 기출 6곳 · 꼬리질문 무제한"],
+  ["입시 플랜 · 학습 플랜", "매주 미션 · 학습 다이어리 · 자기주도학습법"],
 ];
 
 export default function UpgradeModal({ open, onClose, reason = "", title, desc }) {
@@ -46,14 +47,14 @@ export default function UpgradeModal({ open, onClose, reason = "", title, desc }
         <button onClick={onClose} aria-label="닫기" className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full text-[18px] text-gray-400 hover:bg-gray-100">
           ×
         </button>
-        <span className="inline-block rounded-full bg-orange-50 px-2.5 py-1 text-[11.5px] font-extrabold text-sm-orange">생수면 1년 이용권</span>
+        <span className="inline-block rounded-full bg-orange-50 px-2.5 py-1 text-[11.5px] font-extrabold text-sm-orange">생수면 이용권 · 한 달 10,900원부터</span>
         <p className="mt-3 text-[21px] font-black leading-snug text-sm-navy break-keep">{title || "물꼬를 끝까지 쓰려면 업그레이드하세요"}</p>
-        <p className="mt-1.5 text-[13.5px] leading-relaxed text-gray-500 break-keep">{desc || "무료는 맛보기까지예요. 이용권이면 생수면 전부가 1년 동안 열려요."}</p>
+        <p className="mt-1.5 text-[13.5px] leading-relaxed text-gray-500 break-keep">{desc || "무료로도 매일 쓸 수 있어요. 이용권이면 기다리지 않고, 결과물을 파일로 가져갈 수 있어요."}</p>
 
         <ul className="mt-5 grid gap-3">
-          {POINTS.map(([icon, head, sub]) => (
+          {POINTS.map(([head, sub]) => (
             <li key={head} className="flex items-start gap-3">
-              <span className="flex h-9 w-9 flex-none items-center justify-center rounded-xl bg-[#F1F3F8] text-[17px]">{icon}</span>
+              <span className="mt-[7px] h-1.5 w-1.5 flex-none bg-gray-800" />
               <span className="min-w-0">
                 <b className="block text-[14px] font-extrabold text-gray-900">{head}</b>
                 <small className="block text-[12.5px] text-gray-500">{sub}</small>

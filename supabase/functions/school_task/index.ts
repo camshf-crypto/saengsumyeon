@@ -9,16 +9,16 @@
 //   qa       : 질의응답 다음 질문 1개 (최대 5개 · 보기 3~4개)                              — 무료
 //   guide    : 학습가이드 (감점 방지 체크리스트 · 문단별 쓰는 법)                            — 무료
 //   formats  : 글 구조 14종 목록 + 추천                                                   — 무료
-//   draft    : 1차 초안 (완성본 · 빈칸 없음 · 출처가 필요하면 서버가 실제 웹 자료를 찾아 넣음) — 1년 이용권
-//   score    : 안내문 · 학교 평가계획 채점 기준으로 채점 (고친 글 content 를 보내면 그 글로)   — 1년 이용권
-//   finalize : 세특 예상 문장                                                             — 1년 이용권
-//   make     : 딸깍 — (가이드가 없으면 가이드) → 초안 → 채점 → 세특 예상 문장을 한 번에    — 1년 이용권
+//   draft    : 1차 초안 (완성본 · 빈칸 없음 · 출처가 필요하면 서버가 실제 웹 자료를 찾아 넣음) — 이용권
+//   score    : 안내문 · 학교 평가계획 채점 기준으로 채점 (고친 글 content 를 보내면 그 글로)   — 이용권
+//   finalize : 세특 예상 문장                                                             — 이용권
+//   make     : 딸깍 — (가이드가 없으면 가이드) → 초안 → 채점 → 세특 예상 문장을 한 번에    — 이용권
 //   design   : 탐구주제 설계 (물꼬 '탐구 설계') — 흔한가 진단 결과 · 학년 · 이전 활동 · 이을지 고른 답으로
 //              연계형 · 심화형 · 융합형 주제 3개 (analysis.designs) → 고르면 qa 부터 수행평가와 같은 흐름   — 무료 (과제 3개까지)
 //   speech_script : 발표 대본 + PPT 재료 — 완성본을 발표 시간에 맞는 말하기 대본(슬라이드별) · 화면 핵심 문구 ·
-//                   사진 검색어 · 출처 + 발표 뒤 질문 2개 (PPT 파일은 화면에서 만든다 — AI 다시 안 부름) — 1년 이용권
+//                   사진 검색어 · 출처 + 발표 뒤 질문 2개 (PPT 파일은 화면에서 만든다 — AI 다시 안 부름) — 이용권
 //   speech_fb     : 발표 연습 코칭 — 학생이 말한 글(음성 인식) · 걸린 시간으로 세움스피치 D-R-R-P
-//                   (진단 · 이유 · 수정 · 연습) 피드백 + 말 속도 · 시간 · 군말 숫자          — 1년 이용권
+//                   (진단 · 이유 · 수정 · 연습) 피드백 + 말 속도 · 시간 · 군말 숫자          — 이용권
 //                   speech 칸(sql/sm_112)에 대본과 연습 기록(최근 5번)을 남긴다
 //              학생이 질문에서 고른 답 · 덧붙인 내 생각 · '나만의 이야기'(my_story)가 글에 꼭 들어간다
 // 비커스와 다른 점: 선생님 첨삭(review) 없음 · 학생 맥락은 생수면 기록(생기부 노트 · 탐구 · 독서 · 지원 학과)
@@ -36,31 +36,39 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
 
 const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY") ?? "";
-const MODEL = "gpt-4o";
-const FREE_TASKS = 3; // 무료로 분석할 수 있는 과제 수
+const MODEL = "gpt-5-mini"; // 2026-11-06 gpt-4o → gpt-5-mini (비용 약 1/10 · 물꼬 채팅과 같은 모델) · 웹 검색만 gpt-4.1
+const FREE_TASKS = 3; // 무료 완성본 — 하루 3개 (한국 새벽 5시에 다시)
+// 2026-11-06 사용자 모으기 — 발표 대본 · 발표 연습 · 완성본 파일까지 무료 (agent/core.ts FREE_OPEN 과 같이 바꾼다)
+const FREE_OPEN = true;
+// 오늘(한국 새벽 5시 기준) 시작 시각
+const today5 = () => { const k = new Date(Date.now() + 4 * 3600000); return new Date(Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), k.getUTCDate()) - 4 * 3600000).toISOString(); };
 const BLANK_RE = /\[\[직접 입력:[^\]]*\]\]/g;
 // 2026-11-01: 완성본 · 채점 · 세특은 무료 과제(3개) 안에서 열고, 가져가는 것(파일 · PDF · 발표 대본 · PPT · 연습)에서 이용권을 받는다
 const PAID_ACTIONS = new Set(["speech_script", "speech_fb"]);
-const PAYWALL = "발표 대본 · PPT · 발표 연습은 1년 이용권으로 열려요. 완성본 · 채점 · 세특 예상 문장까지는 무료예요.";
+const PAYWALL = "발표 대본 · PPT · 발표 연습은 이용권으로 열려요. 완성본 · 채점 · 세특 예상 문장까지는 무료예요.";
 
-// AI 사용량 기록 — 관리자 'AI 비용' 칸 (gpt-4o 기준 · 웹 검색은 gpt-4.1)
-const PRICE: Record<string, [number, number]> = { "gpt-4o": [2.5, 10], "gpt-4.1": [2, 8] };
+// AI 사용량 기록 — 관리자 'AI 비용' 칸 (100만 토큰당 달러: 입력 · 출력)
+//   [입력, 출력, 캐시된 입력] — 같은 앞부분(안내 · 규칙)이 다시 들어가면 OpenAI가 싸게 받는다 (2026-11-06부터 실제 청구대로)
+const PRICE: Record<string, [number, number, number]> = { "gpt-5-mini": [0.25, 2, 0.025], "gpt-5": [1.25, 10, 0.125], "gpt-4o": [2.5, 10, 1.25], "gpt-4.1": [2, 8, 0.5] };
 let DB: any = null, UID = "";
-async function logUsage(model: string, inT: number, outT: number, ok: boolean) {
+async function logUsage(model: string, inT: number, outT: number, ok: boolean, cachedT = 0) {
   try {
-    const [pi, po] = PRICE[model] ?? [2.5, 10];
-    await DB?.from("ai_usage").insert({ service: "school_task", user_id: UID, model, input_tokens: inT, output_tokens: outT, cost_usd: (inT * pi + outT * po) / 1e6, ok });
+    const [pi, po, pc] = PRICE[model] ?? [2.5, 10, 1.25];
+    const cached = Math.min(Math.max(0, cachedT), inT);
+    await DB?.from("ai_usage").insert({ service: "school_task", user_id: UID, model, input_tokens: inT, output_tokens: outT, cost_usd: ((inT - cached) * pi + cached * pc + outT * po) / 1e6, ok });
   } catch (_) { /* 기록 실패는 무시 */ }
 }
 
 // ---------- OpenAI ----------
+// gpt-5 계열은 temperature 를 못 받는다 (기본값만) — 대신 내부 추론을 낮게 · 긴 완성본도 들어가게 출력 칸을 넉넉히
 async function ai(system: string, content: any[] | string, temperature = 0.5): Promise<any> {
+  const g5 = MODEL.startsWith("gpt-5");
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${OPENAI_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: MODEL,
-      temperature,
+      ...(g5 ? { reasoning_effort: "low", max_completion_tokens: 16000 } : { temperature }),
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: system + "\n반드시 json 객체 하나로만 답한다. 모든 글은 한국어." },
@@ -69,9 +77,11 @@ async function ai(system: string, content: any[] | string, temperature = 0.5): P
     }),
   });
   const j = await res.json();
-  await logUsage(MODEL, j?.usage?.prompt_tokens ?? 0, j?.usage?.completion_tokens ?? 0, res.ok);
+  await logUsage(MODEL, j?.usage?.prompt_tokens ?? 0, j?.usage?.completion_tokens ?? 0, res.ok, j?.usage?.prompt_tokens_details?.cached_tokens ?? 0);
   if (!res.ok) throw new Error(j?.error?.message ?? "AI 호출 실패");
-  return JSON.parse(j.choices?.[0]?.message?.content ?? "{}");
+  const text = String(j.choices?.[0]?.message?.content ?? "").trim();
+  if (!text) throw new Error(j.choices?.[0]?.finish_reason === "length" ? "글이 너무 길어 끝까지 못 썼어요. 한 번 더 눌러 주세요." : "AI가 빈 답을 줬어요. 한 번 더 눌러 주세요.");
+  try { return JSON.parse(text); } catch { throw new Error("AI 답을 읽지 못했어요. 한 번 더 눌러 주세요."); }
 }
 
 const str = (v: unknown, max = 4000) => (typeof v === "string" ? v.trim().slice(0, max) : "");
@@ -82,6 +92,12 @@ const ansOf = (x: any) => {
   const mine = str(x?.custom, 300);
   return [a, mine && (a ? `내 생각: ${mine}` : mine)].filter(Boolean).join(" / ");
 };
+// 학생이 '실험은 싫다 · 못 한다'고 한 말 (agent/router.ts NO_EXP 와 같은 말)
+const NO_EXP = /실험\s*(은|는|이|하는\s*건|하기)?\s*(싫|말고|빼|없이|못\s*하|못해|어려워|힘들|안\s*하|안할)/;
+// 질문 · 설계 공통 규칙 — 10/26~ 학생 대화에서 나온 문제 ('롤모델이 없어'에도 롤모델 질문 계속 · 학교에서 못 하는 실험)
+const UNSURE_RULE = "- 앞 답이 '모름'(잘 모르겠음 · 없음 · 그런 거 없어)이면 그 답 위에 쌓지 않는다: 그 질문의 전제(예: 롤모델이 있다)를 버리고, 같은 단계를 학생이 바로 고를 수 있는 구체 후보 3개(지원 학과 · 관심사 · 학생 생활 기준)로 다시 묻는다. lead 는 '괜찮아요, 그럼 이 중에서 골라 봐요'처럼 짧게.";
+const SCHOOL_LAB = "- 실험 · 측정은 고등학교 과학실에 있는 기구 · 재료(비커 · 온도계 · 저울 · 스마트폰 센서 · 마트에서 사는 재료)로만. 효소 시약 · 루시페린 · 세균 배지 배양 · 분광기 같은 대학 실험실 재료는 쓰지 않는다.";
+const noExpRule = (on: boolean) => (on ? "\n- 학생이 실험은 싫다(못 한다)고 했다: 실험 · 측정 보기를 내지 않는다 (method 에 experiment 금지). 문헌 · 사례 · 설문 · 공개 자료 비교로 한다." : "");
 const gnum = (g: unknown) => Number(String(g ?? "").match(/[123]/)?.[0] ?? 0);
 const gradeLabel = (g: unknown) => { const n = gnum(g); return n ? `고${n}` : str(g, 10); };
 
@@ -99,6 +115,10 @@ async function studentContext(db: any, task: any) {
     // 물꼬 노트 (agent_memory · sql/sm_96) — 채팅에서 학생이 말한 관심 · 목표 · 고민
     db.from("agent_memory").select("facts,notes").eq("user_id", uid).maybeSingle(),
   ]);
+  // 학생이 물꼬 채팅에서 '실험은 싫다 · 못 한다'고 했는지 (과제에 적힌 표시 · 최근 대화 학생 말)
+  const { data: chat } = await db.from("agent_chats").select("messages").eq("user_id", uid).order("updated_at", { ascending: false }).limit(1).maybeSingle();
+  const said = arr(chat?.messages).slice(-16).filter((m: any) => m?.role === "user").map((m: any) => String(m.content ?? "")).join("\n");
+  const noExp = task.analysis?.no_exp === true || NO_EXP.test(said);
   const facts = (mem?.data?.facts ?? {}) as Record<string, string>;
   const dept = str(my.data?.department, 40) || str(facts["목표 학과"], 40);
   const tg = gnum(task.grade);
@@ -106,6 +126,7 @@ async function studentContext(db: any, task: any) {
   const focus = dept ? { level: tg >= 3 ? "직업 현장" : tg === 2 ? "학과" : "계열", value: dept } : null;
   return {
     focus,
+    noExp,
     department: dept,
     activities: (acts.data ?? []).map((a: any) => ({ grade: gradeLabel(a.grade), kind: str(a.kind, 10), subject: str(a.subject, 30), title: str(a.title, 60), did: str(a.content, 200) })),
     inquiries: (inq.data ?? []).map((r: any) => ({ grade: gradeLabel(r.grade), subject: str(r.subject, 30), topic: str(r.topic || r.suggestion, 120) })),
@@ -355,6 +376,8 @@ async function nextQuestion(db: any, task: any) {
 - 첫 질문(지금까지 답이 0개)만: 보기를 4개 만들고, 학생이 1~2개를 골라 섞을 수 있다(multi=true).
 추천(deepen, perSection)은 과목 범위 규칙을 지키는 선에서만 질문에 녹인다.
 4개 답한 뒤 5번째를 할지는 네가 판단한다: 채점 기준 요소가 답에서 모두 채워졌으면 {"done":true}, 아직 비어 있는 요소가 있으면 그 요소로 5번째를 묻는다.
+${UNSURE_RULE}
+${SCHOOL_LAB}${noExpRule(ctx.noExp)}
 보기마다 한 줄 설명. 쉬운 말로. 충분히 모였으면 {"done":true}.
 json: {"done":false,"q":"","badge":"","multi":false,"options":[{"label":"","desc":"","from":""}]}`;
   const user = `과제: ${taskBrief(task)}\n과제 형식: ${task.task_type ?? ""}\n채점 기준: ${JSON.stringify(arr(task.analysis?.criteria))}\n필수 요소: ${JSON.stringify(arr(task.analysis?.required).slice(0, 8))}\n진로 초점(고1 계열 · 고2 학과 · 고3 직업 현장 — 질문도 이 깊이로): ${JSON.stringify(ctx.focus)}\n이 학생만의 재료: ${JSON.stringify({ 생기부노트: ctx.activities.map((a: any) => `${a.subject} ${a.title}`).slice(0, 12), 탐구: [...ctx.inquiries, ...ctx.topics].map((t: any) => t.topic).slice(0, 10), 독서: ctx.readings.map((b: any) => b.title).slice(0, 12), 물꼬기억: ctx.memory })}\n지금까지: ${JSON.stringify(answered.map((x: any) => ({ q: x.q, a: ansOf(x) })))}`;
@@ -424,6 +447,8 @@ async function topicQuestion(db: any, task: any, answered: any[], ctx: any) {
 - ${LEVEL[g] ?? LEVEL[2]}
 - 학생이 고른 설계 유형(연계형 · 심화형 · 융합형)을 지킨다. 융합형이면 다른 교과 관점을 보기에 둬도 된다.
 - 지어낸 통계 · 논문 · 기관 이름을 쓰지 않는다.
+${UNSURE_RULE}
+${SCHOOL_LAB}${noExpRule(ctx.noExp)}
 충분히 모였으면 {"done":true}.
 json: {"done":false,"lead":"","step":"","q":"","options":[{"label":"","desc":"","from":""}]}`;
   const user = `학년: 고${g}\n희망학과: ${str(an.dept, 30) || ctx.department || "(모름)"}\n과목: ${task.subject ?? "(없음)"}\n고른 탐구: ${JSON.stringify(an.picked ?? { title: task.title })}\n처음 주제 · 흔한가 진단: ${an.origin ? JSON.stringify(an.origin) : "(없음)"}\n이어 갈 활동: ${str(an.link_from, 200) || "(없음)"}\n관심사: ${str(an.interest, 200) || "(없음)"}\n이 학생만의 재료: ${JSON.stringify({ 생기부노트: ctx.activities.map((a: any) => `${a.subject} ${a.title}`).slice(0, 12), 탐구: [...ctx.inquiries, ...ctx.topics].map((t: any) => t.topic).slice(0, 10), 독서: ctx.readings.map((b: any) => b.title).slice(0, 12), 물꼬기억: ctx.memory })}\n학교: ${task.school ?? "(모름)"}\n지금까지: ${JSON.stringify(answered.map((x: any) => ({ 단계: x.step, q: x.q, a: ansOf(x) })))}\n다른 학생들이 이 단계에서 고른 답 (피할 것): ${others.length ? JSON.stringify(others) : "(아직 없음)"}`;
@@ -505,7 +530,9 @@ async function draft(db: any, task: any, formatKey?: string, quick = false) {
 금지: 빈칸·자리표시([[...]], (직접 입력), ○○, OO, ___). 토론·발표처럼 실제로 일어난 일을 "~했다"로 꾸며 내지 않는다.
 지어내지 않기 (가장 중요):
 - 학생이 하지 않은 경험 · 활동을 만들지 않는다 ("고1 때 ~한 경험" 등). 앞선 활동은 [이 학생 재료]에 그대로 있는 것만 쓴다.
-- 실험 · 측정 · 설문 · 관찰 결과(수치, "~가 더 높았다", "~경향을 보였다")를 지어내지 않는다. 학생은 아직 탐구를 하지 않았다. 학생이 질의응답 · [나만의 이야기]에 직접 적은 결과만 결과로 쓴다.${topicRule}
+- 실험 · 측정 · 설문 · 관찰 결과(수치, "~가 더 높았다", "~경향을 보였다")를 지어내지 않는다. 학생은 아직 탐구를 하지 않았다. 학생이 질의응답 · [나만의 이야기]에 직접 적은 결과만 결과로 쓴다.
+- [참고할 자료]는 근거로만 쓴다: "○○에 따르면 ~이다 (출처: …)". 학생이 그 자료를 찾아 "참조하여 정리하였다 · 분석하였다 · 조사하였다"처럼 학생이 한 조사 과정으로 쓰지 않는다. 학생이 무엇을 했는지는 질의응답에서 학생이 고른 방법만 "~하였다"로 쓰고, 그 밖의 과정은 "~할 것이다 · ~하고자 한다"로 쓴다.
+- 앱 · 사이트 · 도서관 · 기관을 학생이 이용했다고 쓰지 않는다 (학생이 말한 것만).${topicRule}
 
 json: {"content":"마크다운"}`;
   const r = await ai(system, `과제: ${taskBrief(task)}\n이 학생 재료(앞선 활동 — 이것만 사실): ${JSON.stringify([...ctx.activities.map((x: any) => `${x.grade ?? ""} ${x.subject ?? ""} ${x.title ?? ""}`), ...[...ctx.inquiries, ...ctx.topics].map((x: any) => `${x.grade ?? ""} ${x.topic ?? ""}`)].slice(0, 20))}\n질의응답: ${JSON.stringify(arr(task.qa).map((x: any) => ({ q: x.q, a: ansOf(x) })))}\n학습가이드: ${str(task.guide, 6000)}\n진로 초점: ${JSON.stringify(ctx.focus)}\n독서 진단한 책: ${JSON.stringify(ctx.readings)}\n참고할 자료: ${JSON.stringify(picked)}\n[나만의 이야기] ${str(task.my_story, 2000) || "(없음)"}\n[글 구조] ${fmt.label}\n${outline}`, 0.6);
@@ -628,7 +655,32 @@ json: {"setuk":""}`;
     setuk_text: str(r.setuk, 1200),
     status: "done",
   });
+  await toRecord(db, data ?? { ...task, draft: text, setuk_text: str(r.setuk, 1200) });
   return { task: data };
+}
+
+// 끝낸 수행평가 · 탐구를 내 생기부(생기부 노트 record_activities)에 넣는다 — 입시 홈 생기부 보드에 바로 보인다 (sql/sm_120)
+//   과목이 있으면 교과 세특, 없으면 진로활동 · 같은 과제를 다시 완성하면 그 줄을 고친다 · 실패해도 완성본은 그대로
+async function toRecord(db: any, task: any) {
+  try {
+    const { data: my } = await db.from("sm_my").select("grade,department").eq("user_id", task.user_id).maybeSingle();
+    const subject = str(task.subject, 40);
+    const row = {
+      user_id: task.user_id,
+      grade: gradeLabel(task.grade) || gradeLabel(my?.grade) || "고1",
+      kind: subject ? "subject" : "career",
+      subject: subject || null,
+      title: str(task.title, 120),
+      content: str(task.setuk_text, 1200) || str(task.draft, 1200),
+      department: str(my?.department, 40),
+      source: task.analysis?.kind === "topic" ? "tamgu" : "suhaeng",
+      source_id: String(task.id),
+    };
+    const { error } = await db.from("record_activities").upsert(row, { onConflict: "source,source_id" });
+    if (error) console.error("record upsert", error.message);
+  } catch (e) {
+    console.error("record", e);
+  }
 }
 
 // ---------- 발표 연습 (세움스피치 방식) ----------
@@ -769,6 +821,7 @@ async function designTopics(db: any, task: any) {
 - 과목 범위: [과목]이 있으면 그 과목 교과서 단원 개념 안에서 질문을 세운다. 희망학과 연결은 결과를 해석 · 활용하는 데서 가볍게.
 - 흔함: [흔한가 진단]의 이유(흔한 까닭)를 피해 간다. 대상 · 조건 · 방법을 분명히 해서 흔하지 않게.
 - 난이도: 학생이 쓰지 않은 대학 전공 용어 · 공정 이름 · 통계 기법을 넣지 않는다. 고등학생이 학교 실험실 · 무료 자료로 할 수 있게.
+${SCHOOL_LAB}${noExpRule(ctx.noExp)}
 - 이전 활동을 쓸 때는 from 에 그 활동 이름을 그대로 적는다 (지어내지 않는다). 이어지지 않으면 from 은 "".
 - title: 40~60자 한 문장, "~하는 탐구"로 끝. 연도 · 날짜 숫자 금지.
 - why: 왜 이 학생에게 맞는지 한 줄 (학과 · 진단 결과 · 관심사와 연결해서). 이전 활동은 [이전 활동] 목록에 그대로 있는 것만 말한다. 새 분야를 골랐거나 목록이 비었으면 "고1 때 ~한 경험"처럼 학생 과거를 말하지 않는다 (지어내면 생기부와 안 맞아 면접에서 들킨다). how: 무엇을 어떻게 하는지 한 줄 (자료 · 방법 · 비교 대상).
@@ -847,7 +900,7 @@ async function searchSection(task: any, ctx: any, section?: string) {
   let res = await call("web_search");
   if (res.status === 400) res = await call("web_search_preview"); // 계정에 따라 도구 이름이 다름
   const body = await res.json().catch(() => null);
-  await logUsage(SEARCH_MODEL, body?.usage?.input_tokens ?? 0, body?.usage?.output_tokens ?? 0, res.ok);
+  await logUsage(SEARCH_MODEL, body?.usage?.input_tokens ?? 0, body?.usage?.output_tokens ?? 0, res.ok, body?.usage?.input_tokens_details?.cached_tokens ?? 0);
   if (!res.ok || !body) throw new Error("자료를 찾지 못했어요. 잠시 후 다시 해 주세요.");
 
   // 답변 + 실제로 본 링크
@@ -869,7 +922,9 @@ async function searchSection(task: any, ctx: any, section?: string) {
     parsed = m ? JSON.parse(m[0]) : null;
   } catch { parsed = null; }
   const uniq = new Map<string, any>();
-  for (const x of parsed?.sources ?? []) if (x?.url && x?.title && /^https?:\/\//.test(x.url) && !uniq.has(norm(x.url))) uniq.set(norm(x.url), x);
+  // 블로그 · 카페 · 지식인 · 위키 같은 개인 글은 수행평가 출처로 쓰지 않는다 (10/26~ 대화 분석: 완성본에 'Tistory 블로그' 출처)
+  const PERSONAL = /(^|\.)(tistory\.com|blog\.naver\.com|m\.blog\.naver\.com|cafe\.naver\.com|kin\.naver\.com|cafe\.daum\.net|brunch\.co\.kr|velog\.io|medium\.com|namu\.wiki|wikidocs\.net|blogspot\.com|egloos\.com)(\/|$)/;
+  for (const x of parsed?.sources ?? []) if (x?.url && x?.title && /^https?:\/\//.test(x.url) && !PERSONAL.test(norm(x.url)) && !/블로그|티스토리|카페|지식인|나무위키/.test(`${x.publisher ?? ""}`) && !uniq.has(norm(x.url))) uniq.set(norm(x.url), x);
   const list = [...uniq.values()].slice(0, 10);
 
   // 실제로 본 링크이거나, 서버가 열어 봐서 열리는 링크만
@@ -936,26 +991,20 @@ Deno.serve(async (req) => {
     const { data: task } = await db.from("school_tasks").select("*").eq("id", Number(taskId)).eq("user_id", user.id).maybeSingle();
     if (!task) return json({ error: "과제를 찾을 수 없어요." }, 404);
 
-    // 1년 이용권(또는 관리자)인지
+    // 이용권(또는 관리자)인지
     const paid = (await hasPass(db, user.id)) || Boolean((await db.from("admins").select("user_id").eq("user_id", user.id).maybeSingle()).data);
-    if (PAID_ACTIONS.has(action) && !paid) return json({ paywall: true, error: PAYWALL }, 402);
-    // 무료는 과제 3개까지 분석 (이미 분석한 과제는 다시 분석해도 됨)
-    if (action === "analyze" && !paid && task.status === "draft") {
-      const { count } = await db.from("school_tasks").select("id", { count: "exact", head: true }).eq("user_id", user.id).neq("status", "draft");
-      if ((count ?? 0) >= FREE_TASKS) return json({ paywall: true, error: `무료로는 수행평가 · 탐구를 ${FREE_TASKS}개까지 완성할 수 있어요. 1년 이용권이면 개수 제한 없이 하고, 파일 · PDF로도 받아요.` }, 402);
-    }
+    if (PAID_ACTIONS.has(action) && !paid && !FREE_OPEN) return json({ paywall: true, error: PAYWALL }, 402);
+    // (2026-11-01) 분석 · 설계 · 질문은 무료로 계속 — 무료 한도는 아래 '완성본 3개'로만 센다 (시작만 하고 그만둔 과제는 세지 않는다)
 
-    // 완성본은 무료 과제 3개까지 (처음 쓸 때만 센다 — 같은 과제를 다시 쓰는 건 괜찮다) · 어느 길로 시작했든 여기서 센다
+    // 완성본은 무료 — 하루 3개까지 (오늘 새벽 5시 뒤에 시작한 과제 중 완성본이 있는 것만 센다 · 같은 과제를 다시 쓰는 건 괜찮다)
     if ((action === "draft" || action === "make") && !paid && !str(task.draft)) {
-      const { count } = await db.from("school_tasks").select("id", { count: "exact", head: true }).eq("user_id", user.id).not("draft", "is", null).neq("id", task.id);
-      if ((count ?? 0) >= FREE_TASKS) return json({ paywall: true, error: `무료 완성본 ${FREE_TASKS}개를 다 썼어요. 1년 이용권이면 개수 제한 없이 완성하고, 한글 · PDF 파일로도 받아요.` }, 402);
+      const q = db.from("school_tasks").select("id", { count: "exact", head: true }).eq("user_id", user.id).not("draft", "is", null).neq("id", task.id);
+      const { count } = FREE_OPEN ? await q.gte("created_at", today5()) : await q;
+      if ((count ?? 0) >= FREE_TASKS) {
+        return json({ paywall: true, error: FREE_OPEN ? `오늘 무료 완성본 ${FREE_TASKS}개를 다 썼어요. 새벽 5시에 다시 열려요.` : `무료 완성본 ${FREE_TASKS}개를 다 썼어요. 이용권이면 개수 제한 없이 완성하고, 한글 · PDF 파일로도 받아요.` }, 402);
+      }
     }
 
-    // 탐구 설계도 무료는 과제 3개까지 (처음 설계할 때만 센다)
-    if (action === "design" && !paid && !arr(task.analysis?.designs).length) {
-      const { count } = await db.from("school_tasks").select("id", { count: "exact", head: true }).eq("user_id", user.id).neq("status", "draft").neq("id", task.id);
-      if ((count ?? 0) >= FREE_TASKS) return json({ paywall: true, error: `무료로는 수행평가 · 탐구를 ${FREE_TASKS}개까지 설계할 수 있어요. 1년 이용권이면 개수 제한 없이 설계 · 완성본까지 끝까지 해요.` }, 402);
-    }
 
     let out: any;
     switch (action) {

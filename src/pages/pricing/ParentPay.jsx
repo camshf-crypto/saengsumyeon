@@ -72,7 +72,7 @@ export default function ParentPay() {
         <p className="text-[12.5px] text-gray-500">생기부 · 수행평가 · 면접, 흔하지 않게 준비해요</p>
 
         <h1 className="mt-6 break-keep text-[22px] font-black leading-snug text-gray-900">
-          {who}이 생수면 1년 이용권 결제를 부탁드렸어요
+          {who}이 생수면 {plan.label} 결제를 부탁드렸어요
         </h1>
 
         {activity.length > 0 && (

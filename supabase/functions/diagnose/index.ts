@@ -13,6 +13,8 @@ const cors = {
 const MODEL = "gpt-5";
 const DAILY_LIMIT = 2; // 로그인: 하루 2회 (2026-10-29 3 → 2)
 const ANON_LIMIT = 1; // 비로그인: 브라우저당 하루 1회
+// 하루는 한국 새벽 5시에 시작한다 (2026-11-06 — 다음 날 아침에 다시 들어오게) · 물꼬 사용량 · 수행평가 완성본과 같은 기준
+const today5 = () => { const k = new Date(Date.now() + 4 * 3600000); return new Date(Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), k.getUTCDate()) - 4 * 3600000).toISOString(); };
 
 // 제안 주제에 연도·날짜가 들어갔는지 (예: 2024, 1901~1933, 24년, 10~12월)
 // 모델명·규격 숫자(NACA 0012, 18650 셀, PM2.5, PEG 3350)는 날짜로 보지 않는다
@@ -188,6 +190,20 @@ function problems(r: any): string[] {
   return out;
 }
 
+// 같은 주제인지 — 띄어쓰기 · 문장부호를 빼고 같거나, 한쪽이 다른 쪽을 담거나(10자 이상), 글자 두 개씩 묶어 80% 이상 겹치면
+function sameTopic(a: unknown, b: unknown) {
+  const k = (v: unknown) => String(v ?? "").replace(/[\s\p{P}\p{S}]/gu, "").toLowerCase();
+  const x = k(a), y = k(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  if (Math.min(x.length, y.length) >= 10 && (x.includes(y) || y.includes(x))) return true;
+  const bi = (s: string) => { const m = new Map<string, number>(); for (let i = 0; i < s.length - 1; i++) { const g = s.slice(i, i + 2); m.set(g, (m.get(g) ?? 0) + 1); } return m; };
+  const A = bi(x), B = bi(y);
+  let hit = 0;
+  for (const [g, n] of A) hit += Math.min(n, B.get(g) ?? 0);
+  return (2 * hit) / Math.max(1, x.length - 1 + y.length - 1) >= 0.8;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
@@ -221,7 +237,7 @@ Deno.serve(async (req) => {
     const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
     // 0) 같은 주제면 저장된 결과를 쓰고, 아니면 하루 사용량 확인
-    const { data: quota, error: quotaErr } = await supabase
+    const { data: quota0, error: quotaErr } = await supabase
       .rpc("check_topic_quota", {
         p_user_id: user_id ?? null,
         p_client_id: client_id ?? null,
@@ -234,8 +250,17 @@ Deno.serve(async (req) => {
       })
       .single();
     if (quotaErr) console.error("quota check failed", quotaErr);
+    // 오늘 쓴 횟수는 여기서 직접 센다 — 한국 새벽 5시부터 (check_topic_quota 는 같은 주제 저장 결과 찾기에만 쓴다)
+    const quota: any = { ...(quota0 ?? {}) };
+    if (user_id || client_id) {
+      let cq = supabase.from("topic_queries").select("id", { count: "exact", head: true }).gte("created_at", today5());
+      cq = user_id ? cq.eq("user_id", user_id) : cq.eq("client_id", client_id).is("user_id", null);
+      const { count, error: cErr } = await cq;
+      if (!cErr) { quota.used_today = count ?? 0; quota.allowed = (count ?? 0) < (user_id ? DAILY_LIMIT : ANON_LIMIT); }
+      else console.error("count failed", cErr);
+    }
 
-    // 오늘(최근 24시간) 남은 무료 횟수 — 결과 화면에 "N번 남았어요"로 보여준다
+    // 오늘(새벽 5시부터) 남은 무료 횟수 — 결과 화면에 "N번 남았어요"로 보여준다
     const limit = user_id ? DAILY_LIMIT : ANON_LIMIT;
     const usedBefore = Number(quota?.used_today ?? 0);
 
@@ -244,10 +269,19 @@ Deno.serve(async (req) => {
       return json({ ...quota.cached, from_cache: true, remaining: Math.max(0, limit - usedBefore) });
     }
 
+    // 같은 주제를 고쳐 다시 보낸 것(학과 · 과목만 바꿈 · 글자 조금 고침)이면 횟수를 새로 쓰지 않는다 — 24시간 안 · 한 주제에 2번까지
+    //   (10/26~ 대화: '심리 마케팅'을 '심리학과'로 고쳐 1분 뒤 다시 보냈는데 결제 안내로 막힘)
+    let redo: any = null;
+    if (user_id && !quota?.cached) {
+      const { data: recent } = await supabase.from("topic_queries").select("id,topic,result")
+        .eq("user_id", user_id).gte("created_at", new Date(Date.now() - 86400000).toISOString()).order("created_at", { ascending: false }).limit(10);
+      redo = (recent ?? []).find((r: any) => sameTopic(r.topic, topic) && Number(r.result?.redo_n ?? 0) < 2) ?? null;
+    }
+
     // 하루 한도를 넘었을 때 — 회원이면 친구 추천으로 받은 추가권이 있는지 본다
     let useBonus = false;
     let bonusCredits = 0;
-    if (quota && quota.allowed === false && !pass) {
+    if (quota.allowed === false && !pass && !redo) {
       if (user_id) {
         const { data: bc } = await supabase
           .from("bonus_credits")
@@ -347,8 +381,10 @@ Deno.serve(async (req) => {
     };
 
     // 3) 저장 (같은 주제가 다시 오면 재사용)
-    const full = { ...result, similar_count: similarCount, similar };
-    const { error: logErr } = await supabase.from("topic_queries").insert({
+    const full: any = { ...result, similar_count: similarCount, similar };
+    // 고쳐 다시 보낸 주제면 — 새 줄을 넣지 않고 그 줄을 고친다 (오늘 쓴 횟수가 늘지 않게)
+    if (redo) full.redo_n = Number(redo.result?.redo_n ?? 0) + 1;
+    const row = {
       user_id: user_id ?? null,
       client_id: client_id ?? null,
       department,
@@ -360,10 +396,13 @@ Deno.serve(async (req) => {
       match_count: similarCount,
       focus,
       result: full,
-    });
+    };
+    const { error: logErr } = redo
+      ? await supabase.from("topic_queries").update(row).eq("id", redo.id)
+      : await supabase.from("topic_queries").insert(row);
     if (logErr) console.error("log insert failed", logErr);
 
-    if (!logErr && user_id) {
+    if (!logErr && user_id && !redo) {
       // 하루 2회를 넘겨 추가권으로 진단한 경우 1회 차감
       if (useBonus) {
         const { error: e1 } = await supabase.rpc("consume_bonus_credit", { p_user: user_id });
@@ -377,7 +416,7 @@ Deno.serve(async (req) => {
     // 방금 1번 썼으니 남은 무료 횟수 (추가권으로 진단했으면 무료는 0, 추가권 남은 수를 같이)
     return json({
       ...full,
-      remaining: useBonus ? 0 : Math.max(0, limit - (usedBefore + 1)),
+      remaining: useBonus ? 0 : Math.max(0, limit - (usedBefore + (redo ? 0 : 1))),
       bonus_left: useBonus ? Math.max(0, bonusCredits - 1) : null,
     });
   } catch (e) {

@@ -6,6 +6,8 @@ import { track } from "../../lib/track";
 import StepBar from "./StepBar";
 import Paywall from "./Paywall";
 import { hasPass } from "../../lib/pass";
+// 2026-11-06 탐구팩 무료 (서버 inquiry FREE_OPEN 과 같이 바꾼다) — 결제 창 · 잠금을 띄우지 않는다
+const FREE_OPEN = true;
 import { useStay } from "./useStay";
 import InquirySwitcher from "./InquirySwitcher";
 import { A4, TEMPLATES, renderPages, emptyVoices } from "./templates";
@@ -799,8 +801,8 @@ export default function InquiryReport() {
     }
     const n = emptyVoices(inq);
     if (n && !window.confirm(`아직 비어 있는 '내가 쓸 곳'이 ${n}개 있어요. 그래도 저장할까요?`)) return;
-    // 무료 체험 탐구는 보고서 디자인까지 무료, PDF 저장은 이용권
-    if (!inq.paid && !isAdmin) {
+    // 무료 체험 탐구는 보고서 디자인까지 무료, PDF 저장은 이용권 · 물꼬에서 온 수행평가 · 탐구 보고서(school_task_id)는 PDF까지 무료 (2026-11-06)
+    if (!inq.paid && !isAdmin && !inq.school_task_id) {
       track("pdf_paywall", inq.template);
       return setPdfWall(true);
     }
@@ -808,10 +810,10 @@ export default function InquiryReport() {
     window.print();
   }
 
-  const [isAdmin, setIsAdmin] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(FREE_OPEN ? true : null);
   useEffect(() => {
     // 관리자 또는 이용권이면 결제 없이 연다
-    if (user) Promise.all([supabase.rpc("is_admin"), hasPass()]).then(([{ data }, pass]) => setIsAdmin(Boolean(data) || pass));
+    if (user) Promise.all([supabase.rpc("is_admin"), hasPass()]).then(([{ data }, pass]) => setIsAdmin(FREE_OPEN || Boolean(data) || pass));
   }, [user]);
   // 무료 체험 탐구인지 — 2단계에서 학생이 무료 체험을 쓰기로 한 탐구 (탐구 준비까지만 무료)
   const free = inq ? Boolean(inq.free_trial) : null;

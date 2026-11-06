@@ -26,6 +26,10 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
 
 const MODEL = "gpt-5";
+// 2026-11-06 사용자 모으기 — 탐구팩(탐구 준비 · 결과 분석 · 보고서 · PDF) 무료. 하루 새 탐구 3건은 그대로 (한국 새벽 5시에 다시)
+//   다시 유료로 돌리려면 false 로 바꾸고 inquiry 배포 (화면 InquiryPrepare · InquiryResult · InquiryReport 의 FREE_OPEN 도 같이)
+const FREE_OPEN = true;
+const today5 = () => { const k = new Date(Date.now() + 4 * 3600000); return new Date(Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), k.getUTCDate()) - 4 * 3600000).toISOString(); };
 const DAILY_START_LIMIT = 3; // 하루에 새 탐구 3건까지 (탐구팩 생성 비용 관리)
 const METHODS = ["lit", "case", "data", "survey", "exp", "obs"] as const;
 type Method = (typeof METHODS)[number];
@@ -397,7 +401,7 @@ Deno.serve(async (req) => {
     // 정식 오픈 — 회원이면 누구나. 관리자는 결제·횟수 제한 없이 통과
     const { data: isAdmin } = await admin.from("admins").select("user_id").eq("user_id", user.id).maybeSingle();
     // 이용권이 있으면 관리자처럼 결제 없이 탐구를 연다 (하루 3건 제한은 그대로)
-    const admin_ok = Boolean(isAdmin) || (await hasPass(admin, user.id));
+    const admin_ok = FREE_OPEN || Boolean(isAdmin) || (await hasPass(admin, user.id));
 
     // 쓸 수 있는 탐구인지 — 결제된 탐구, 관리자, 또는 무료 체험 탐구
     // 무료 체험 = 학생이 2단계에서 "무료 체험 1건을 사용할게요"를 누른 탐구 1건 (free_trial)
@@ -503,11 +507,11 @@ Deno.serve(async (req) => {
       }
 
       // 하루 생성 한도 (탐구팩까지 만든 것만 센다)
-      const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+      const since = today5(); // 한국 새벽 5시부터
       const { count } = await admin
         .from("inquiries").select("id", { count: "exact", head: true })
         .eq("user_id", user.id).not("pack", "is", null).gte("created_at", since);
-      if ((count ?? 0) >= DAILY_START_LIMIT) return json({ error: "오늘은 새 탐구를 3개까지 만들 수 있어요.", limit: true }, 429);
+      if ((count ?? 0) >= DAILY_START_LIMIT) return json({ error: "오늘은 새 탐구를 3개까지 만들 수 있어요. 새벽 5시에 다시 열려요.", limit: true }, 429);
 
       const ai = await recommendAndPack(base);
       if (!ai?.pack || !METHODS.includes(ai.method)) return json({ error: "탐구팩을 만들지 못했어요. 잠시 후 다시 시도해 주세요." }, 502);
@@ -806,6 +810,23 @@ AI 분석: ${JSON.stringify(r.ai ?? {}).slice(0, 1200)}
       const { data: updated, error } = await admin
         .from("inquiries").update({ report, stage: "design" }).eq("id", inq.id).select("*").single();
       if (error) return json({ error: "저장에 실패했어요." }, 500);
+      // 탐구팩 보고서를 만들면 내 생기부(생기부 노트)에 한 줄 — 입시 홈 생기부 보드에 바로 보인다 (sql/sm_120)
+      //   물꼬에서 온 보고서(school_task_id)는 수행평가 · 탐구 완성 때 이미 들어가서 뺀다
+      if (!inq.school_task_id) {
+        const memo = [r.memory?.l1, r.memory?.l2].filter(Boolean).join(" · ");
+        const { error: recErr } = await admin.from("record_activities").upsert({
+          user_id: user.id,
+          grade: /^고[123]$/.test(String(inq.grade ?? "")) ? inq.grade : `고${String(inq.grade ?? "1").replace(/\D/g, "") || "1"}`,
+          kind: inq.subject ? "subject" : "career",
+          subject: inq.subject || null,
+          title: String(report.title ?? inq.suggestion ?? inq.topic ?? "").slice(0, 120),
+          content: `${String(inq.suggestion ?? inq.topic ?? "").slice(0, 200)} — 탐구 보고서 작성${memo ? ` (기억할 점: ${memo.slice(0, 300)})` : ""}`,
+          department: inq.department ?? "",
+          source: "inquiry",
+          source_id: String(inq.id),
+        }, { onConflict: "source,source_id" });
+        if (recErr) console.error("record upsert", recErr.message);
+      }
       return json({ inquiry: updated });
     }
 

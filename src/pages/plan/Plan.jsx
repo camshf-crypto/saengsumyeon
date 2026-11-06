@@ -6,6 +6,9 @@ import { track } from "../../lib/track";
 import LoginGate from "../../components/LoginGate";
 import PassSheet from "../../components/PassSheet";
 import { hasPass } from "../../lib/pass";
+// 2026-11-06 사용자 모으기 — 공부법 도감(입시 플랜 · 학습 다이어리 · 자기주도학습법) 무료 (서버 agent/core.ts FREE_OPEN 과 같이)
+const FREE_OPEN = true;
+const LIMIT_MSG = "오늘 무료 사용량을 다 썼어요. 새벽 5시에 다시 채워져요.";
 
 /*
  * 내 플랜 (/plan) — 탭 두 개
@@ -199,7 +202,7 @@ function TestBox({ subject }) {
     setBusy("make"); setErr(""); setAfter(null);
     const r = await call({ action: "test_make", subject, unit: name, from_id: fromId });
     setBusy("");
-    if (r.need_pay) return setErr("이번 주 물꼬 사용량을 다 썼어요. 월요일 0시에 다시 채워져요.");
+    if (r.need_pay) return setErr(FREE_OPEN ? LIMIT_MSG : "이번 주 물꼬 사용량을 다 썼어요. 월요일 0시에 다시 채워져요.");
     if (r.error || !r.test) return setErr(r.error ?? "문제를 만들지 못했어요");
     track("test_make");
     await load();
@@ -515,7 +518,7 @@ export default function Plan() {
   }
 
   async function load() {
-    if (!(await hasPass()) && !(await supabase.rpc("is_admin")).data) return; // 이용권이 없으면 불러오지 않는다 (잠금 화면)
+    if (!FREE_OPEN && !(await hasPass()) && !(await supabase.rpc("is_admin")).data) return; // 이용권이 없으면 불러오지 않는다 (잠금 화면)
     const r = await call({ action: "plan_status" });
     if (r.error) return setErr(r.error);
     setData(r);
@@ -524,13 +527,13 @@ export default function Plan() {
       setBusy("week");
       const w = await call({ action: "plan_next_week" });
       setBusy("");
-      if (w.need_pay) return setBuy(true);
+      if (w.need_pay) return FREE_OPEN ? setErr(LIMIT_MSG) : setBuy(true);
       if (w.tasks) setData((d) => ({ ...d, tasks: w.tasks }));
       else if (w.error) setErr(w.error);
     }
   }
   useEffect(() => {
-    if (user) Promise.all([hasPass(), supabase.rpc("is_admin")]).then(([p, { data }]) => setPassOk(Boolean(p) || Boolean(data)));
+    if (user) Promise.all([hasPass(), supabase.rpc("is_admin")]).then(([p, { data }]) => setPassOk(FREE_OPEN || Boolean(p) || Boolean(data)));
   }, [user]);
   useEffect(() => {
     if (user) load();
@@ -551,7 +554,7 @@ export default function Plan() {
     setErr("");
     const w = await call({ action: "plan_next_week", force: true });
     setBusy("");
-    if (w.need_pay) return setBuy(true);
+    if (w.need_pay) return FREE_OPEN ? setErr(LIMIT_MSG) : setBuy(true);
     if (w.tasks) setData((d) => ({ ...d, tasks: w.tasks }));
     else setErr(w.error ?? "미션을 다시 짜지 못했어요");
   }

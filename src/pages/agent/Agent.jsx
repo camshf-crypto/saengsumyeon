@@ -15,16 +15,19 @@ import PracticeRoom from "./PracticeRoom"; // 발표 연습 화면 (위 슬라�
  * 🤖 입시 상담 AI — /agent
  *   대학 입시 DB(모집요강·시행계획·입결·면접 스타일) + 내 생수면 기록(생기부 노트·진단·예상질문·지원동기·성적)을 보고 답한다
  *   사용량: 질문 개수가 아니라 실제 AI 비용으로 센다 — '이번 주 사용량 ○%' 막대 + 초기화 시각(매주 월요일 0시)
- *   무료 회원: 주간 한도 · 답 아래 광고 · 친구 초대 보너스 없음 (다 쓰면 1년 이용권으로)
+ *   무료 회원: 주간 한도 · 답 아래 광고 · 친구 초대 보너스 없음 (다 쓰면 이용권으로)
  *   · 무료로 받은 답 2개마다 그 아래에 광고 카드(AdSlot variant=card · home_top 광고를 같이 씀 · 답마다 다른 업체)
  *   이용권(한 달·6개월·1년 — src/lib/pass.js PLANS)이 있으면 사용량 크게 · 광고 없음
  *   대화는 agent_chats 에 저장 — 왼쪽 대화 목록(휴대폰은 '대화 목록' 버튼)에서 다시 연다 · 주소 ?c=번호 로 새로고침해도 이어짐
- *   1년 이용권 79,000원 — 계좌 입금 → '입금했어요' → 관리자 승인되면 바로 열림 (rpc agent_order, components/PassSheet)
+ *   이용권 한 달 10,900원 · 1년 79,000원 — 계좌 입금 → '입금했어요' → 관리자 승인되면 바로 열림 (rpc agent_order, components/PassSheet)
  *   면접 예상질문 · 꼬리질문은 처음 화면 타일에서 뺐다 — 수시 면접 준비(/prep)에서 한다
  *   에이전트 (sql/sm_96): 물꼬가 기억하는 나(물꼬 노트 — 대화마다 물꼬가 스스로 고침) · 해 줄까요? 카드 [[할일:번호]] (면접 준비에 학교 넣기 · 효과 시험 만들기)
  * DB: sql/sm_76 · sm_77 · sm_78_agent.sql · sm_80_agent_order.sql · 서버 함수: supabase/functions/agent
  */
 
+// 2026-11-06 사용자 모으기 — 물꼬 안 유료 기능 무료 (서버 agent/core.ts FREE_OPEN 과 같이 바꾼다)
+//   결제 안내 · 요금제 팝업을 띄우지 않는다 · 무료 사용량은 그대로 (새벽 5시에 다시) · 생기부 예상질문만 [[이용권]]
+const FREE_OPEN = true;
 const NAVY = "#1E2A5A";
 const PINK = "#FD1673";
 const WIDTH = "mx-auto max-w-2xl px-4 sm:px-5";
@@ -240,7 +243,7 @@ function RoutineSaveCard({ text, onBuy }) {
     // 다이어리에 넣으면서 효과 시험도 만들어졌으면 → 바로 시험 화면으로 (지금 10문제)
     if (r?.count && r?.link) return nav(r.link, { state: { from: "agent", diary: true, test: r.test } });
     if (r?.count) return nav("/plan", { state: { from: "agent", diary: true } });
-    if (r?.need_pay) { setState(""); return onBuy?.(); } // 학습 다이어리 · 자기주도학습법은 1년 이용권 전용
+    if (r?.need_pay) { setState(""); return FREE_OPEN ? setState("오늘 무료 사용량을 다 썼어요. 새벽 5시에 다시 채워져요.") : onBuy?.(); }
     setState(r?.error ?? "잠시 후 다시 해 주세요");
   }
   return (
@@ -251,7 +254,7 @@ function RoutineSaveCard({ text, onBuy }) {
         {state === "busy" ? "다이어리에 넣고 시험 문제 만드는 중… (30초쯤)" : "학습 다이어리에 넣고 자기주도학습법 시작 ›"}
       </button>
       {state && state !== "busy" && <p className="mt-2 text-[12.5px] font-bold text-red-500">{state}</p>}
-      <p className="mt-2 text-center text-[11.5px] text-gray-400">학습 다이어리 · 자기주도학습법은 1년 이용권 전용이에요</p>
+      {!FREE_OPEN && <p className="mt-2 text-center text-[11.5px] text-gray-400">학습 다이어리 · 자기주도학습법은 이용권 전용이에요</p>}
     </div>
   );
 }
@@ -275,8 +278,8 @@ function ActionCard({ id, onBuy }) {
     let r = data;
     if (error) { try { r = await error.context?.json?.(); } catch { r = null; } }
     setBusy("");
-    if (r?.need_pay && r?.pass_only) return onBuy?.(); // 자기주도학습법은 1년 이용권 전용
-    if (r?.need_pay) return setErr("오늘 무료 사용량을 다 썼어요. 새벽 5시에 다시 채워지고, 1년 이용권이면 바로 계속 쓸 수 있어요.");
+    if (r?.need_pay && r?.pass_only && !FREE_OPEN) return onBuy?.(); // 자기주도학습법은 이용권 전용
+    if (r?.need_pay) return setErr(FREE_OPEN ? "오늘 무료 사용량을 다 썼어요. 새벽 5시에 다시 채워져요." : "오늘 무료 사용량을 다 썼어요. 새벽 5시에 다시 채워지고, 이용권(한 달 10,900원부터)이면 바로 계속 쓸 수 있어요.");
     if (!r || r.error) return setErr(r?.error ?? "잠시 후 다시 해 주세요");
     setRow((x) => ({ ...x, status: r.status, result: r }));
   }
@@ -553,7 +556,7 @@ function Kid({ text }) {
 /* 완성본 → 한글 · 워드 · PDF 받기 (lib/taskDoc · docx 는 누를 때만 불러온다 · AI 다시 안 부름) */
 const DOC_LABEL = { hwp: "한글 파일 받기", docx: "워드 파일 받기", pdf: "PDF로 저장하기" };
 /* 보고서 디자인하러 가기 — 완성본을 디자인 보고서 칸에 담고(school_task to_report) 바로 /inquiry/:id/report 로 */
-function DesignGo({ taskId }) {
+export function DesignGo({ taskId }) {
   const nav = useNavigate();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -584,7 +587,7 @@ function DesignGo({ taskId }) {
   );
 }
 
-function DocButton({ taskId, kind, paid = true, onBuy }) {
+export function DocButton({ taskId, kind, paid = true, onBuy }) {
   const [state, setState] = useState(""); // "" · making · done · fail · popup · copied
   async function getTask() {
     const { data } = await supabase.from("school_tasks").select("title,subject,draft").eq("id", taskId).maybeSingle();
@@ -592,10 +595,10 @@ function DocButton({ taskId, kind, paid = true, onBuy }) {
     return data;
   }
   async function make() {
-    // 완성본은 무료로 보여 주고, 파일로 가져갈 때 1년 이용권
-    if (!paid) {
+    // 완성본 파일(한글 · 워드 · PDF)도 무료 (FREE_OPEN)
+    if (!paid && !FREE_OPEN) {
       track("paywall_doc", kind);
-      return onBuy?.({ reason: "doc", title: "완성본 파일은 1년 이용권으로 받아요", desc: "완성본 · 채점 · 세특 예상 문장까지는 무료예요. 한글 · 워드 · PDF 파일로 받으려면 1년 이용권이 필요해요." });
+      return onBuy?.({ reason: "doc", title: "완성본 파일은 이용권으로 받아요", desc: "완성본 · 채점 · 세특 예상 문장까지는 무료예요. 한글 · 워드 · PDF 파일로 받으려면 이용권이 필요해요. 한 달 10,900원부터예요." });
     }
     setState("making");
     try {
@@ -919,7 +922,7 @@ function UsageBar({ usage, pending, className = "mt-3" }) {
     <div className={`${className} rounded bg-white px-4 py-3 ring-1 ring-black/5`}>
       <div className="flex items-center justify-between gap-2 whitespace-nowrap text-[12.5px]">
         <p className="font-bold text-gray-800">{reset ? "이번 주 사용량" : usage.free_daily ? "오늘 무료 사용량" : "무료 맛보기"}</p>
-        <p className="font-extrabold" style={{ color: full ? PINK : NAVY }}>{usage.paid_until || usage.left_q == null ? `${usage.pct}% 사용됨` : full ? "다 썼어요" : `질문 약 ${usage.left_q}개 남음`}</p>
+        <p className="font-extrabold" style={{ color: full ? PINK : NAVY }}>{usage.paid_until ? `${usage.pct}% 사용됨` : full ? "다 썼어요" : `${Math.max(0, 100 - usage.pct)}% 남음`}</p>
       </div>
       {usage.paid_until && <p className="mt-1 inline-block rounded bg-[#EEF2FF] px-1.5 py-0.5 text-[11px] font-bold" style={{ color: NAVY }}>이용권 · {until}까지</p>}
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-100">
@@ -1063,26 +1066,73 @@ async function askAgent(payload, onStep) {
 const OPENING_GAP = 3 * 3600 * 1000; // 먼저 말 걸기 팝업을 닫은 뒤 다시 띄우기까지 (3시간)
 
 /* 물꼬가 먼저 말 걸기 팝업 — 물꼬 캐릭터 + 말풍선 + 버튼 (휴대폰은 아래에서 올라옴) */
-function OpeningPopup({ text, onClose }) {
+/* 이번 달 학교 수행평가 — 이미 낸 건 체크 (물꼬 첫 팝업 · sql/sm_121 eval_checks) */
+export function TaskChecklist({ plan, onCheck, onAsk, limit = 6 }) {
+  const [more, setMore] = useState(false);
+  const m = plan?.months?.[0];
+  if (!m?.tasks?.length) return null;
+  const school = plan.school_name || plan.school;
+  const list = [...m.tasks].sort((a, b) => Number(Boolean(a.done)) - Number(Boolean(b.done)) || Number(Boolean(b.doing)) - Number(Boolean(a.doing)));
+  const left = list.filter((t) => !t.done).length;
+  const shown = more ? list : list.slice(0, limit);
+  return (
+    <div className="bg-white px-4 py-3.5 ring-1 ring-black/5">
+      <p className="text-[14px] font-extrabold text-gray-900">{school} {m.month}월 수행평가 <span className="font-bold text-gray-500">{list.length}개 · 남은 {left}개</span></p>
+      <p className="mt-0.5 text-[12px] text-gray-500">이미 낸 건 왼쪽 네모를 체크해 줘. 다음부턴 남은 것만 알려 줄게.</p>
+      <div className="mt-2.5 space-y-1.5">
+        {shown.map((t) => {
+          const auto = t.done && !t.checked; // 물꼬에서 끝낸 것
+          return (
+            <div key={t.id ?? `${t.subject}${t.title}`} className={`flex items-stretch bg-[#F7F8FA] ${t.done ? "opacity-70" : ""}`}>
+              <button onClick={() => !auto && t.id && onCheck(t)} disabled={auto || !t.id} className="flex w-11 flex-none items-center justify-center">
+                <span className={`relative block h-[20px] w-[20px] border-2 ${t.done ? "border-sm-navy bg-sm-navy" : "border-gray-300 bg-white"}`}>
+                  {t.done && <span className="absolute left-[5px] top-[1px] block h-[11px] w-[5px] rotate-45 border-b-2 border-r-2 border-white" />}
+                </span>
+              </button>
+              <button onClick={() => onAsk(t.doing ? `${t.subject} 수행평가 '${t.title}' 이어서 하자` : `${t.subject} 수행평가 '${t.title}' 준비하기`)} className="min-w-0 flex-1 py-2 pr-3 text-left">
+                <b className={`block truncate text-[13px] font-bold ${t.done ? "text-gray-500 line-through" : "text-gray-900"}`}>{t.subject} · {t.title}</b>
+                <small className="text-[11.5px] text-gray-500">
+                  {t.done ? (t.checked ? "했어요" : "물꼬에서 완료") : t.doing ? "하는 중" : `${t.points ?? "?"}점 · ${t.period || "시기 미정"}`}
+                  {!t.done && t.due && <b className="ml-1.5 font-extrabold text-[#FD1673]">{m.month}월 마감</b>}
+                </small>
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      {!more && list.length > limit && <button onClick={() => setMore(true)} className="mt-2 text-[12.5px] font-bold text-gray-500">{list.length - limit}개 더 보기</button>}
+    </div>
+  );
+}
+
+function OpeningPopup({ text, onClose, plan, onCheck }) {
   const { body, questions } = splitChoices(text);
   const opts = questions[0]?.opts ?? [];
+  const nav = useNavigate();
   return (
     <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/45 sm:items-center" onClick={() => onClose()}>
-      <div className="relative w-full max-w-md rounded-t-[28px] bg-[#F4F5F7] px-5 pb-7 pt-4 sm:rounded-[28px]" onClick={(e) => e.stopPropagation()}>
+      <div className="relative flex max-h-[92dvh] w-full max-w-md flex-col bg-[#F4F5F7] px-5 pb-5 pt-4" onClick={(e) => e.stopPropagation()}>
         <button onClick={() => onClose()} className="absolute right-4 top-3 text-[22px] leading-none text-gray-400" aria-label="닫기">×</button>
-        <div className="flex items-end gap-2">
-          <img src="/images/mulkko.png" alt="물꼬" className="-mb-1 w-24 flex-none select-none" draggable="false" />
+        <div className="flex flex-none items-end gap-2">
+          <img src="/images/mulkko.png" alt="물꼬" className="-mb-1 w-16 flex-none select-none" draggable="false" />
           <p className="mb-3 text-[13px] font-extrabold text-sm-orange">물꼬가 먼저 왔어요</p>
         </div>
-        <div className="max-h-[52vh] overflow-y-auto rounded rounded-tl bg-white px-4 py-3.5 text-[14px] leading-relaxed text-gray-700 shadow-sm ring-1 ring-black/5">
-          <Rich text={body} />
+        {/* 이번 달 할 일(체크 목록)을 맨 위에 — 처음 온 학생도 내가 할 일을 바로 보게 · 물꼬 말은 그 아래 */}
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
+          <TaskChecklist plan={plan} onCheck={onCheck} onAsk={(q) => onClose(q)} />
+          <div className="bg-white px-4 py-3.5 text-[14px] leading-relaxed text-gray-700 ring-1 ring-black/5">
+            <Rich text={body} />
+          </div>
+          {plan?.months?.[0]?.tasks?.length > 0 && (
+            <button onClick={() => { onClose(); nav("/my/home"); }} className="w-full py-1 text-center text-[12.5px] font-bold text-sm-navy">내 입시 홈에서 생기부 · 할 일 전체 보기 ›</button>
+          )}
         </div>
-        <div className="mt-3 flex flex-col gap-2">
+        <div className="mt-3 flex flex-none flex-col gap-2">
           {opts.map((o, k) => (
             <button
               key={o.label}
               onClick={() => onClose(o.label)}
-              className={`h-12 w-full rounded px-4 text-[14.5px] font-extrabold ${k === 0 ? "text-white" : "bg-white ring-1 ring-sm-navy/20"}`}
+              className={`min-h-[46px] w-full px-4 py-2 text-[14px] font-extrabold ${k === 0 ? "text-white" : "bg-white ring-1 ring-sm-navy/20"}`}
               style={k === 0 ? { background: NAVY } : { color: NAVY }}
             >
               {o.label}
@@ -1135,12 +1185,24 @@ export default function Agent() {
   const [usage, setUsage] = useState(null); // { pct, reset_at, paid_until, invite }
   const [grade, setGrade] = useState(null); // 물꼬가 보는 학년 (마이페이지 내 정보 → 가입 학년) · "" 이면 모름
   const [needPay, setNeedPay] = useState(false);
+  const [limitPop, setLimitPop] = useState(false); // 다 썼을 때 가운데 안내창 (무료 전환 — 결제 대신)
   const [buy, setBuy] = useState(false); // 업그레이드 팝업 (false 또는 { reason, title, desc } 또는 true)
   const [closedCard, setClosedCard] = useState(false); // 질문 카드를 닫았는지 (새 답이 오면 다시 열림)
   const [pending, setPending] = useState(null); // 입금 확인 중인 이용권 주문
   const [uploading, setUploading] = useState(false); // 수행평가 안내문 사진 올리는 중
   const [opening, setOpening] = useState(""); // 물꼬가 먼저 거는 말 (팝업 · 지난번에 한 것 → 우리 학교 수행평가 → 이어서 할 순서)
   const [openPop, setOpenPop] = useState(false); // 먼저 말 걸기 팝업
+  const [openPlan, setOpenPlan] = useState(null); // 팝업 안 이번 달 할 일 (agent month_plan)
+  async function checkTask(t) {
+    const on = !t.checked;
+    const set = (v) => setOpenPlan((p) => p && { ...p, months: p.months.map((m) => ({ ...m, tasks: m.tasks.map((x) => (x.id === t.id ? { ...x, checked: v, done: v } : x)) })) });
+    set(on);
+    const { error } = on
+      ? await supabase.from("eval_checks").upsert({ eval_task_id: t.id }, { onConflict: "user_id,eval_task_id", ignoreDuplicates: true })
+      : await supabase.from("eval_checks").delete().eq("eval_task_id", t.id);
+    if (error) set(!on);
+    else track(on ? "eval_check" : "eval_uncheck");
+  }
   const openingPick = useRef(null); // 팝업에서 누른 버튼 (그 대화에만 물꼬가 먼저 건 말을 붙인다)
   function closeOpening(pick) {
     setOpenPop(false);
@@ -1160,6 +1222,20 @@ export default function Agent() {
   const [showList, setShowList] = useState(false); // 휴대폰 대화 목록
   const [params, setParams] = useSearchParams();
   const endRef = useRef(null);
+  // 맨 아래가 입력창에 가려 있으면 '맨 아래로' 버튼 (답이 길거나 카드가 밑에 붙었을 때 — 2026-11-06)
+  const [below, setBelow] = useState(false);
+  useEffect(() => {
+    const check = () => {
+      const el = endRef.current;
+      if (!el) return setBelow(false);
+      setBelow(el.getBoundingClientRect().top > window.innerHeight - 110); // 입력창 높이만큼 위
+    };
+    check();
+    window.addEventListener("scroll", check, { passive: true });
+    window.addEventListener("resize", check);
+    const t = setInterval(check, 800); // 답이 늘어나는 동안 · 카드가 펼쳐질 때
+    return () => { window.removeEventListener("scroll", check); window.removeEventListener("resize", check); clearInterval(t); };
+  }, []);
   const lastBotRef = useRef(null); // 마지막 AI 답의 첫머리 — 답이 오면 여기부터 보이게
   const askedRef = useRef(false); // 홈에서 넘어온 질문을 입력창에 한 번만 적기
   // 물꼬가 새로 기억한 것 — 답 아래 '물꼬가 기억했어요' 한 줄 (ChatGPT '메모리 업데이트됨'처럼)
@@ -1202,8 +1278,12 @@ export default function Agent() {
     // 물꼬가 먼저 말 걸기 — 팝업 (보던 대화를 여는 게 아닐 때 · 회원마다 · 닫으면 3시간 동안은 다시 안 뜸)
     let seen = false;
     try { seen = Date.now() - Number(localStorage.getItem(`sm_opening_${user.id}`) || 0) < OPENING_GAP; } catch { /* 저장소를 못 쓰면 띄운다 */ }
-    if (!c && !q && !sh && !seen) supabase.functions.invoke("agent", { body: { action: "opening" } }).then(({ data }) => {
+    if (!c && !q && !sh && !seen) Promise.all([
+      supabase.functions.invoke("agent", { body: { action: "opening" } }),
+      supabase.functions.invoke("agent", { body: { action: "month_plan" } }).catch(() => ({ data: null })), // 이번 달 할 일 체크 목록
+    ]).then(([{ data }, mp]) => {
       if (!data?.text) return;
+      setOpenPlan(mp?.data ?? null);
       setOpening(data.text);
       setOpenPop(true);
       track("opening_view");
@@ -1250,7 +1330,7 @@ export default function Agent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [msgs.length, busy, paidNow]);
   useEffect(() => {
-    if (paidNow || !usage || usage.pct >= 100) return;
+    if (FREE_OPEN || paidNow || !usage || usage.pct >= 100) return; // 무료로 연 동안은 사용량 팝업(요금제 안내)을 띄우지 않는다
     const step = usage.pct >= 80 ? 80 : usage.pct >= 50 ? 50 : 0;
     if (!step) return;
     const key = `sm_upgrade_${step}`;
@@ -1260,7 +1340,11 @@ export default function Agent() {
     } catch {
       return;
     }
-    setBuy({ reason: `usage${step}`, title: `무료 사용량을 ${usage.pct}% 썼어요`, desc: "다 쓰면 물꼬를 더 쓸 수 없어요. 1년 이용권이면 무제한 · 광고 없이 계속 써요." });
+    // 무료는 다 써도 새벽 5시에 다시 채워진다 — '더 못 쓴다'고 겁주지 않고, 기다리기 싫을 때 이용권
+    const left = `${100 - usage.pct}%`; // 질문 개수가 아니라 실제 쓴 양(토큰) 기준
+    setBuy(usage.free_once
+      ? { reason: `usage${step}`, title: `무료 맛보기가 ${left} 남았어요`, desc: "맛보기를 다 쓰면 그다음부터는 매일 새벽 5시에 질문이 다시 채워져요. 기다리지 않고 바로 계속 쓰려면 이용권이에요 (한 달 10,900원부터)." }
+      : { reason: `usage${step}`, title: `오늘 무료 사용량이 ${left} 남았어요`, desc: "다 써도 내일 새벽 5시에 다시 채워져요. 기다리지 않고 바로 계속 쓰려면 이용권이에요 (한 달 10,900원부터)." });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usage?.pct, paidNow]);
 
@@ -1319,7 +1403,8 @@ export default function Agent() {
     if (data?.usage) setUsage(data.usage);
     if (data?.need_pay) {
       setNeedPay(true);
-      setBuy({ reason: "limit", title: "오늘 무료 사용량을 다 썼어요", desc: "새벽 5시에 다시 채워져요. 지금 바로 계속 쓰려면 1년 이용권으로 물꼬를 무제한 · 광고 없이 써요." });
+      if (FREE_OPEN) setLimitPop(true);
+      if (!FREE_OPEN) setBuy({ reason: "limit", title: "오늘 무료 사용량을 다 썼어요", desc: "새벽 5시에 다시 채워져요. 지금 바로 계속 쓰려면 이용권(한 달 10,900원부터)으로 물꼬를 무제한 · 광고 없이 써요." });
       setMsgs((m) => m.slice(0, withOpening ? -2 : -1));
       setInput(q);
       return;
@@ -1402,7 +1487,19 @@ export default function Agent() {
 
         {/* 사용량 — 컴퓨터는 왼쪽 목록 위 · 휴대폰은 위쪽 ☰ 전체 서비스 안 (components/Header) · 그 사이 폭(태블릿)만 여기 */}
         <div className="hidden sm:block md:hidden"><UsageBar usage={usage} pending={pending} /></div>
-        {openPop && opening && <OpeningPopup text={opening} onClose={closeOpening} />}
+        {openPop && opening && <OpeningPopup text={opening} onClose={closeOpening} plan={openPlan} onCheck={checkTask} />}
+        {limitPop && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-6" onClick={() => setLimitPop(false)}>
+            <div className="w-full max-w-sm bg-white p-6 text-center" onClick={(e) => e.stopPropagation()}>
+              <p className="text-[17px] font-black text-gray-900">오늘 무료 사용량을 다 썼어요</p>
+              <p className="mt-2 text-[14px] leading-relaxed text-gray-600">
+                {(() => { const h = new Date().getHours(); return h < 5 ? "오늘 새벽 5시" : "내일 새벽 5시"; })()}에 다시 채워져요.
+                <br />보내려던 질문은 입력창에 그대로 남겨 뒀어요.
+              </p>
+              <button onClick={() => setLimitPop(false)} className="mt-5 h-11 w-full bg-sm-navy text-[14.5px] font-extrabold text-white">확인</button>
+            </div>
+          </div>
+        )}
         <UpgradeModal
           open={Boolean(buy) && !paid}
           reason={buy?.reason ?? "button"}
@@ -1616,7 +1713,7 @@ export default function Agent() {
               )}
               {/* 광고는 답 2개마다 한 번 (2번째 · 4번째 · 6번째 답 아래) */}
               {!paid && msgs.slice(0, i + 1).filter((x) => x.role === "assistant").length % 2 === 0 && (
-                <AdSlot slot="home_top" variant="card" pick={msgs.slice(0, i + 1).filter((x) => x.role === "assistant").length / 2 - 1} onHide={() => setBuy(true)} className="mt-3" />
+                <AdSlot slot="home_top" variant="card" pick={msgs.slice(0, i + 1).filter((x) => x.role === "assistant").length / 2 - 1} onHide={FREE_OPEN ? undefined : () => setBuy(true)} className="mt-3" />
               )}
             </div>
           )))}
@@ -1625,8 +1722,8 @@ export default function Agent() {
           {needPay && (
             <div className="rounded bg-white p-4 ring-1 ring-black/5">
               <p className="text-[15px] font-extrabold text-gray-900">오늘 무료 사용량을 다 썼어요</p>
-              <p className="mt-1 text-[13px] leading-relaxed text-gray-600">새벽 5시에 다시 채워져요. 지금 바로 계속 쓰려면 1년 이용권으로 물꼬를 무제한 · 광고 없이 써요.</p>
-              {pending
+              <p className="mt-1 text-[13px] leading-relaxed text-gray-600">{FREE_OPEN ? "새벽 5시에 다시 채워져요. 그때 이어서 물어봐 주세요." : "새벽 5시에 다시 채워져요. 지금 바로 계속 쓰려면 이용권(한 달 10,900원부터)으로 물꼬를 무제한 · 광고 없이 써요."}</p>
+              {FREE_OPEN ? null : pending
                 ? <p className="mt-3 rounded bg-[#FFF7ED] px-3 py-2.5 text-[12.5px] font-bold text-[#C2410C]">이용권 입금 확인 중이에요. 확인되면 바로 열려요.</p>
                 : <button onClick={() => setBuy({ reason: "limit" })} className="mt-3 h-12 w-full rounded bg-sm-navy text-[14.5px] font-extrabold text-white">요금제 보기 ›</button>}
             </div>
@@ -1636,13 +1733,23 @@ export default function Agent() {
       </div>
 
       <div className="sticky bottom-0 z-30 bg-white pb-[env(safe-area-inset-bottom)]">
+        {below && msgs.length > 0 && (
+          <div className="pointer-events-none absolute -top-14 left-0 right-0 flex justify-center">
+            <button
+              onClick={() => endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })}
+              className="pointer-events-auto h-10 border border-gray-300 bg-white px-4 text-[13px] font-bold text-gray-700 shadow-md hover:border-gray-500"
+            >
+              맨 아래로
+            </button>
+          </div>
+        )}
         {/* 무료 사용량이 절반을 넘으면 입력창 위에 계속 보인다 */}
         {!paid && usage?.pct >= 50 && (
-          <button onClick={() => setBuy({ reason: "bar" })} className={`${WIDTH} flex w-full items-center justify-between gap-2 pt-2.5 text-left`}>
+          <button onClick={() => !FREE_OPEN && setBuy({ reason: "bar" })} className={`${WIDTH} flex w-full items-center justify-between gap-2 pt-2.5 text-left`}>
             <span className="text-[12.5px] font-bold" style={{ color: usage.pct >= 100 ? PINK : "#C2410C" }}>
               {usage.pct >= 100 ? "오늘 무료를 다 썼어요 · 새벽 5시에 다시 채워져요" : `무료 사용량이 ${Math.max(0, 100 - usage.pct)}% 남았어요`}
             </span>
-            <span className="flex-none text-[12.5px] font-extrabold" style={{ color: NAVY }}>요금제 보기 ›</span>
+            {!FREE_OPEN && <span className="flex-none text-[12.5px] font-extrabold" style={{ color: NAVY }}>요금제 보기 ›</span>}
           </button>
         )}
         <div className={`${WIDTH} flex items-end gap-2 py-3`}>

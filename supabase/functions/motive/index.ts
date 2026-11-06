@@ -231,6 +231,20 @@ Deno.serve(async (req) => {
     if (viaAgent) isAdmin = true; // 에이전트에서 부르면 이 기능 횟수는 쓰지 않는다
     if (user && !isAdmin && (await hasPass(admin, user.id))) isAdmin = true; // 이용권이면 횟수 제한 없음
 
+    // 같은 글을 다시 보내면 — 지난 결과를 그대로 (AI가 매번 다른 점수를 내던 문제: 같은 글이 43점 → 0점 · 10/26~ 대화) · 횟수도 안 쓴다
+    //   띄어쓰기 · 줄바꿈만 다른 것도 같은 글로 본다 · 30일 안 · 같은 대학 · 학과
+    if (user) {
+      const key = (v: string) => v.replace(/\s+/g, "");
+      const { data: prev } = await admin.from("motive_queries").select("motive,university,department,result")
+        .eq("user_id", user.id).eq("department", department).gte("created_at", new Date(Date.now() - 30 * 86400000).toISOString())
+        .order("created_at", { ascending: false }).limit(20);
+      const same = (prev ?? []).find((r: any) => key(String(r.motive ?? "")) === key(motive) && String(r.university ?? "") === (university || "") && r.result && typeof r.result.score === "number");
+      if (same) {
+        const c = isAdmin ? null : await creditsOf(admin, { userId: user.id });
+        return json({ ...same.result, from_cache: true, remaining: c ? c.weekly + c.bonus : null, bonus_left: c?.bonus ?? 0, next_open: c?.next ?? null, is_member: true });
+      }
+    }
+
     // 남은 횟수 — 회원: 이번 주 2번 먼저, 다 쓰면 친구 초대로 받은 추가 횟수 / 비회원: 일주일에 1번
     const credit = await creditsOf(admin, user ? { userId: user.id } : { clientId });
     if (!isAdmin && credit.weekly + credit.bonus <= 0) {

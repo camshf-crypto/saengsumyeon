@@ -276,14 +276,15 @@ function ReturnSummary({ s }) {
 
       {/* 가입 후 N일 안 재방문율 */}
       <div className="rounded-xl border border-gray-200 p-5">
-        <p className="text-[12px] text-gray-500">가입 후 N일 안에 다시 온 비율 (고른 기간에 가입한 회원)</p>
+        {/* sql/sm_118 — 고른 기간과 상관없이 최근 60일 가입 회원 기준 */}
+        <p className="text-[12px] text-gray-500">리텐션 · 가입하고 N일 안에 다시 온 비율 (최근 60일 가입 회원)</p>
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[3, 7, 15, 30].map((n) => {
+          {[1, 3, 7, 30].map((n) => {
             const r = ret.find((x) => Number(x.days) === n);
             const rate = r ? pct(r.back, r.base) : null;
             return (
               <div key={n} className="rounded-lg bg-gray-50 p-3">
-                <p className="text-[12px] text-gray-500">{n}일 안</p>
+                <p className="text-[12px] text-gray-500">{n === 1 ? "다음 날" : `${n}일 안`}</p>
                 <p className="mt-1 text-lg font-extrabold text-sm-navy">{rate == null ? "-" : `${rate}%`}</p>
                 <p className="mt-0.5 text-[11px] leading-snug text-gray-400">
                   {r && num(r.base) ? `${num(r.back)} / ${num(r.base)}명` : `가입 ${n}일 지난 회원 없음`}
@@ -293,8 +294,35 @@ function ReturnSummary({ s }) {
           })}
         </div>
         <p className="mt-3 text-[11.5px] leading-snug text-gray-400">
-          각 비율은 그 기간이 다 지난 회원만 넣어서 계산해요. 기간이 짧으면 15일·30일은 비어 보일 수 있으니 [30일]이나 [전체]로 보세요.
+          위에서 고른 기간과 상관없이 최근 60일에 가입한 회원으로 계산해요. 가입한 지 N일이 다 지난 회원만 넣어요.
         </p>
+        {(s.cohorts ?? []).length > 0 && (
+          <table className="mt-4 w-full text-[12.5px]">
+            <thead>
+              <tr className="border-b border-gray-200 text-gray-500">
+                <th className="py-1.5 text-left font-medium">가입한 주</th>
+                <th className="py-1.5 text-right font-medium">가입</th>
+                <th className="py-1.5 text-right font-medium">다음 날</th>
+                <th className="py-1.5 text-right font-medium">7일 안</th>
+                <th className="py-1.5 text-right font-medium">30일 안</th>
+              </tr>
+            </thead>
+            <tbody>
+              {s.cohorts.map((c) => (
+                <tr key={c.week} className="border-b border-gray-100">
+                  <td className="py-1.5 text-gray-700">{md(c.week)} 주</td>
+                  <td className="py-1.5 text-right font-bold text-sm-navy">{num(c.joined)}명</td>
+                  {[["d1", "d1base"], ["d7", "d7base"], ["d30", "d30base"]].map(([k, b]) => (
+                    <td key={k} className="py-1.5 text-right">
+                      {num(c[b]) ? <b className="text-sm-navy">{pct(c[k], c[b])}%</b> : <span className="text-gray-300">-</span>}
+                      {num(c[b]) ? <em className="ml-1 not-italic text-[11px] text-gray-400">{num(c[k])}/{num(c[b])}</em> : null}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );
