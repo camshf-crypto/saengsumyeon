@@ -17,6 +17,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { passUntil } from "../_shared/pass.ts";
 import { PROMPT_MODS, modsForTool, pickModules, studentContext, systemPrompt, updateMemory } from "./context.ts";
+import { areaChat } from "./area.ts";
 import { FREE_OPEN, HISTORY, MAX_ROUNDS, MODEL, cachedOf, chat, clean, cors, json, logUsage, matchUniv, openai } from "./core.ts";
 import { importBoard, stepLabel } from "./extra.ts";
 import { PLAN_GUIDE, PLAN_LINK_RULE, deptOf, hasPlan, makePlan, openingSteps, planAsk, planCard, planFromCard, planWeek, safe, saveWeek, weekStartKST } from "./plan.ts";
@@ -584,9 +585,11 @@ ${PLAN_GUIDE}
       if (isPlanCard) { emit("내 활동 · 생기부 노트 읽는 중"); emit("목표 대학 권장과목 · 전형 · 공부법 찾는 중"); emit("목표에 맞게 입시 플랜 짜는 중 (30초쯤 걸려요)"); }
       const planDirect = isPlanCard ? await planFromCard(db, user, message, usage, paid) : null;
       // 수행평가 완성 (채팅 안에서 고르기 → 질문 → 완성본) — 진행 중이면 카드 답을 여기서 받는다
-      const suh = isPlanCard ? null : await suhaengChat(db, user, message, token, emit, history).catch((e) => { console.error("suhaeng", e); return null; });
-      const quick = planDirect ?? suh ?? await quickForm(db, user.id, user.user_metadata ?? {}, message);
-      if (quick && !isPlanCard && !suh) emit("적을 칸 준비하는 중");
+      // 입시 로드맵 창체 '전공에 더 가깝게 · 활동 하나 더' (agent/area.ts) — 하던 수행평가가 있어도 먼저 (카드 답을 수행평가 단계로 읽지 않게)
+      const area = isPlanCard ? null : await areaChat(db, user, message, emit, history).catch((e) => { console.error("area", e); return null; });
+      const suh = isPlanCard || area ? null : await suhaengChat(db, user, message, token, emit, history).catch((e) => { console.error("suhaeng", e); return null; });
+      const quick = planDirect ?? area ?? suh ?? await quickForm(db, user.id, user.user_metadata ?? {}, message);
+      if (quick && !isPlanCard && !suh && !area) emit("적을 칸 준비하는 중");
       else for (const st of await openingSteps(db, message)) emit(st);
       const student = quick ? "" : await studentContext(db, user.id, user.user_metadata ?? {});
       // 안내문은 기본 + 이번 질문에 필요한 부분만 (context.ts pickModules) — 비용을 줄인다 · 도구를 부르면 그 규칙을 그때 더 넣는다
@@ -708,7 +711,7 @@ ${PLAN_GUIDE}
           const asked = /탐구|주제|세특|로드맵|플랜|학과|진로|생기부|동아리|활동|추천/.test(message);
           const shown = history.some((h: any) => /\[\[\s*노트\s*\]\]/.test(h.content ?? ""));
           if (gs && gs[2] === "0" && asked && !shown && !/\[\[\s*(노트|입력|질문)/.test(answer)) {
-            answer += `\n\n고${Number(gs[1]) - 1 === 1 ? "1" : "1·고2"} 때 한 활동을 생기부 노트에 적어 두면, 다음부터 그 활동에 이어지는 탐구 · 세특 · 로드맵으로 맞춰 드려요.\n[[노트]]`;
+            answer += `\n\n고${Number(gs[1]) - 1 === 1 ? "1" : "1·고2"} 때 한 수행평가 · 탐구를 입시 로드맵(첫 화면)에서 과목을 눌러 적어 두면, 다음부터 그 활동에 이어지는 탐구 · 세특 · 로드맵으로 맞춰 드려요.\n[[노트]]`;
           }
         }
         // 면접 기출 · 생기부 예상질문을 물었는데 면접 준비 버튼을 빠뜨렸으면 — 붙인다 (기출문제는 /prep 에서 연습)

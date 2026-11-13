@@ -65,6 +65,7 @@ const AREAS = [
   { kind: "book", label: "독서", color: "#475569", ask: "독서 흔한가 진단해 줘" },
 ];
 const SRC = { suhaeng: "수행평가 완성", tamgu: "물꼬 탐구", inquiry: "탐구 보고서", self_suhaeng: "수행평가 · 직접 적음", self_tamgu: "탐구 · 직접 적음" };
+const AREA_WORD = { autonomy: "자율", club: "동아리", career: "진로" }; // 창체 '하나 더' (물꼬 agent/area.ts)
 const skey = (x) => String(x ?? "").replace(/\s/g, "");
 const clamp2 = { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" };
 
@@ -99,7 +100,7 @@ const sameSubj = (a, b) => { const x = skey(a), y = skey(b); return !!x && !!y &
 /* ───────── 입시 로드맵 — 당근 목록처럼: 학년 탭 · 과목 한 줄씩 · 누르면 그 과목 · 오른쪽 아래 '+ 과목' ───────── */
 // 물꼬에서 하는 중인 과제 줄 (주제가 정해지면 '진행 중'으로 먼저 들어온다 · 완성하면 완성본으로 바뀜)
 const doingRow = (r) => String(r?.content ?? "").startsWith("진행 중");
-function RoadList({ rows, grade, mine, plan, user, onGo, onAsk, onAdd, onReload, onResume, tabReq, doneMap = {}, onToggleDone }) {
+function RoadList({ rows, grade, mine, plan, user, onGo, onAsk, onAdd, onReload, onResume, tabReq, doneMap = {}, onToggleDone, onMore }) {
   const now = GRADES.includes(grade) ? grade : "고1";
   const [tab, setTab] = useState(now);
   const [open, setOpen] = useState(null); // 누른 과목 { name, rows, tasks } 또는 창체 { area, rows }
@@ -150,7 +151,7 @@ function RoadList({ rows, grade, mine, plan, user, onGo, onAsk, onAdd, onReload,
       <div ref={listRef} className="flex scroll-mt-4 border-b border-gray-200">
         {GRADES.map((g) => (
           <button key={g} onClick={() => setTab(g)} className={`h-11 flex-1 text-[14.5px] font-extrabold ${tab === g ? "border-b-2 border-gray-900 text-gray-900" : "text-gray-400"}`}>
-            {g}{g === now && <span className="ml-1 text-[11px] font-bold text-gray-400">지금</span>}
+            {g}{g === now && user && GRADES.includes(grade) && <span className="ml-1 text-[11px] font-bold text-gray-400">지금</span>}
           </button>
         ))}
       </div>
@@ -205,16 +206,7 @@ function RoadList({ rows, grade, mine, plan, user, onGo, onAsk, onAdd, onReload,
             </div>
 
             {/* 지금 학년이면 바로 시작 — 그 과목만 하는 물꼬 화면 · 이미 완성한 게 있으면 위 큰 버튼 대신 완성본부터 (새로 하기는 맨 아래 작게) */}
-            {tab === now && open.area && (open.area ? (
-              <button onClick={() => (open.area.kind === "career" ? onGo("tp", "진로") : onAsk(open.area.ask))} className="mt-4 h-12 w-full bg-gray-900 text-[15px] font-extrabold text-white">
-                {open.area.kind === "career" ? "진로 탐구 하기" : "물꼬랑 채우기"}
-              </button>
-            ) : (
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <button onClick={() => onGo("sh", open.name)} className="h-12 bg-gray-900 text-[15px] font-extrabold text-white">수행평가 하기</button>
-                <button onClick={() => onGo("tp", open.name)} className="h-12 border border-gray-900 bg-white text-[15px] font-extrabold text-gray-900">탐구 하기</button>
-              </div>
-            ))}
+            {/* 창체 · 독서는 학생이 직접 적는 게 기본 (아래 칸) — 물꼬는 막막할 때만 작게 */}
 
             {open.tasks?.length > 0 && (
               <div className="mt-5">
@@ -236,18 +228,23 @@ function RoadList({ rows, grade, mine, plan, user, onGo, onAsk, onAdd, onReload,
             ]).filter(([k, , list]) => k || list.length || open.area).map(([k, label, list]) => (
               <div key={label} className="mt-6">
                 <div className="flex items-baseline justify-between border-b border-gray-900 pb-1.5">
-                  <p className="text-[15px] font-black text-gray-900">{label}{list.length > 0 && <span className="ml-1.5 text-[12.5px] font-bold text-gray-400">{list.filter((r) => !doingRow(r)).length ? `완성 ${list.filter((r) => !doingRow(r)).length}개` : ""}</span>}</p>
+                  <p className="text-[15px] font-black text-gray-900">{label}{list.length > 0 && <span className="ml-1.5 text-[12.5px] font-bold text-gray-400">{list.filter((r) => !doingRow(r)).length ? `${open.area ? "" : "완성 "}${list.filter((r) => !doingRow(r)).length}개` : ""}</span>}</p>
                 </div>
-                {!list.length && <p className="mt-2 text-[13px] text-gray-500">{tab === now ? (k ? `아직 없어요. 물꼬랑 끝내면 여기에 바로 들어와요.` : "아직 없어요. 물꼬랑 끝내면 여기에 바로 들어와요.") : GRADES.indexOf(tab) < GRADES.indexOf(now) ? "아직 적은 게 없어요. 아래에 적어 두면 들어와요." : "아직 없어요."}</p>}
+                {!list.length && <p className="mt-2 text-[13px] text-gray-500">{tab === now ? (open.area ? "아직 없어요. 아래에 적으면 바로 들어와요." : "아직 없어요. 물꼬랑 끝내면 여기에 바로 들어와요.") : GRADES.indexOf(tab) < GRADES.indexOf(now) ? "아직 적은 게 없어요. 아래에 적어 두면 들어와요." : "아직 없어요."}</p>}
                 <div className="mt-2.5 space-y-3">
                   {list.map((r, i) => (
                     <div key={r.id} className={`border-l-2 pl-3 ${doingRow(r) ? "border-gray-300" : "border-gray-900"}`}>
-                      <small className="text-[11.5px] font-bold text-gray-400">{doingRow(r) ? "하는 중" : SRC[r.source] ?? "직접 적음"} · {day(r.at)}</small>
+                      <small className="text-[11.5px] font-bold text-gray-400">{doingRow(r) ? "하는 중" : /^\(할 계획\)/.test(r.content || "") ? "할 계획 · 물꼬와 정함" : SRC[r.source] ?? "직접 적음"} · {day(r.at)}</small>
                       {r.title && <b className="mt-0.5 block text-[14px] font-bold text-gray-900">{r.title}</b>}
                       {doingRow(r) ? (
                         <button onClick={() => onResume(r)} className="mt-2 h-10 w-full border border-gray-900 text-[13.5px] font-extrabold text-gray-900">물꼬에서 이어서 하기 ›</button>
-                      ) : <p className="mt-1 whitespace-pre-line text-[13.5px] leading-relaxed text-gray-700" style={clamp2}>{r.content}</p>}
+                      ) : <p className="mt-1 whitespace-pre-line text-[13.5px] leading-relaxed text-gray-700" style={clamp2}>{String(r.content ?? "").replace(/^\(할 계획\)\s*/, "")}</p>}
                       {!doingRow(r) && (r.source === "suhaeng" || r.source === "tamgu") && <TaskFiles taskId={Number(r.source_id)} startOpen={i === 0} />}
+                      {open.area && AREA_WORD[open.area.kind] && !doingRow(r) && r.title && !/^\(할 계획\)/.test(r.content || "") && (
+                        <button onClick={() => onMore(AREA_WORD[open.area.kind], r.title)} className="mt-2 h-9 border border-gray-300 bg-white px-3 text-[12.5px] font-bold text-gray-800 hover:border-gray-900">
+                          생기부 더 잘 쓰려면 · 전공에 가까운 활동 하나 더 ›
+                        </button>
+                      )}
                       {r.source === "inquiry" && <Link to={`/inquiry/${r.source_id}/report`} className="mt-1.5 inline-block text-[12.5px] font-bold text-gray-700 hover:underline">보고서 열기 · PDF 저장 ›</Link>}
                     </div>
                   ))}
@@ -276,6 +273,7 @@ function RoadList({ rows, grade, mine, plan, user, onGo, onAsk, onAdd, onReload,
               );
             })()}
             {/* 지난 학년: 적기만 (처음부터 열림) · 지금 학년: 물꼬로 시작 + 이미 한 것 적기(접힘) · 다음 학년: 아직 없음 */}
+            {!user && <button onClick={() => onAdd(tab)} className="mt-5 h-12 w-full bg-gray-900 text-[15px] font-extrabold text-white">{open.area ? "로그인하고 내 활동 적기" : "로그인하고 시작하기"}</button>}
             {user && GRADES.indexOf(tab) <= GRADES.indexOf(now) && <ActivityForm key={`${tab}${open.name}`} grade={tab} past={tab !== now} kind={open.area ? open.area.kind : "subject"} subject={open.area ? "" : open.name} onAdded={onReload} />}
             {GRADES.indexOf(tab) > GRADES.indexOf(now) && <p className="mt-5 text-[13px] text-gray-500">{tab}이 되면 여기서 수행평가 · 탐구를 시작해요. 지금은 들을 과목만 미리 골라 둘 수 있어요.</p>}
           </div>
@@ -401,20 +399,28 @@ function SubjectPicker({ grade, have, dept, onClose, onSave }) {
 // 과목 · 활동 하나에 '내가 한 활동' 적기 → 내 생기부 (sql/sm_122 road_add_activity) · 물꼬가 새 탐구 · 수행평가를 짤 때 읽는다
 function ActivityForm({ grade, kind, subject, onAdded, past = false }) {
   // 처음엔 접혀 있다 (위의 '수행평가 하기 · 탐구 하기'와 헷갈리지 않게) — 열면 수행평가 칸 · 탐구 칸 따로 (처음 설정과 같은 모양)
-  const [open, setOpen] = useState(past); // 지난 학년은 처음부터 열어 둔다 (그 학년엔 적는 것만 한다)
+  const isSubj = kind === "subject";
+  // 지난 학년 · 창체(자율 · 동아리 · 진로 · 독서)는 처음부터 열어 둔다 — 창체는 학생 본인만 아는 거라 직접 적는 게 기본
+  const [open, setOpen] = useState(past || !isSubj);
   const [sh, setSh] = useState("");
   const [tp, setTp] = useState("");
+  const [body, setBody] = useState(""); // 창체: 무엇을 했는지 · 배운 것
   const [state, setState] = useState("");
-  const isSubj = kind === "subject";
+  const AREA_FORM = {
+    autonomy: ["활동명 (예: 학급 자치회 환경부장)", "무엇을 했는지 · 맡은 역할 · 배운 점"],
+    club: ["동아리 이름 · 활동명 (예: 건축동아리 부스 운영)", "무엇을 했는지 · 맡은 역할 · 배운 점"],
+    career: ["활동명 (예: 진로 박람회 · 학과 탐방)", "무엇을 했는지 · 알게 된 것 · 진로와 이어진 점"],
+    book: ["책 제목 · 지은이", "왜 읽었는지 · 읽고 생각한 것"],
+  }[kind] ?? ["활동명", "무엇을 했는지"];
   async function save() {
     const rows = isSubj ? [["suhaeng", sh], ["tamgu", tp]] : [[kind === "career" ? "tamgu" : "", sh]];
     const todo = rows.filter(([, t]) => t.trim());
     if (!todo.length) return;
     setState("saving");
-    const res = await Promise.all(todo.map(([type, t]) => supabase.rpc("road_add_activity", { p_grade: grade, p_kind: kind, p_subject: subject || "", p_title: t.trim(), p_content: "", p_type: type })));
+    const res = await Promise.all(todo.map(([type, t]) => supabase.rpc("road_add_activity", { p_grade: grade, p_kind: kind, p_subject: subject || "", p_title: t.trim(), p_content: isSubj ? "" : body.trim(), p_type: type })));
     if (res.some((r) => r.error)) return setState("fail");
     track("road_activity_add");
-    setSh(""); setTp(""); setState("ok");
+    setSh(""); setTp(""); setBody(""); setState("ok");
     onAdded?.();
   }
   if (!open) return (
@@ -425,14 +431,17 @@ function ActivityForm({ grade, kind, subject, onAdded, past = false }) {
   const box = "mt-1 h-11 w-full border border-gray-300 px-3 text-[14px] outline-none focus:border-gray-900";
   return (
     <div className="mt-5 border-t border-gray-100 pt-4">
-      <p className="text-[12.5px] font-bold text-gray-400">{past ? `${grade} 때 한 것 적기` : "이미 한 것 적기"} — 물꼬가 다음 탐구 · 수행평가에 이어서 써요</p>
+      <p className="text-[12.5px] font-bold text-gray-400">{isSubj ? `${past ? `${grade} 때 한 것 적기` : "이미 한 것 적기"} — 물꼬가 다음 탐구 · 수행평가에 이어서 써요` : `${grade} ${kind === "book" ? "읽은 책" : "활동"} 적기 — 내가 한 건 내가 제일 잘 알아요`}</p>
       {isSubj ? (
         <>
           <label className="mt-2 block text-[12px] font-bold text-gray-500">수행평가<input value={sh} onChange={(e) => setSh(e.target.value)} placeholder={`${subject} 수행평가 제목`} className={box} /></label>
           <label className="mt-2 block text-[12px] font-bold text-gray-500">탐구<input value={tp} onChange={(e) => setTp(e.target.value)} placeholder={`${subject} 탐구 주제`} className={box} /></label>
         </>
       ) : (
-        <input value={sh} onChange={(e) => setSh(e.target.value)} placeholder="활동 이름 (예: 과학 동아리 실험 발표)" className={`mt-2 ${box}`} />
+        <>
+          <label className="mt-2 block text-[12px] font-bold text-gray-500">{kind === "book" ? "책" : "활동명"}<input value={sh} onChange={(e) => setSh(e.target.value)} placeholder={AREA_FORM[0]} className={box} /></label>
+          <label className="mt-2 block text-[12px] font-bold text-gray-500">내용<textarea value={body} onChange={(e) => setBody(e.target.value)} rows={4} maxLength={1200} placeholder={AREA_FORM[1]} className="mt-1 w-full resize-none border border-gray-300 px-3 py-2.5 text-[14px] leading-relaxed outline-none focus:border-gray-900" /></label>
+        </>
       )}
       <button onClick={save} disabled={(!sh.trim() && !tp.trim()) || state === "saving"} className="mt-2 h-11 w-full border border-gray-900 text-[14px] font-extrabold text-gray-900 disabled:border-gray-200 disabled:text-gray-300">
         {state === "saving" ? "저장 중…" : state === "ok" ? "저장했어요 · 더 적기" : state === "fail" ? "저장 못 했어요 · 다시 누르기" : "내 생기부에 넣기"}
@@ -728,6 +737,12 @@ export default function MyHome({ simple = false }) { // simple: 첫 화면 (로�
     track("road_resume");
     nav(`/agent?go=${encodeURIComponent(`${r.subject || "진로"} ${r.source === "tamgu" ? "탐구" : "수행평가"} '${r.title}' 이어서 하자`)}`);
   };
+  // 창체 — 학생이 적은 활동에서 이어서 전공에 더 가까운 활동 하나 더 (물꼬가 3개 제안 → 고르면 로드맵에 '할 계획'으로)
+  const areaMore = (area, title) => {
+    if (!user) return setGate(true);
+    track("road_area_more");
+    nav(`/agent?go=${encodeURIComponent(`(로드맵) ${area} '${String(title).replace(/'/g, "’").slice(0, 60)}' 하나 더`)}`);
+  };
   const go = (kind, subj) => {
     if (!user) return setGate(true);
     track(`road_${kind}`);
@@ -929,7 +944,7 @@ export default function MyHome({ simple = false }) { // simple: 첫 화면 (로�
 
         <div className="mt-4">
           {user && record === null ? <p className="py-10 text-center text-[13px] text-gray-400">불러오는 중…</p>
-            : <RoadList rows={record ?? []} grade={grade} mine={mine} plan={plan} user={user} onGo={go} onAsk={ask} onAdd={(g) => (user ? setPicker(g) : setGate(true))} onReload={loadRecord} onResume={resume} tabReq={tabReq} doneMap={doneMap} onToggleDone={toggleDone} />}
+            : <RoadList rows={record ?? []} grade={grade} mine={mine} plan={plan} user={user} onGo={go} onAsk={ask} onAdd={(g) => (user ? setPicker(g) : setGate(true))} onReload={loadRecord} onResume={resume} tabReq={tabReq} doneMap={doneMap} onToggleDone={toggleDone} onMore={areaMore} />}
         </div>
         {opening && !setup && <OpeningPopup text={opening} onClose={closeOpening} plan={plan} onCheck={toggleCheck} />}
         {setup && mineOk && (
