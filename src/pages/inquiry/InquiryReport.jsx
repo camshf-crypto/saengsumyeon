@@ -158,7 +158,7 @@ function cleanHtml(html) {
  * offsets: 옮긴 자리 { 덩어리: [x, y] } · extras: 학생이 복사·추가한 상자 · hidden: 숨긴 덩어리
  * movable: 옮기기 켜짐 · selected: 고른 덩어리 · onSelect(정보) · onMove(덩어리, [x, y]) · onEditExtra(아이디, html)
  */
-function Sheet({ page, scale = 1, onFit, offsets, extras, hidden, styles, texts, pageFont, movable = false, selected, selectedKeys = [], selBox, toolbar, onSelect, onMove, onEditExtra, onEditText, onResize }) {
+function Sheet({ page, scale = 1, onFit, offsets, extras, hidden, styles, texts, pageFont, movable = false, selected, selectedKeys = [], selBox, toolbar, onSelect, onMove, onEditExtra, onEditText, onResize, editReq = 0, touch = false }) {
   const inner = useRef(null);
   const scope = useRef(`sh${Math.random().toString(36).slice(2, 8)}`).current; // 이 장에만 적용되는 이름
   const kRef = useRef(1);
@@ -312,13 +312,26 @@ function Sheet({ page, scale = 1, onFit, offsets, extras, hidden, styles, texts,
     const ex = e.target.closest("[data-ex]");
     const blk = ex ?? e.target.closest("[data-bk]");
     if (!blk || !inner.current.contains(blk)) return;
+    startEdit(blk, ex, e.clientX, e.clientY);
+  }
+  // 휴대폰 '글 고치기' 버튼 — 고른 상자를 바로 고치기 (두 번 누르기가 잘 안 되는 휴대폰용)
+  useEffect(() => {
+    if (!editReq || !movable || !selected || !inner.current) return;
+    const blk = inner.current.querySelector(`[data-bk="${selected}"]`);
+    if (!blk) return;
+    const ex = blk.closest("[data-ex]") ?? (blk.matches("[data-ex]") ? blk : null);
+    startEdit(blk, ex && inner.current.contains(ex) ? ex : null, null, null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editReq]);
+  function startEdit(blk0, ex, cx, cy) {
+    const blk = ex ?? blk0;
     // 사진만 있는 칸은 글이 없으니 고치지 않는다 (사진은 오른쪽 '사진 올리기'로)
     if (!ex && !(blk.textContent ?? "").trim()) return;
     const key = blk.getAttribute("data-bk");
     blk.contentEditable = "true";
     blk.focus();
-    // 두 번 클릭한 자리에 글자 커서를 둔다
-    const range = document.caretRangeFromPoint?.(e.clientX, e.clientY);
+    // 두 번 클릭한 자리에 글자 커서를 둔다 (버튼으로 열면 글 끝에)
+    const range = cx == null ? (() => { const rg = document.createRange(); rg.selectNodeContents(blk); rg.collapse(false); return rg; })() : document.caretRangeFromPoint?.(cx, cy);
     if (range) {
       const sel = window.getSelection();
       sel.removeAllRanges();
@@ -357,8 +370,8 @@ function Sheet({ page, scale = 1, onFit, offsets, extras, hidden, styles, texts,
           data-keep-select
           title="끌어서 크기 바꾸기"
           onPointerDown={onResizeDown}
-          style={{ position: "absolute", zIndex: 21, left: (selBox.x + selBox.w) * r - 9, top: (selBox.y + selBox.h) * r - 9, touchAction: "none" }}
-          className="h-[18px] w-[18px] cursor-nwse-resize rounded-[4px] border-2 border-white bg-indigo-600 shadow-md"
+          style={{ position: "absolute", zIndex: 21, left: (selBox.x + selBox.w) * r - (touch ? 14 : 9), top: (selBox.y + selBox.h) * r - (touch ? 14 : 9), touchAction: "none" }}
+          className={`${touch ? "h-7 w-7" : "h-[18px] w-[18px]"} cursor-nwse-resize rounded-[4px] border-2 border-white bg-indigo-600 shadow-md`}
         />
       )}
       <div
@@ -822,6 +835,28 @@ export default function InquiryReport() {
   // 물꼬 탐구 설계에서 온 보고서(school_task_id)는 디자인까지 열고, PDF 저장할 때만 이용권
   const locked = inq && !inq.paid && !oldTrial && !inq.school_task_id && isAdmin === false;
   const [pdfWall, setPdfWall] = useState(false); // PDF 저장을 눌렀을 때 결제 창
+  // 휴대폰 — 화면 폭에 맞춰 A4를 줄이고, 끌어서 옮기기 · 색 바꾸기 대신 칸 고치기만 (2026-11-13)
+  const [vw, setVw] = useState(() => (typeof window === "undefined" ? 1280 : window.innerWidth));
+  useEffect(() => {
+    const on = () => setVw(window.innerWidth);
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
+  const mobile = vw < 768;
+  const [tool, setTool] = useState("ink"); // 휴대폰 아래 패널에서 지금 보는 줄: ink 글자색 · bg 바탕색 · text 글씨 · size 상자 크기
+  const [editReq, setEditReq] = useState(0);
+  // 휴대폰 — 고른 상자가 아래 패널에 가려지면 화면을 조금 올린다
+  useEffect(() => {
+    if (!mobile || !sel?.key) return;
+    const t = setTimeout(() => {
+      const el = document.querySelector("[data-edit-sheet] .bk-sel");
+      if (!el) return;
+      const b = el.getBoundingClientRect(), limit = window.innerHeight - 180;
+      if (b.bottom > limit) window.scrollBy({ top: Math.min(b.bottom - limit, b.top - 80), behavior: "smooth" });
+    }, 60);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel?.key, mobile]); // '글 고치기' 버튼 (휴대폰은 두 번 누르기 대신)
 
   if (authLoading) return <div className="py-40 text-center text-gray-400">불러오는 중…</div>;
   if (!user) return <div className="py-40 text-center text-gray-500">로그인이 필요합니다.</div>;
@@ -838,7 +873,7 @@ export default function InquiryReport() {
     <div className="min-h-screen bg-gray-100">
       {/* 인쇄할 때는 A4 네 장만 */}
       <style>{`
-        .a4-movable [data-bk] { cursor: move; }
+        .a4-movable [data-bk] { cursor: move; touch-action: none; } /* 휴대폰: 상자를 손가락으로 끌면 화면이 아니라 상자가 움직이게 */
         .a4-movable [data-bk]:hover { outline: 2px dashed #6366F1; outline-offset: 2px; }
         .a4-movable .bk-drag { outline: 2px solid #6366F1 !important; opacity: .9; }
         .a4-movable .bk-sel { outline: 2.5px solid #6366F1 !important; outline-offset: 2px; }
@@ -854,7 +889,7 @@ export default function InquiryReport() {
         }
       `}</style>
 
-      <header className="flex h-[60px] items-center gap-6 border-b border-gray-200 bg-white px-6">
+      <header className="flex h-[60px] items-center gap-3 border-b border-gray-200 bg-white px-4 md:gap-6 md:px-6">
         <button onClick={() => nav("/")} className="text-[20px] font-extrabold text-sm-navy">생수면<span className="text-sm-orange">.</span></button>
         {inq?.school_task_id ? (
           <button onClick={() => nav("/agent")} className="hidden text-[13px] font-bold text-gray-500 hover:text-gray-800 md:block">← 물꼬로 돌아가기</button>
@@ -863,7 +898,7 @@ export default function InquiryReport() {
         )}
         <div className="ml-auto flex items-center gap-2">
         {inq?.template && r && (
-          <div className="flex items-center gap-2">
+          <div className="hidden items-center gap-2 md:flex">
             <button
               onClick={() => { update({ format_mode: null, template: null }); setPicking(false); setPage(0); }}
               className="h-9 rounded-lg border border-gray-300 px-3 text-[13px] font-bold text-gray-600"
@@ -883,12 +918,6 @@ export default function InquiryReport() {
         </div>
       </header>
 
-      {/* 휴대폰 안내 — 보고서 편집은 A4를 크게 봐야 해서 */}
-      <p className="break-keep bg-orange-50 px-5 py-3 text-center text-[13px] font-bold leading-relaxed text-orange-800 md:hidden">
-        보고서 디자인은 노트북·태블릿에서 보기 편해요.
-        <br />
-        같은 계정으로 로그인하면 이어서 볼 수 있어요.
-      </p>
 
       {err && <p className="mx-auto mt-5 max-w-3xl rounded-lg bg-red-50 px-4 py-3 text-center text-[14px] font-bold text-red-600">{err}</p>}
       {!inq && !err && <p className="py-40 text-center text-gray-400">불러오는 중…</p>}
@@ -958,9 +987,9 @@ export default function InquiryReport() {
 
       {/* ③ 디자인 고르기 */}
       {inq && r && inq.format_mode === "free" && (picking || !inq.template) && (
-        <div className="mx-auto mt-8 max-w-[1300px] rounded-2xl border border-gray-200 bg-white p-7">
+        <div className="mx-auto max-w-[1300px] border-gray-200 bg-white p-4 md:mt-8 md:rounded-2xl md:border md:p-7">
           <div className="flex items-center gap-3">
-            <p className="text-[20px] font-extrabold text-sm-navy">어떤 디자인으로 만들까요? <span className="text-[14px] font-bold text-gray-400">{designs.length}개</span></p>
+            <p className="text-[18px] font-extrabold text-sm-navy md:text-[20px]">어떤 디자인으로 만들까요? <span className="text-[14px] font-bold text-gray-400">{designs.length}개</span></p>
             {inq.template && <button onClick={() => setPicking(false)} className="ml-auto text-[13px] font-bold text-gray-500">닫기</button>}
           </div>
           <p className="mt-1 text-[13px] text-gray-500">내 탐구 내용이 들어간 모습이에요. 골라도 언제든 바꿀 수 있어요.</p>
@@ -981,13 +1010,13 @@ export default function InquiryReport() {
                 {g.k === inq.method ? `내 탐구에 추천 · ${KIND[g.k]} 탐구` : `${KIND[g.k]} 탐구`}
                 <span className="ml-1.5 text-[12px] font-bold text-gray-400">{g.items.length}개</span>
               </p>
-              <div className="mt-3 flex flex-wrap gap-5">
+              <div className={mobile ? "mt-3 grid grid-cols-2 gap-3" : "mt-3 flex flex-wrap gap-5"}>
                 {g.items.map((t) => {
               const preview = renderPages(t.id, viewInq, { preview: true })[0]; // 미리보기는 내 사진 대신 예시 이미지
               const on = inq.template === t.id;
               return (
-                <button key={t.id} onClick={() => { update({ template: t.id }); setPicking(false); setPage(0); }} className={`rounded-xl border-2 p-2 text-left ${on ? "border-sm-navy" : "border-transparent hover:border-gray-300"}`}>
-                  <Sheet page={preview} scale={0.28} />
+                <button key={t.id} onClick={() => { update({ template: t.id }); setPicking(false); setPage(0); window.scrollTo(0, 0); }} className={`min-w-0 rounded-xl border-2 p-1.5 text-left md:p-2 ${on ? "border-sm-navy" : "border-transparent hover:border-gray-300"}`}>
+                  <Sheet page={preview} scale={mobile ? Math.max(0.12, ((vw - 32 - 12) / 2 - 16) / A4.w) : 0.28} />
                   <p className="mt-2 text-[13.5px] font-bold text-sm-navy">{t.name}</p>
                   <p className="text-[11.5px] text-gray-400">
                     {{ lit: "문헌", case: "사례", data: "데이터", survey: "설문", exp: "실험", obs: "관찰" }[t.method]} 탐구용
@@ -1006,9 +1035,19 @@ export default function InquiryReport() {
 
       {/* ④ 편집기 */}
       {inq && r && inq.template && !(picking && inq.format_mode === "free") && pages.length > 0 && (
-        <div className="flex gap-5 p-5">
+        <div className={`flex flex-col gap-3 p-3 md:flex-row md:gap-5 md:p-5 md:pb-5 ${moving && sel ? "pb-48" : "pb-24"}`}>
+          {/* 휴대폰 — 장 넘기기 (위에 한 줄) */}
+          {mobile && (
+            <div className="flex gap-1.5 overflow-x-auto">
+              {pages.map((_, i) => (
+                <button key={i} onClick={() => { setPage(i); setSel(null); }} className={`h-9 flex-none rounded-lg px-4 text-[13.5px] font-bold ${page === i ? "bg-sm-navy text-white" : "border border-gray-300 bg-white text-gray-600"}`}>
+                  {i + 1}{inq.template === "school" ? "쪽" : "장"}
+                </button>
+              ))}
+            </div>
+          )}
           {/* 왼쪽 — 장 넘기기 */}
-          <aside className="w-[150px] shrink-0 space-y-3">
+          <aside className="hidden w-[150px] shrink-0 space-y-3 md:block">
             {pages.map((pg, i) => (
               <button key={i} onClick={() => { setPage(i); setSel(null); }} className={`block rounded-lg border-2 p-1 ${page === i ? "border-sm-navy" : "border-transparent"}`}>
                 <Sheet page={pg} scale={0.16} offsets={layoutOf(inq.template, i)} extras={extrasOf(inq.template, i)} hidden={hiddenOf(inq.template, i)} styles={stylesOf(inq.template, i)} texts={textsOf(inq.template, i)} pageFont={fontOf(inq.template)} />
@@ -1021,7 +1060,7 @@ export default function InquiryReport() {
           <main className="flex min-w-0 flex-1 justify-center">
             <div className="flex flex-col items-center gap-3">
               {/* 위에 고정: ① 고른 상자 모양 ② 편집 버튼 — 눌러도 고른 상자가 풀리지 않게 data-keep-select */}
-              <div data-keep-select className="sticky top-0 z-30 w-full max-w-[980px] space-y-2 bg-gray-100/95 pb-2 pt-2 backdrop-blur">
+              <div data-keep-select className="sticky top-0 z-30 hidden w-full max-w-[980px] space-y-2 bg-gray-100/95 pb-2 pt-2 backdrop-blur md:block">
                 {(() => {
                   const on = moving && sel;
                   const st = (sel && stylesOf(inq.template, page)[sel.key]) || {};
@@ -1123,22 +1162,38 @@ export default function InquiryReport() {
                   )}
                 </div>
               </div>
+              {/* 휴대폰 편집 줄 — 편집 켜기 · 글 상자 · 되돌리기 (색 · 글씨는 상자를 고르면 아래에서) */}
+              {mobile && (
+                <div data-keep-select className="w-full">
+                  <div className="flex gap-1.5">
+                    <button onClick={() => { setMoving((m) => !m); setSel(null); }} className={`h-10 flex-1 rounded-lg text-[13.5px] font-bold ${moving ? "bg-indigo-600 text-white" : "border border-indigo-300 bg-white text-indigo-700"}`}>{moving ? "편집 끄기" : "편집 켜기"}</button>
+                    <button onClick={addTextBox} disabled={!moving} className="h-10 rounded-lg border border-indigo-300 bg-white px-3 text-[13px] font-bold text-indigo-700 disabled:opacity-30">+ 글 상자</button>
+                    <button onClick={undo} disabled={!undoCount} className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-[13px] font-bold text-gray-600 disabled:opacity-30">↶ 되돌리기</button>
+                  </div>
+                  <p className="mt-1.5 text-[11.5px] leading-relaxed text-gray-500">
+                    {moving ? "상자를 손가락으로 끌어서 옮겨요 · 한 번 누르면 골라져서 아래에서 색 · 글씨 · 크기를 바꿔요 · 오른쪽 아래 ■를 끌면 크기 조절 · 화면을 내리려면 상자 밖을 끌거나 편집 끄기" : "‘편집 켜기’를 누르면 상자를 옮기고 색 · 글씨를 바꿀 수 있어요"}
+                  </p>
+                </div>
+              )}
               {/* 가운데 큰 A4 — 여기 안을 누르면 Sheet가 고르기/풀기를 직접 처리 */}
               <div className="shadow-xl" data-edit-sheet>
                 <Sheet
                   page={pages[page]}
-                  scale={0.78}
+                  scale={mobile ? (vw - 24) / A4.w : 0.78}
                   offsets={layoutOf(inq.template, page)}
                   extras={extrasOf(inq.template, page)}
                   hidden={hiddenOf(inq.template, page)}
                   styles={stylesOf(inq.template, page)}
                   pageFont={fontOf(inq.template)}
                   movable={moving}
+                  touch={mobile}
+                  editReq={editReq}
                   selected={sel?.key}
                   selectedKeys={selKeys}
                   selBox={sel}
-                  toolbar={
+                  toolbar={mobile ? null :
                     <div className="flex gap-1 rounded-lg bg-indigo-600 p-1 shadow-lg">
+                      <button onClick={() => setEditReq((n) => n + 1)} className="rounded-md px-2.5 py-1 text-[12.5px] font-bold text-white hover:bg-indigo-500">글 고치기</button>
                       <button onClick={copyBlock} className="rounded-md px-2.5 py-1 text-[12.5px] font-bold text-white hover:bg-indigo-500">복사</button>
                       <button onClick={hideOrDelete} className="rounded-md px-2.5 py-1 text-[12.5px] font-bold text-indigo-100 hover:bg-indigo-500">
                         {sels.length && sels.every((x) => x.key.startsWith("ex-")) ? "삭제" : "숨기기"}
@@ -1158,8 +1213,9 @@ export default function InquiryReport() {
           </main>
 
           {/* 오른쪽 — 칸 고치기 */}
-          <aside className="w-[340px] shrink-0 space-y-4 rounded-2xl border border-gray-200 bg-white p-5">
+          <aside className="w-full shrink-0 space-y-4 rounded-2xl border border-gray-200 bg-white p-4 md:w-[340px] md:p-5">
             <p className="text-[15px] font-extrabold text-sm-navy">{page + 1}{inq.template === "school" ? "쪽" : "장"} 고치기</p>
+            {mobile && <p className="text-[12px] leading-relaxed text-gray-500">여기서 글 · 사진을 고치면 위 보고서에 바로 들어가요. 상자 옮기기 · 색 바꾸기는 위 ‘편집 켜기’로 해요.</p>}
             {fit[page] < 0.99 && (
               <p className={`rounded-lg px-3 py-2 text-[12.5px] leading-relaxed ${fit[page] <= MIN_FIT + 0.001 ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-800"}`}>
                 {fit[page] <= MIN_FIT + 0.001
@@ -1260,6 +1316,67 @@ export default function InquiryReport() {
             ))}
             <p className="text-[11.5px] leading-relaxed text-gray-400">고친 내용은 자동으로 저장돼요. 디자인을 바꿔도 내용은 그대로예요.</p>
           </aside>
+        </div>
+      )}
+
+      {/* 휴대폰 — 아래 고정 버튼 (머리글 버튼 대신) */}
+      {mobile && inq?.template && r && !(picking && inq.format_mode === "free") && moving && sel && (() => {
+        const st = stylesOf(inq.template, page)[sel.key] || {};
+        const dot = (c, active, onClick) => (
+          <button key={c} type="button" onClick={onClick} aria-label={c === "transparent" ? "바탕 없음" : c}
+            className={`h-8 w-8 flex-none rounded-full border ${active ? "ring-2 ring-indigo-500 ring-offset-1" : "border-gray-300"}`}
+            style={{ background: c === "transparent" ? "repeating-conic-gradient(#E5E7EB 0 25%, #fff 0 50%) 0 0/8px 8px" : c }} />
+        );
+        const sm = "h-9 flex-none rounded-lg border border-gray-300 bg-white px-3 text-[13px] font-bold text-gray-700";
+        return (
+          <div data-keep-select className="fixed inset-x-0 bottom-0 z-40 border-t border-indigo-200 bg-white shadow-[0_-4px_16px_rgba(0,0,0,0.08)]" style={{ paddingBottom: "max(8px, env(safe-area-inset-bottom))" }}>
+            {/* 한 줄: 할 일 */}
+            <div className="flex items-center gap-1.5 px-3 pt-2.5">
+              <button onClick={() => setEditReq((n) => n + 1)} className="h-9 flex-1 rounded-lg bg-indigo-600 text-[13px] font-bold text-white">글 고치기</button>
+              <button onClick={copyBlock} className="h-9 flex-1 rounded-lg border border-gray-300 bg-white text-[13px] font-bold text-gray-700">복사</button>
+              <button onClick={hideOrDelete} className="h-9 flex-1 rounded-lg border border-gray-300 bg-white text-[13px] font-bold text-gray-700">{sels.length && sels.every((x) => x.key.startsWith("ex-")) ? "삭제" : "숨기기"}</button>
+              <button onClick={() => setSel(null)} className="h-9 flex-1 rounded-lg border border-gray-300 bg-white text-[13px] font-bold text-gray-700">완료</button>
+            </div>
+            {/* 탭: 글자색 · 바탕색 · 글씨 · 크기 — 한 번에 한 줄만 (화면을 덜 가리게) */}
+            <div className="mt-2 flex border-y border-gray-100">
+              {[["ink", "글자색"], ["bg", "바탕색"], ["text", "글씨"], ["size", "상자 크기"]].map(([k, l]) => (
+                <button key={k} onClick={() => setTool(k)} className={`h-9 flex-1 text-[12.5px] font-bold ${tool === k ? "border-b-2 border-indigo-600 text-indigo-700" : "text-gray-500"}`}>{l}</button>
+              ))}
+            </div>
+            <div className="flex h-12 items-center gap-1.5 overflow-x-auto px-3">
+              {tool === "ink" && INK.map((c) => dot(c, st.color === c, () => styleBlock({ color: c })))}
+              {tool === "bg" && PAPER.map((c) => dot(c, st.bg === c, () => styleBlock({ bg: c })))}
+              {tool === "text" && (
+                <>
+                  <button onClick={() => styleBlock({ size: Math.max(8, (st.size ?? 14) - 1) })} className={sm}>가-</button>
+                  <button onClick={() => styleBlock({ size: Math.min(72, (st.size ?? 14) + 1) })} className={sm}>가+</button>
+                  <select value={st.font ?? ""} onChange={(e) => styleBlock({ font: e.target.value })} className="h-9 min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-2 text-[12.5px]">
+                    {FONT_CHOICES.map(([v, l]) => <option key={l} value={v}>{l}</option>)}
+                  </select>
+                </>
+              )}
+              {tool === "size" && (
+                <>
+                  <button onClick={() => styleBlock({ zoom: Math.max(0.6, Math.round(((st.zoom ?? 1) - 0.1) * 10) / 10) })} className={sm}>－ 작게</button>
+                  <span className="w-12 flex-none text-center text-[13px] font-bold">{Math.round((st.zoom ?? 1) * 100)}%</span>
+                  <button onClick={() => styleBlock({ zoom: Math.min(2, Math.round(((st.zoom ?? 1) + 0.1) * 10) / 10) })} className={sm}>＋ 크게</button>
+                  <span className="flex-none text-[11.5px] text-gray-400">또는 ■ 끌기</span>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+      {mobile && inq?.template && r && !(picking && inq.format_mode === "free") && !(moving && sel) && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white p-3" style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
+          <div className="flex gap-2">
+            {inq.format_mode === "free" ? (
+              <button onClick={() => { setPicking(true); window.scrollTo(0, 0); }} className="h-12 flex-1 rounded-xl border border-gray-300 text-[14px] font-bold text-sm-navy">디자인 바꾸기</button>
+            ) : (
+              <button onClick={() => { update({ format_mode: null, template: null }); setPicking(false); setPage(0); }} className="h-12 flex-1 rounded-xl border border-gray-300 text-[14px] font-bold text-gray-600">자유형으로 바꾸기</button>
+            )}
+            <button onClick={print} className="h-12 flex-[1.4] rounded-xl bg-sm-navy text-[14.5px] font-extrabold text-white">PDF로 저장</button>
+          </div>
         </div>
       )}
 
