@@ -10,6 +10,7 @@ import { PASS_PRICE, PASS_PRODUCTS } from "../../lib/pass";
 import { track } from "../../lib/track";
 import { STYLES, PALETTES, recommend, buildDeck } from "../../lib/speechDeck"; // 발표 PPT (pptxgenjs 는 PptButton 에서 누를 때만 불러옴)
 import PracticeRoom from "./PracticeRoom"; // 발표 연습 화면 (위 슬라이드 · 아래 대본 · 녹음)
+import FeedbackAsk from "../../components/FeedbackAsk"; // 완성본 아래 "쓸 만했어?"
 
 /*
  * 🤖 입시 상담 AI — /agent
@@ -1701,6 +1702,8 @@ export default function Agent() {
                       <QuestionCard key={i} questions={questions} onSubmit={(t) => send(t)} onClose={() => setClosedCard(true)} onPhotos={uploadPhotos} uploading={uploading} />
                     )}
                     {designTask > 0 && <DesignGo taskId={designTask} />}
+                    {/* 완성본을 받은 그 자리에서 한 번 묻기 — 탐구는 디자인 버튼이 있는 답 · 수행평가는 파일 버튼이 있는 답 */}
+                    {!busy && (designTask > 0 ? <FeedbackAsk feature="tamgu_done" refId={designTask} /> : docFile ? <FeedbackAsk feature="suhaeng_done" refId={docFile.id} /> : null)}
                   </>
                 );
               })()}

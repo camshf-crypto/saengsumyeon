@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import LoginGate, { NoteIcon } from "../../components/LoginGate";
+import FeedbackAsk from "../../components/FeedbackAsk";
 
 /*
  * AI 입시 방향 진단 (/roadmap/diagnosis) — 입시 컨설턴트처럼 (2026-11-13)
@@ -168,7 +169,7 @@ function DeptForm({ init, onRun, busy }) {
   );
 }
 
-function Result({ r, unsure, onRedo }) {
+function Result({ r, unsure, onRedo, at }) {
   const nav = useNavigate();
   const strong = (r.cells ?? []).filter((c) => c.link === "강함").length;
   const course = r.course ?? {};
@@ -345,7 +346,9 @@ function Result({ r, unsure, onRedo }) {
         </>
       )}
 
-      <div className="mt-10 grid grid-cols-2 gap-2">
+      {/* 다 읽고 나면 — "이 진단 도움이 됐어?" (진단 한 번에 한 번) */}
+      <div className="mt-10"><FeedbackAsk feature="diagnosis" refId={at || ""} /></div>
+      <div className="mt-4 grid grid-cols-2 gap-2">
         <Link to="/" className="flex h-12 items-center justify-center border border-gray-300 text-[14px] font-bold text-gray-800">로드맵에 더 채우기</Link>
         <button onClick={onRedo} className="h-12 bg-gray-900 text-[14px] font-bold text-white">학과 바꿔서 다시 보기</button>
       </div>
@@ -450,7 +453,7 @@ export default function NoteDiagnosis() {
 
         {state === "result" && data?.result && (
           <>
-            <Result r={data.result} unsure={data.unsure} onRedo={() => { setState("form"); window.scrollTo(0, 0); }} />
+            <Result r={data.result} unsure={data.unsure} at={data.created_at} onRedo={() => { setState("form"); window.scrollTo(0, 0); }} />
           </>
         )}
       </div>

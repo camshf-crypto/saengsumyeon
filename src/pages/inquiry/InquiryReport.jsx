@@ -10,6 +10,7 @@ import { hasPass } from "../../lib/pass";
 const FREE_OPEN = true;
 import { useStay } from "./useStay";
 import InquirySwitcher from "./InquirySwitcher";
+import FeedbackAsk from "../../components/FeedbackAsk";
 import { A4, TEMPLATES, renderPages, emptyVoices } from "./templates";
 
 /*
@@ -821,6 +822,7 @@ export default function InquiryReport() {
     }
     track("export_pdf", inq.template);
     window.print();
+    setAskPdf(true); // 저장 창을 닫으면 "쓸 만했어?" 한 번 (components/FeedbackAsk)
   }
 
   const [isAdmin, setIsAdmin] = useState(FREE_OPEN ? true : null);
@@ -845,6 +847,7 @@ export default function InquiryReport() {
   const mobile = vw < 768;
   const [tool, setTool] = useState("ink"); // 휴대폰 아래 패널에서 지금 보는 줄: ink 글자색 · bg 바탕색 · text 글씨 · size 상자 크기
   const [editReq, setEditReq] = useState(0);
+  const [askPdf, setAskPdf] = useState(false);
   // 휴대폰 — 고른 상자가 아래 패널에 가려지면 화면을 조금 올린다
   useEffect(() => {
     if (!mobile || !sel?.key) return;
@@ -1377,6 +1380,13 @@ export default function InquiryReport() {
             )}
             <button onClick={print} className="h-12 flex-[1.4] rounded-xl bg-sm-navy text-[14.5px] font-extrabold text-white">PDF로 저장</button>
           </div>
+        </div>
+      )}
+
+      {/* PDF 저장 뒤 — "보고서 디자인 쓸 만했어?" (한 번만) */}
+      {askPdf && inq && (
+        <div className="fixed inset-x-3 bottom-24 z-50 md:inset-x-auto md:bottom-6 md:right-6 md:w-[380px]">
+          <FeedbackAsk feature="report_pdf" refId={inq.id} onClose={() => setAskPdf(false)} className="shadow-xl" />
         </div>
       )}
 

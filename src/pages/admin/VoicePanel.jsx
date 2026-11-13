@@ -291,6 +291,80 @@ function Answers({ from, to }) {
   );
 }
 
+// 일을 끝낸 바로 그때 묻는 "쓸 만했어?" (components/FeedbackAsk · sql/sm_126 · sm_127) — 응답 하나씩 보기와 같은 모양
+const FEATURE = { suhaeng_done: "수행평가 완성본", tamgu_done: "탐구 완성본", diagnosis: "AI 입시 방향 진단", report_pdf: "보고서 PDF" };
+function QuickFeedback({ from, to }) {
+  const [d, setD] = useState(null);
+  const [err, setErr] = useState("");
+  const [more, setMore] = useState(false);
+  const [only, setOnly] = useState("all"); // all · bad
+  useEffect(() => {
+    setD(null);
+    supabase.rpc("admin_feedback_list", { p_from: from || null, p_to: to || null })
+      .then(({ data, error }) => (error ? setErr(error.message) : setD(data || { stats: [], list: [] })));
+  }, [from, to]);
+  if (err) return <p className="mt-3 rounded-lg bg-red-50 px-4 py-3 text-[13px] font-bold text-red-600">{/function .* does not exist|admin_feedback_list/.test(err) ? "sql/sm_126 · sm_127 을 아직 안 넣었어요" : err}</p>;
+  if (!d) return <p className="py-6 text-center text-sm text-gray-400">불러오는 중…</p>;
+  const list = (d.list ?? []).filter((x) => only === "all" || !x.good);
+  const rows = more ? list : list.slice(0, 10);
+  return (
+    <>
+      {/* 기능마다 좋아요 · 아쉬워요 */}
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {(d.stats ?? []).map((x) => {
+          const t = Number(x.good) + Number(x.bad);
+          const bad = t ? Math.round((Number(x.bad) / t) * 100) : 0;
+          return (
+            <section key={x.feature} className="rounded-xl border border-gray-200 bg-white p-4">
+              <h4 className="text-[14px] font-extrabold text-sm-navy">{FEATURE[x.feature] ?? x.feature}</h4>
+              <p className="mt-1 text-[12.5px] text-gray-500">{n(t)}명 답함 · 아쉬워요 <b className={bad >= 30 ? "text-red-600" : "text-gray-800"}>{bad}%</b></p>
+              <div className="mt-2 flex h-2.5 overflow-hidden rounded-full bg-gray-100">
+                <span style={{ width: `${100 - bad}%`, background: "#18224F" }} title={`좋아요 ${x.good}`} />
+                <span style={{ width: `${bad}%`, background: "#E8590C" }} title={`아쉬워요 ${x.bad}`} />
+              </div>
+              <p className="mt-1.5 text-[12px] text-gray-500">좋아요 {n(x.good)} · 아쉬워요 {n(x.bad)}</p>
+            </section>
+          );
+        })}
+        {!(d.stats ?? []).length && <p className="text-[13px] text-gray-400">아직 답한 학생이 없어요</p>}
+      </div>
+      {/* 하나씩 보기 */}
+      <section className="mt-3 rounded-xl border border-gray-200 bg-white p-4">
+        <div className="flex items-center gap-2">
+          <h4 className="text-[14px] font-extrabold text-sm-navy">하나씩 보기 ({list.length})</h4>
+          <div className="ml-auto flex gap-1">
+            {[["all", "전체"], ["bad", "아쉬워요만"]].map(([k, l]) => (
+              <button key={k} onClick={() => setOnly(k)} className={`rounded-full px-3 py-1 text-[12px] font-bold ${only === k ? "bg-sm-navy text-white" : "bg-gray-100 text-gray-600"}`}>{l}</button>
+            ))}
+          </div>
+        </div>
+        {list.length === 0 && <p className="py-6 text-center text-[13px] text-gray-400">아직 없어요</p>}
+        <ul className="mt-2 divide-y divide-gray-100">
+          {rows.map((x, i) => (
+            <li key={i} className="space-y-0.5 py-2.5">
+              <p className="text-[12px]">
+                <b className="mr-1.5" style={{ color: GCOLOR[x.grade] ?? "#9CA3AF" }}>{x.grade}</b>
+                <b className="text-gray-800">{x.nick ?? "(닉네임 없음)"}</b>
+                <span className="ml-2 text-gray-400">{when(x.at)}</span>
+              </p>
+              <p className="text-[12.5px] text-gray-700">
+                <b className="mr-1.5 text-gray-400">{FEATURE[x.feature] ?? x.feature}</b>
+                <b className={x.good ? "text-sm-navy" : "text-[#E8590C]"}>{x.good ? "좋아요" : "아쉬워요"}</b>
+              </p>
+              {x.note && <p className="text-[12.5px] text-gray-700"><b className="mr-1.5 text-gray-400">이유</b>{x.note}</p>}
+            </li>
+          ))}
+        </ul>
+        {list.length > 10 && (
+          <button onClick={() => setMore((v) => !v)} className="mt-2 w-full rounded-lg bg-[#F4F5F7] py-2 text-[12.5px] font-bold text-gray-600">
+            {more ? "접기" : `${list.length - 10}개 더 보기`}
+          </button>
+        )}
+      </section>
+    </>
+  );
+}
+
 export default function VoicePanel({ from, to }) {
   const [s, setS] = useState(null);
   const [err, setErr] = useState("");
@@ -343,6 +417,10 @@ export default function VoicePanel({ from, to }) {
           )}
         </>
       )}
+
+      <h3 className="mt-10 text-[17px] font-extrabold text-sm-navy">쓸 만했어?</h3>
+      <p className="mt-0.5 text-[12.5px] text-gray-500">완성본 · 진단 · 보고서 PDF를 받은 바로 그때 한 번 묻는 것 · 좋아요 / 아쉬워요 + 아쉬운 이유 · 위에서 고른 기간에 답한 것만</p>
+      <QuickFeedback from={from} to={to} />
 
       <h3 className="mt-10 text-[17px] font-extrabold text-sm-navy">불편해요</h3>
       <p className="mt-0.5 mb-3 text-[12.5px] text-gray-500">학생이 알려준 지금 서비스의 불편한 점 · 학생 본인만 봐요 · 답장을 쓰면 학생 의견함에 보이고, 고쳤어요로 바꾸면 조각 +1</p>
