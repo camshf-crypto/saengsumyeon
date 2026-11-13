@@ -20,7 +20,7 @@ import { PROMPT_MODS, modsForTool, pickModules, studentContext, systemPrompt, up
 import { FREE_OPEN, HISTORY, MAX_ROUNDS, MODEL, cachedOf, chat, clean, cors, json, logUsage, matchUniv, openai } from "./core.ts";
 import { importBoard, stepLabel } from "./extra.ts";
 import { PLAN_GUIDE, PLAN_LINK_RULE, deptOf, hasPlan, makePlan, openingSteps, planAsk, planCard, planFromCard, planWeek, safe, saveWeek, weekStartKST } from "./plan.ts";
-import { gradeOf, monthPlan, openingOf } from "./school.ts";
+import { evalSchoolName, evalSubjects, gradeOf, monthPlan, openingOf, schoolMeta } from "./school.ts";
 import { AREA_LABEL, ROUTINE_Q, SUBJ, SUBJECTS, TEST_DAYS, TEST_SUBJECTS, TRACK_LABEL, adherence, createTest, judge, proposeAction, quickForm, reviewOf, scoreOf, testTips, testView, tipsByIds } from "./study.ts";
 import { suhaengChat } from "./suhaeng.ts";
 import { TOPIC_QUOTA_MSG, callFn, formatCheck, pick, runTool } from "./tools.ts";
@@ -45,6 +45,86 @@ Deno.serve(async (req) => {
     const passOk = async () => FREE_OPEN || Boolean(paid) || Boolean((await db.from("admins").select("user_id").eq("user_id", user.id).maybeSingle()).data);
     if (body.action === "status") return json({ usage, grade: await gradeOf(db, user.id, user.user_metadata ?? {}).catch(() => "") });
     // 물꼬가 먼저 말 걸기 (AI 안 부름 · 사용량 안 씀)
+    // 입시 로드맵 '내 과목 고르기' — 가고 싶은 학과를 대학들이 권하는 과목 (univ_subject_reco · 2028학년도 권장과목)
+    //   여러 대학 자료를 과목별로 모아 '핵심 n곳 · 권장 n곳' 많은 순 · 대학을 적으면 그 대학만
+    if (body.action === "subject_reco") {
+      const department = String(body.department ?? "").trim().slice(0, 30);
+      const university = String(body.university ?? "").trim().slice(0, 30);
+      if (!department || !university) return json({ list: [], note: "대학과 학과를 둘 다 알려 주세요" });
+      // ① 대학 하나 고르기 — 권장과목 표에 있는 이름 중에서 (한양대 → 한양대학교, 'ERICA'를 적었을 때만 ERICA)
+      const { data: names } = await db.from("univ_subject_reco").select("university").limit(5000);
+      const all = [...new Set((names ?? []).map((r: any) => String(r.university)))] as string[];
+      const sq = university.replace(/\s/g, ""), erica = /ERICA|에리카/i.test(sq);
+      const short = (n: string) => n.replace(/\s/g, "").replace("여자대학교", "여대").replace("대학교", "대");
+      const alias: Record<string, string> = { 고대: "고려대학교", 연대: "연세대학교", 성대: "성균관대학교", 숙대: "숙명여자대학교", 시립대: "서울시립대학교", 건대: "건국대학교", 동대: "동국대학교", 포스텍: "포항공과대학교", POSTECH: "포항공과대학교" };
+      const key = (alias[sq.replace(/ERICA|에리카/i, "")] ?? sq.replace(/ERICA|에리카/i, "")).replace(/\s/g, "");
+      const cands = all.filter((n) => { const k = n.replace(/\s/g, ""); return k === key || k === key + "학교" || short(n) === key || k.includes(key.replace(/(대학교|대)$/, "")); })
+        .filter((n) => erica === /ERICA/i.test(n)).sort((x, y) => x.length - y.length);
+      const uname = cands[0];
+      if (!uname) return json({ list: [], note: `${university} 권장과목 자료가 아직 없어요`, univs: all.slice(0, 40) });
+      const { data: rows0 } = await db.from("univ_subject_reco").select("university,campus,department,area,level,subjects,note").eq("university", uname).limit(400);
+      const rows = (rows0 ?? []) as any[];
+      // ② 학과 맞추기 — 같은 학과(기계공학과 ↔ 기계공학부) → 없으면 같은 계열 '전체' 줄 → 없으면 대학 안내
+      const core = (x: string) => { const t = String(x ?? "").replace(/\s/g, ""); const c = t.replace(/(학과|학부|전공)$/, ""); return c.length >= 2 ? c : t.replace(/(과|부)$/, ""); };
+      const partsOf = (d: string) => String(d ?? "").split(/[·,/()]| 및 /).map(core).filter((x) => x.length >= 2);
+      const dq = core(department);
+      // 이름이 같은 학과 먼저 (기계공학과 ↔ 기계공학부), 없으면 이름이 들어간 학과 (반도체공학과 ↔ 반도체시스템공학과)
+      let hit = rows.filter((r) => partsOf(r.department).some((x) => x === dq));
+      const exact = hit.length > 0;
+      const loose = (x: string) => x.replace(/(공학|공|학)$/, "");
+      const ld = loose(dq);
+      if (!hit.length && ld.length >= 2) hit = rows.filter((r) => partsOf(r.department).some((x) => { const lx = loose(x); return lx.length >= 2 && (lx.startsWith(ld) || ld.startsWith(lx)); }) && !/전체|계열|전 모집단위|그 밖의/.test(String(r.department ?? "")));
+      const NAT = /공학|공과|기계|전자|전기|컴퓨터|소프트|반도체|화학|물리|생명|수학|통계|의예|의학|약학|간호|수의|치의|한의|건축|에너지|신소재|재료|AI|인공지능|데이터|바이오|식품|환경|농|산림|원예|동물|자연|이학|과학|보건|방사선|우주|지구|항공|조선|해양|토목|건설|도시공학|산업공학/;
+      const area = NAT.test(department) ? "자연" : "인문";
+      if (!hit.length) hit = rows.filter((r) => /전체|계열|전 모집단위|전모집단위|그 밖의/.test(String(r.department ?? "")) && (r.area ? r.area === area : (area === "자연") === NAT.test(String(r.department ?? ""))));
+      // 계열 줄이 여러 개면 학과 이름(경영 → '경영대학')이 적힌 줄을 먼저
+      if (hit.length > 1 && ld.length >= 2) { const named = hit.filter((r) => String(r.department ?? "").includes(ld)); if (named.length) hit = named; }
+      if (!hit.length) hit = rows.filter((r) => r.level === "안내" && /전체|전 모집단위|그 밖의/.test(String(r.department ?? "")) && !(area === "자연" ? /인문/ : /자연|공학/).test(String(r.department ?? "")));
+      // ③ 학과 이름이 그대로 없으면 — AI가 이 대학 자료(계열 · 단과대학 · 비슷한 학과)에서 그 학과가 속한 줄을 고르고 이유를 쉬운 말로
+      let why = "";
+      if (!exact && rows.length) {
+        const lines = [...new Map(rows.map((r) => [String(r.department ?? ""), r])).values()].slice(0, 150)
+          .map((r: any) => `- ${r.department} [${r.level}] ${(Array.isArray(r.subjects) ? r.subjects.join(", ") : String(r.subjects ?? "")).slice(0, 90)}`).join("\n");
+        const sys = `너는 고등학생에게 대학 권장과목을 알려 주는 입시 상담가다. [자료]는 ${uname}가 발표한 2028학년도 모집단위별 권장과목이다.
+학생이 찾는 학과가 자료에 그대로 없을 수 있다. 그 학과가 이 대학에서 어느 줄에 해당하는지 고른다: 같은 학과의 다른 이름(학과↔학부↔전공), 그 학과가 속한 단과대학 · 계열(예: 기계공학과 → 공과대학 · 자연계열 · 공학계열 전체), 대학 전체 안내 순서로.
+- pick 에는 [자료]의 '- ' 뒤 모집단위 이름을 글자 그대로 1~3개. 그 대학에 그 학과가 없고 계열 줄도 맞지 않으면 빈 배열.
+- why 는 학생에게 하는 말 한두 문장 (존댓말 '~요'): 그 학과가 이 대학에서 어느 모집단위 · 계열로 보는지, 그래서 어떤 과목을 권하는지. 이 대학에 그 학과가 없으면 가까운 학과 이름을 알려 준다. 자료에 없는 과목 · 사실은 지어내지 않는다.
+JSON만: {"pick": ["..."], "why": "..."}`;
+        try {
+          const res = await openai({ model: MODEL, reasoning_effort: "low", max_completion_tokens: 2000, response_format: { type: "json_object" },
+            messages: [{ role: "system", content: sys }, { role: "user", content: `[자료]\n${lines}\n\n[학생이 찾는 학과] ${department}` }] });
+          const j = await res.json();
+          logUsage(db, user.id, j?.usage?.prompt_tokens ?? 0, j?.usage?.completion_tokens ?? 0, res.ok, "agent", cachedOf(j?.usage));
+          const o = JSON.parse(j?.choices?.[0]?.message?.content ?? "{}");
+          const picked = (Array.isArray(o.pick) ? o.pick : []).map(String);
+          const sel = rows.filter((r) => picked.includes(String(r.department ?? "")));
+          if (sel.length) hit = sel;
+          else if (Array.isArray(o.pick) && !o.pick.length && !hit.length) hit = [];
+          why = clean(o.why, 300);
+        } catch (e) { console.error("subject_reco ai", e); }
+      }
+      const split = (v: any): string[] => (Array.isArray(v) ? v.map(String) : String(v ?? "").split(/,\s*/)).map((x) => x.replace(/[()]/g, "").trim()).filter((x) => x.length >= 2 && x.length <= 20);
+      const by = new Map<string, { name: string; core: number; reco: number }>();
+      for (const r of hit) for (const n of split(r.subjects)) {
+        const k = n.replace(/\s/g, "");
+        if (!by.has(k)) by.set(k, { name: n, core: 0, reco: 0 });
+        r.level === "핵심" ? by.get(k)!.core++ : by.get(k)!.reco++;
+      }
+      const list = [...by.values()].sort((x, y) => (y.core ? 1 : 0) - (x.core ? 1 : 0)).slice(0, 25);
+      const notes = [...new Set(hit.map((r) => String(r.note ?? "").trim()).filter(Boolean))].slice(0, 3);
+      const matched = [...new Set(hit.map((r) => String(r.department ?? "")))].slice(0, 3);
+      return json({ department, university: uname, matched, exact, why, list, notes, note: list.length ? undefined : (notes[0] || why || `${uname} ${department} 권장과목 자료가 아직 없어요`) });
+    }
+    // 입시 로드맵 '내 과목 고르기' — 우리 학교 그 학년 평가계획 과목 (없으면 빈 목록 → 화면이 교육과정 기본 과목을 보여 준다)
+    if (body.action === "school_subjects") {
+      const meta = user.user_metadata ?? {};
+      const g = Number(String(body.grade ?? "").match(/[123]/)?.[0] ?? 0) || Number(String(await gradeOf(db, user.id, meta).catch(() => "")).match(/[123]/)?.[0] ?? 0);
+      const { school } = await schoolMeta(db, user.id, meta).catch(() => ({ school: "" }));
+      const name = school ? await evalSchoolName(db, school).catch(() => "") : "";
+      const { rows } = name && g ? await evalSubjects(db, name, g) : { rows: [] as any[] };
+      const subjects = [...new Set(rows.map((r: any) => String(r.subject ?? "").trim()).filter(Boolean))].slice(0, 60);
+      return json({ school: name || school || "", grade: g ? `고${g}` : "", subjects });
+    }
     if (body.action === "month_plan") return json(await monthPlan(db, user).catch((e) => { console.error("month_plan", e); return { months: [] }; }));
     if (body.action === "opening") return json(await openingOf(db, user).catch((e) => { console.error("opening", e); return { text: "" }; }));
 

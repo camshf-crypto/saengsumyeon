@@ -576,21 +576,26 @@ export async function runTool(db: any, userId: string, name: string, args: any, 
     return { activities: (data ?? []).map((r: any) => ({ ...pick(r, ["grade", "term", "kind", "subject", "title"]), content: clean(r.content, 700) })) };
   }
   if (name === "get_recommended_subjects") {
-    let q = db.from("univ_subject_reco").select("university,campus,college,department,area,level,subjects,note").limit(120);
+    let q = db.from("univ_subject_reco").select("university,campus,college,department,area,level,subjects,note");
     if (args?.university) {
       const full = (await matchUniv(db, args.university)) ?? ALIAS[clean(args.university, 40).replace(/\s/g, "")] ?? null;
       const key = clean(args.university, 40).replace(/\s/g, "").replace(/대학교$|대$/, "");
       q = full ? q.ilike("university", `${full}*`.replace("*", "%")) : q.ilike("university", `%${key}%`);
     }
-    if (args?.department) {
-      const d = clean(args.department, 30).replace(/[(),]/g, "");
-      q = q.or(`department.ilike.*${d}*,note.ilike.*${d}*,department.ilike.*전체*,department.ilike.*공통*`);
+    // 대학을 알면 그 대학 줄 전체를 준다 — 학과 이름이 달라도(기계공학과 ↔ 기계공학부) · 계열로만 발표한 대학(공학계열 전체)도 AI가 그 학과가 속한 줄을 찾게
+    if (args?.department && !args?.university) {
+      const d = clean(args.department, 30).replace(/[(),]/g, "").replace(/(학과|학부|전공)$/, "");
+      q = q.or(`department.ilike.*${d}*,note.ilike.*${d}*`);
     }
     if (!args?.university && !args?.department) return { error: "대학이나 학과를 알려 주세요" };
-    const { data } = await q.order("university");
-    const rows = (data ?? []).map((r: any) => ({ ...pick(r, ["university", "campus", "college", "department", "area", "level", "subjects"]), note: clean(r.note, 300) }));
+    const { data } = await q.order("university").limit(args?.university ? 200 : 120);
+    const rows = (data ?? []).map((r: any) => ({ ...pick(r, ["university", "campus", "college", "department", "area", "level", "subjects"]), note: clean(r.note, 160) }));
     const { data: all } = await db.from("univ_subject_reco").select("university").limit(5000);
-    return { count: rows.length, rows, univs_with_data: [...new Set((all ?? []).map((r: any) => r.university))], note: rows.length ? undefined : "이 조건의 권장과목 자료가 없어요" };
+    return {
+      count: rows.length, rows, univs_with_data: [...new Set((all ?? []).map((r: any) => r.university))],
+      how: args?.department && args?.university ? `학생이 찾는 학과: ${clean(args.department, 30)}. rows 에서 같은 학과(다른 이름 포함)를 먼저 찾고, 없으면 그 학과가 속한 단과대학 · 계열 줄(예: '공학계열 전체', '자연계열 전체')을 찾아 "이 대학은 ○○계열로 안내해요"라고 설명한다. level 핵심 → 권장 순, note 의 조건(○과목 이상 등)도 같이 말한다.` : undefined,
+      note: rows.length ? undefined : "이 조건의 권장과목 자료가 없어요",
+    };
   }
   if (name === "get_book_recs") {
     // 학과 이름 맞추기 — "간호학과" · "간호" · "간호학부" / 없으면 같은 계열 비슷한 학과

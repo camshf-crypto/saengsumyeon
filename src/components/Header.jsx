@@ -49,20 +49,40 @@ const ICON = {
   card: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 10h18M7 15h4" /></>,
 };
 
-/* 전체 서비스 묶음 — 휴대폰 ☰ 메뉴에는 '입시 준비' 4개만 (나머지 서비스는 메뉴에서 뺐다) + 아래 나의 생수면 */
-const SECTIONS = [
-  {
-    // 물꼬 입시 AI 화면 '바로 가기' 4개와 같은 것 — 휴대폰은 여기서 들어간다
-    title: "입시 준비",
-    items: [
-      { to: "/agent?sh=1", label: "수행평가 완성", icon: "note", color: "#0F9D58", login: true },
-      { to: "/prep", label: "수시 면접 준비", icon: "mic", color: "#E8590C" },
-      { to: "/sb", label: "선배 생기부 보기", icon: "puzzle", color: "#DB2777" },
-      { to: "/my/note", label: "내 생기부 진단", icon: "note", color: "#4F46E5", login: true },
-      { to: "/plan", label: "내 입시 플랜", icon: "check", color: "#0F9D58" },
-    ],
-  },
+/* 생수면 메뉴 5개 (2026-11-13) — 입시 로드맵(메인) · 물꼬 AI · 면접(수시 면접 준비 · 생기부 예상질문) · 나만 그래? · 옥상에서 외쳐!
+ *   컴퓨터는 로고 옆에 글자로, 휴대폰은 ☰ 안에 · 나머지 화면(면접 준비 · 선배 생기부 등)은 물꼬 AI 바로 가기에서 */
+const NAV = [
+  { to: "/", label: "입시 로드맵", short: "로드맵", icon: "check", color: "#1E2A5A" },
+  { to: "/agent", label: "물꼬 AI", icon: "chat", color: "#0F9D58", login: true },
+  { to: "/prep", label: "면접", icon: "mic", color: "#E8590C" },
+  { to: "/mulgyeol", label: "나만 그래?", icon: "poll", color: "#E8590C" },
+  { to: "/board", label: "옥상에서 외쳐!", short: "옥상", icon: "speak", color: "#DB2777" },
 ];
+const SECTIONS = [{ title: "생수면", items: NAV }];
+
+/* 휴대폰 아래 탭바 — 당근처럼 메뉴 4개가 늘 보인다 (컴퓨터는 위 글자 메뉴)
+ *   물꼬 채팅 화면(/agent)에서는 숨긴다 — 아래 입력창과 겹치지 않게 (당근도 채팅방 안에서는 탭바 없음) */
+export function BottomTabs() {
+  const { user } = useAuth();
+  const { pathname } = useLocation();
+  if (/^\/(agent|login|signup|pay\/)/.test(pathname)) return null;
+  return (
+    <>
+      <div className="h-16 sm:hidden" />{/* 탭바에 마지막 내용이 가리지 않게 */}
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid h-16 grid-cols-5 border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom)] sm:hidden">
+        {NAV.map((n) => {
+          const on = n.to === "/" ? pathname === "/" || pathname === "/my/home" : pathname.startsWith(n.to);
+          return (
+            // 아이콘 없이 글자만 — 지금 화면은 위에 굵은 선 + 진한 글자
+            <Link key={n.to} to={n.login && !user ? "/signup" : n.to} className={`flex items-center justify-center border-t-2 whitespace-nowrap text-[13px] font-extrabold ${on ? "border-gray-900 text-gray-900" : "border-transparent text-gray-400"}`}>
+              {n.short ?? n.label}
+            </Link>
+          );
+        })}
+      </nav>
+    </>
+  );
+}
 
 function Svc({ item, onPick }) {
   const body = (
@@ -104,7 +124,6 @@ function AllServices({ onClose, user, isAdmin, pendingOrders, displayName, lv, a
   }, [user]);
 
   const mine = [
-    { to: "/my/home", label: "내 입시 홈", icon: "check", color: "#1E2A5A" },
     { to: "/my/level", label: "내 레벨 · 뱃지", icon: "star", color: "#E8590C" },
     { to: "/my", label: "마이페이지", icon: "user", color: "#18224F" },
   ];
@@ -308,7 +327,19 @@ export default function Header() {
           생수면<span className="text-sm-orange">.</span>
         </Link>
 
-        {/* 컴퓨터 — 서비스 메뉴 없이 계정만 */}
+        {/* 컴퓨터 — 메뉴 4개 (지금 화면은 진하게) */}
+        <nav className="ml-6 hidden items-center gap-5 text-[14px] sm:flex">
+          {NAV.map((n) => {
+            const on = n.to === "/" ? pathname === "/" || pathname === "/my/home" : pathname.startsWith(n.to);
+            return (
+              <Link key={n.to} to={n.login && !user ? "/signup" : n.to} className={`font-bold ${on ? "text-gray-900" : "text-gray-400 hover:text-gray-700"}`}>
+                {n.label}
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* 컴퓨터 — 계정 */}
         <div className="ml-auto hidden items-center gap-2.5 text-[13px] sm:flex">
           {user ? (
             <>
@@ -320,10 +351,6 @@ export default function Header() {
                   <OrdersLink count={pendingOrders} />
                 </>
               )}
-              {/* 내 입시 홈 — 탐구 · 진단 · 물꼬 답이 쌓이는 곳 (컴퓨터 화면 위에 늘 보이게) */}
-              <Link to="/my/home" className="rounded-lg bg-[#EEF2FF] px-3 py-1.5 font-bold text-sm-navy transition hover:bg-[#E0E7FF]">
-                내 입시 홈
-              </Link>
               {/* 사진 · 레벨 · 닉네임 → 마이페이지 (마이페이지 위 탭에서 내 레벨로) */}
               <Link to="/my" title="마이페이지" className="flex items-center gap-2 rounded-full py-1 pl-1 pr-2 transition hover:bg-gray-50">
                 <Avatar src={avatar} nick={displayName} color={lv?.color} size={28} round />

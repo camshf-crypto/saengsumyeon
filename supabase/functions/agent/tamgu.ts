@@ -4,7 +4,7 @@ import { deptOf } from "./plan.ts";
 import { gradeOf, schoolMeta, termNow } from "./school.ts";
 import { shCall, shFirstQuestion, shPaywall, shSafe, shSave } from "./suhaeng.ts";
 import { TOPIC_QUOTA_MSG, formatCheck, passOrAdmin, pick, runTool } from "./tools.ts";
-import { nonAnswer } from "./router.ts";
+import { nonAnswer, roadSubject } from "./router.ts";
 
 
 /* ───────── 탐구 설계 — 탐구주제 흔한가 진단 → 학년 · 이전 활동 맞춤 3개 설계 → (고르면) 수행평가와 같은 흐름 ─────────
@@ -71,7 +71,7 @@ export async function tpStart(db: any, uid: string, meta: any, msg: string, t: a
   const origin = dq ? { query_id: dq.id, topic, score: dq.score, reason: clean(dq.result?.reason, 300), better } : null;
   const base: any = {
     user_id: uid, school: school || null, grade: gnum ? `고${gnum}` : null, semester: mon >= 3 && mon <= 8 ? 1 : 2, in_chat: true,
-    status: dq ? (gnum ? "tp_direct" : "tp_grade") : "tp_need", subject: clean(dq?.subject, 30) || null, title: topic || "탐구",
+    status: dq ? (gnum ? "tp_direct" : "tp_grade") : "tp_need", subject: clean(dq?.subject, 30) || clean(roadSubject(msg), 30) || null, title: topic || "탐구",
     task_type: "보고서", analysis: { kind: "topic", origin, dept: clean(dq?.department, 30), ...(dq ? { direct: true, go: true, picked: { title: topic } } : {}) },
   };
   const { data: nt, error } = await db.from("school_tasks").insert(base).select().single();

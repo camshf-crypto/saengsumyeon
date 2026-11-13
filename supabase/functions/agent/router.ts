@@ -2,7 +2,7 @@
 //   순서: ① 입력 카드를 채운 답 · 카드 버튼 답 · 하던 과제 이어 가기  →  ② 그다음에 말 뜻(탐구 · 수행평가 · 면접 · 공부법)
 //   index.ts work() · suhaeng.ts suhaengChat · study.ts quickForm 이 이 결과대로 움직인다
 //   배포 전 테스트: agent_chk/route_test.ts (실제 학생 말 → 기대 경로)
-import { SH_DOC, SH_PHOTO, SH_PPT, SH_PREP, SH_START, afterArrow } from "./suhaeng.ts";
+import { SH_CONT, SH_DOC, SH_PHOTO, SH_PPT, SH_PREP, SH_START, afterArrow } from "./suhaeng.ts";
 import { TP_CARD, TP_FROM_DIAG, TP_INTENT, TP_START } from "./tamgu.ts";
 import { STUDY_Q } from "./study.ts";
 
@@ -12,6 +12,11 @@ export const PLAN_CARD = (m: string) => /^학년\s*[:：]/m.test(m) && /^활동\
 export const TP_NEW_DIAG = /^(?:이 주제로 뭘 할까|이제 뭘 할까)\?\s*→\s*다른 주제 진단/;
 export const newDiagTopic = (m: string) => (m.trim().match(/^(?:이 주제로 뭘 할까|이제 뭘 할까)\?\s*→\s*다른 주제 진단[^:：\n]*[:：]\s*([\s\S]{6,})$/)?.[1] ?? "").trim();
 // 안내문 사진을 받는 단계 (여기서는 그 단계가 사진을 받는다)
+// '탐구주제 흔한가 진단' 입력 카드 (학과: … 과목: … 탐구주제: …) — 하던 수행평가가 있어도 진단으로 (과목 줄을 수행평가 과목으로 읽지 않게)
+export const DIAG_FORM = (m: string) => /^\s*학과\s*[:：]/m.test(m) && /^\s*탐구\s*주제\s*[:：]/m.test(m);
+// 입시 로드맵(첫 화면) 과목 칸 버튼 — '(로드맵) 영어 수행평가 하자' · '(로드맵) 영어 탐구 하자' (하던 과제가 있어도 새로 시작)
+export const ROAD_START = /^\(로드맵\)\s*(.{1,20}?)\s*(수행평가|탐구)\s*하자$/;
+export const roadSubject = (m: string) => { const s = m.trim().match(ROAD_START)?.[1]?.trim() ?? ""; return /^(진로|기타)$/.test(s) ? "" : s; };
 const PHOTO_STEP = new Set(["picking", "subject_free", "need_source", "pick_task", "draft"]);
 
 export type TaskCtx = { status?: string | null; hasDraft?: boolean; tpDeclined?: boolean };
@@ -21,6 +26,7 @@ export type TaskRoute =
   | "tp_new_diag"    // '다른 주제 진단하기' (주제 없음) → 입력 카드
   | "tp_from_diag"   // 진단 결과 → 이 주제로 탐구 설계
   | "sh_start"       // 수행평가 새로 시작 (말 · 팝업 · 안내문 사진)
+  | "sh_resume"      // 팝업 '○○ 이어서 하자' — 하던 과제 다시 꺼내기 (못 찾으면 새로 시작)
   | "sh_photo_add"   // 하던 수행평가에 안내문 사진을 늦게 올림 → 그 과제에 붙여 다시 읽기
   | "tp_step"        // 하던 탐구 설계 이어 가기
   | "tp_start"       // 탐구 설계 시작
@@ -34,6 +40,10 @@ export function taskRoute(msg: string, c: TaskCtx = {}): TaskRoute | null {
   const photo = SH_PHOTO.test(m);
   const st = String(c.status ?? "");
   if (PLAN_CARD(m)) return "plan_card";
+  if (DIAG_FORM(m) && !photo) return null;
+  if (SH_CONT.test(m) && !photo) return "sh_resume";
+  const road = m.match(ROAD_START);
+  if (road) return road[2] === "탐구" ? "tp_start" : "sh_start";
   if (TP_NEW_DIAG.test(m)) return newDiagTopic(m) ? "tp_diag_now" : "tp_new_diag";
   if (TP_FROM_DIAG.test(m) || /^다음은\?\s*→\s*새 탐구 설계/.test(m)) return "tp_from_diag";
   // 안내문 사진은 늘 수행평가 — 탐구 설계 중이어도 ('과목: 영어'를 탐구 과목으로 읽지 않게)

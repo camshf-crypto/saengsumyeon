@@ -3,7 +3,7 @@ import { FREE_OPEN, clean } from "./core.ts";
 import { deptOf, safe } from "./plan.ts";
 import { evalSchoolName, evalSubjects, evalTasks, gradeOf, schoolMeta, termNow } from "./school.ts";
 import { tpDiagNow, tpStart, tpStep } from "./tamgu.ts";
-import { newDiagTopic, noExpSaid, nonAnswer, taskRoute } from "./router.ts";
+import { DIAG_FORM, newDiagTopic, roadSubject, noExpSaid, nonAnswer, taskRoute } from "./router.ts";
 import { callFn, passOrAdmin, pick } from "./tools.ts";
 
 
@@ -21,7 +21,9 @@ import { callFn, passOrAdmin, pick } from "./tools.ts";
  * 진행 중인 과제는 학생마다 하나 (school_tasks.in_chat) · 카드 답("질문 → 답")이 올 때만 이어 가고, 다른 질문은 평소처럼 물꼬가 답한다
  */
 export const SH_START = /^(수행\s*평가\s*(완성|같이|도와|써|쓰|만들|하자|할래|해\s*줘|준비)|수행평가 완성하기)|수행\s*평가.{0,8}(같이\s*하자|하자|도와\s*줘|써\s*줘|만들어\s*줘|완성해\s*줘)/;
-export const SH_PREP = /^(.+?)\s*'(.+?)'\s*준비하기$/; // 먼저 말 걸기 팝업 버튼 ("공통국어2 '문학의…' 준비하기")
+export const SH_PREP = /^(.+?)\s*'(.+?)'\s*준비하기$/;
+// 팝업 · 체크 목록의 '하는 중' 과제 버튼 ("공통국어2 수행평가 '문학의…' 이어서 하자") — 하던 그 과제를 다시 꺼낸다
+export const SH_CONT = /^(.+?)\s*(?:수행\s*평가\s*|탐구\s*)?'(.+?)'\s*이어서\s*(?:하자|하기|할래)$/; // 먼저 말 걸기 팝업 버튼 ("공통국어2 '문학의…' 준비하기")
 export const SH_PHOTO = /\[\[\s*사진\s*[:：]\s*([^\]]+)\]\]/;
 export const SH_TTL = 12 * 3600000; // 진행 중인 과제를 이어 가는 시간
 export const SH_NOSRC = "안내문이 없어";
@@ -118,6 +120,28 @@ export async function shSave(db: any, t: any, patch: any) {
   const { data } = await db.from("school_tasks").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", t.id).select().single();
   return data ?? { ...t, ...patch };
 }
+/* 학생이 '이 주제로 할게'를 누르면 — 완성 전이라도 입시 로드맵(내 생기부)에 '진행 중'으로 (완성하면 school_task toRecord 가 완성본으로 덮어씀) */
+export async function shStartRecord(db: any, t: any) {
+  try {
+    if (!t?.user_id || t.draft || t.setuk_text || t.status === "done") return;
+    const title = clean(t.title, 120);
+    if (!title || /^(수행평가|탐구|탐구 설계|수행 평가)$/.test(title)) return;
+    const topic = t.analysis?.kind === "topic";
+    const source = topic ? "tamgu" : "suhaeng";
+    const { data: had } = await db.from("record_activities").select("id,content").eq("source", source).eq("source_id", String(t.id)).maybeSingle();
+    if (had && !String(had.content ?? "").startsWith("진행 중")) return;
+    const { data: my } = await db.from("sm_my").select("grade,department").eq("user_id", t.user_id).maybeSingle();
+    const g = Number(String(t.grade ?? my?.grade ?? "").match(/[123]/)?.[0] ?? 0);
+    const subject = clean(t.subject, 40);
+    await db.from("record_activities").upsert({
+      user_id: t.user_id, grade: g ? `고${g}` : "고1", kind: subject ? "subject" : "career", subject: subject || null,
+      title, content: `진행 중 — 물꼬에서 ${topic ? "탐구" : "수행평가"}를 하고 있어요. 완성하면 완성본 · 세특 문장으로 바뀌어요.`,
+      department: clean(my?.department, 40), source, source_id: String(t.id),
+    }, { onConflict: "source,source_id" });
+  } catch (e) {
+    console.error("shStartRecord", e);
+  }
+}
 export const shCall = (action: string, taskId: number, token: string, extra: any = {}) => callFn("school_task", { action, taskId, ...extra }, token);
 export const shPaywall = (r: any) =>
   `**${clean(r?.error, 200) || "오늘 무료 완성본을 다 썼어요. 새벽 5시에 다시 열려요."}**\n\n그때 "수행평가 이어서 하자"라고 보내 주면 여기서 바로 이어 갈게요.`;
@@ -204,7 +228,20 @@ export function shQuestionText(t: any) {
 }
 // 질문이 끝나면 — 발표 과제가 아니면 A4 분량 → 글 구조 → 너만의 이야기
 export const shPagesQ = (out = "") => `[[질문: A4 몇 쪽으로 쓸까? | 1쪽 — 핵심만 짧게 | 2쪽 — 가장 많이 내는 분량 | 3쪽 — 자료 · 표까지 넉넉히 | 4쪽 이상 — ${out === "design" ? "4쪽으로 쓰고 디자인에서 사진 · 표로 늘리기" : "4쪽으로 쓰고 표 · 그림으로 늘리기"} | 정해진 분량 없음 — 물꼬가 알맞게]]`;
+// 질문이 끝나면 — 바로 쓰지 않고 '이 주제로 할까?' 확정부터 (확정해야 로드맵에 저장하고 보고서 쓰기로)
+const shAns = (x: any) => clean(Array.isArray(x.answer) ? x.answer.join(" + ") : x.answer || String(x.custom ?? "").replace(/^모름 — .*/, "모름"), 60);
+export function shConfirmText(t: any) {
+  const topic = t.analysis?.kind === "topic";
+  const qa = (t.qa ?? []).filter((x: any) => (Array.isArray(x.answer) ? x.answer.length : x.answer) || x.custom);
+  const lines = qa.slice(0, 6).map((x: any) => `- ${clean(x.step || x.q, 30)}: ${shAns(x)}`);
+  return `질문은 여기까지야. 지금까지 정한 걸 정리하면:\n\n**${topic ? "탐구 주제" : "과제"}** ${clean(t.title, 100)}${t.subject ? ` (${clean(t.subject, 20)})` : ""}\n${lines.join("\n")}\n\n이 주제로 확정하면 **내 입시 로드맵 ${clean(t.subject, 20) || "진로"} 칸에 저장**하고 ${topic ? "보고서" : "완성본"} 쓰기로 넘어가. 마음에 안 들면 질문을 처음부터 다시 해도 돼.\n\n[[질문: 이 주제로 할까? | 이 주제로 할게 — 로드맵에 저장하고 ${topic ? "보고서" : "완성본"} 쓰기 | 다시 고를래 — 질문 처음부터 다시]]`;
+}
 export async function shAfterQa(db: any, t: any) {
+  const qa = (t.qa ?? []).filter((x: any) => (Array.isArray(x.answer) ? x.answer.length : x.answer) || x.custom);
+  const nt = await shSave(db, t, { qa, status: "confirm_topic" });
+  return shConfirmText({ ...t, ...nt, qa });
+}
+export async function shAfterQaGo(db: any, t: any) {
   const qa = (t.qa ?? []).filter((x: any) => (Array.isArray(x.answer) ? x.answer.length : x.answer) || x.custom);
   if (shIsTalk(t)) {
     await shSave(db, t, { qa, status: "story" });
@@ -361,6 +398,8 @@ export async function suhaengChat(db: any, user: any, message: string, token: st
 
   // 어디로 갈지는 router.ts 가 정한다 (입력 카드 · 카드 답 · 하던 과제 먼저, 말 뜻은 그다음)
   let r = taskRoute(msg, { status: t?.status, hasDraft: Boolean(t?.draft) });
+  // 흔한가 진단 입력 카드는 하던 수행평가와 상관없이 진단으로 (AI가 diagnose 를 부른다)
+  if (!photo && DIAG_FORM(msg)) return null;
   // 학생이 '실험은 싫다'고 했으면 과제에 적어 둔다 (탐구 설계 · 질문 · 완성본이 실험을 빼게)
   if (t && !t.analysis?.no_exp && noExpSaid(msg, history)) t = await shSave(db, t, { analysis: { ...(t.analysis ?? {}), no_exp: true } });
 
@@ -384,9 +423,44 @@ export async function suhaengChat(db: any, user: any, message: string, token: st
     return shAnalyze(db, t, token, emit);
   }
 
-  // ① 시작 — '수행평가 하자' · 팝업 '○○ 준비하기' · 안내문 사진을 바로 올림 · '새 수행평가 하기'
-  const prep = msg.match(SH_PREP);
-  if (r === "sh_start") {
+  // ⓪ 이어서 — 팝업 '○○ 이어서 하자': 하던 그 과제를 채팅에 다시 꺼내 지금 단계 카드를 다시 보여 준다 (없으면 새로 시작)
+  if (r === "sh_resume") {
+    const m = msg.trim().match(SH_CONT)!;
+    const key = (x: string) => String(x ?? "").replace(/\s/g, "");
+    const { data: live } = await db.from("school_tasks").select("*").eq("user_id", uid).neq("status", "done")
+      .gte("updated_at", new Date(Date.now() - 90 * 86400000).toISOString()).order("updated_at", { ascending: false }).limit(30);
+    const wantTopic = /탐구\s*'/.test(msg);
+    const same = (live ?? []).filter((x: any) => (x.analysis?.kind === "topic") === wantTopic && (x.subject ? key(x.subject).includes(key(m[1])) || key(m[1]).includes(key(x.subject)) : /^(진로|기타)$/.test(m[1].trim())));
+    const words = key(m[2]).match(/[가-힣A-Za-z0-9]{2}/g) ?? [];
+    const best = same.sort((a: any, b: any) => words.filter((w) => key(b.title).includes(w)).length - words.filter((w) => key(a.title).includes(w)).length)[0];
+    if (best) {
+      if (t && t.id !== best.id) await db.from("school_tasks").update({ in_chat: false }).eq("id", t.id);
+      t = await shSave(db, best, { in_chat: true });
+      const head = `좋아, **${clean(t.subject, 20)}** '${clean(m[2], 40)}' 하던 데서 이어 갈게.`;
+      const st = String(t.status ?? "");
+      if (st === "need_source" || st === "picking" || st === "subject_free") return `${head}
+
+${shAskNotice("", t.subject ?? "")}`;
+      if (st === "analyzed" || st === "qa") { const q = shQuestionText(t); return q ? `${head}
+
+${q}` : `${head}
+
+${await shAfterQa(db, t)}`; }
+      if (st === "confirm_topic") return `${head}\n\n${shConfirmText(t)}`;
+      if (st === "outform") return `${head}\n\n${shOutCard(t)}`;
+      if (st === "pages") return `${head}
+
+${shPagesText(t)}`;
+      if (t.draft && (st === "writing" || st === "speech")) return `${head}
+
+${shOutNext(t)}`;
+      return `${head} 지난번 마지막 질문에 이어서 답해 줘. 처음부터 다시 하고 싶으면 "새 수행평가 하기"라고 말해 줘.`;
+    }
+  }
+
+  // ① 시작 — '수행평가 하자' · 팝업 '○○ 준비하기' · 안내문 사진을 바로 올림 · '새 수행평가 하기' · (하던 과제를 못 찾은 '이어서 하자')
+  const prep = msg.match(SH_PREP) ?? msg.trim().match(SH_CONT);
+  if (r === "sh_start" || r === "sh_resume") {
     if (t) await db.from("school_tasks").update({ in_chat: false }).eq("id", t.id);
     const { school } = await schoolMeta(db, uid, meta);
     const grade = await gradeOf(db, uid, meta).catch(() => "");
@@ -402,12 +476,12 @@ export async function suhaengChat(db: any, user: any, message: string, token: st
     if (!nt) { console.error("suhaeng insert", error); return `수행평가를 시작하지 못했어. 잠시 뒤 다시 해 줘. (${clean(error?.message, 80)})`; }
     // 학년을 모르면 학년부터 (짐작하지 않는다)
     if (!gnum) {
-      await shSave(db, nt, { status: "grade", analysis: { hint: clean(prep ? prep[1] : msg.replace(SH_START, "").replace(/수행\s*평가.*$/, ""), 40) } });
+      await shSave(db, nt, { status: "grade", analysis: { hint: clean(prep ? prep[1] : roadSubject(msg) || msg.replace(SH_START, "").replace(/수행\s*평가.*$/, ""), 40) } });
       return `좋아, 수행평가 같이 끝내 보자! 먼저 몇 학년이야?\n\n[[질문: 몇 학년이야? | 고1 | 고2 | 고3]]${SH_WHO}`;
     }
     const { name, subjects } = await shSubjects(db, school, gnum);
     // 팝업 '○○ 준비하기' · 시작 말에 과목이 있으면 그 과목으로 (하나로 딱 맞을 때만)
-    const said = prep ? prep[1] : msg.replace(SH_START, "").replace(/수행\s*평가.*$/, "");
+    const said = prep ? prep[1] : roadSubject(msg) || msg.replace(SH_START, "").replace(/수행\s*평가.*$/, "");
     const hit = shMatch(subjects, said);
     if (hit.length > 1 && hit.length < subjects.length) {
       return `좋아, 수행평가 같이 끝내 보자! 어떤 과목이야?\n**${name} ${gnum}학년** 평가계획에 있는 과목 중에서 골라 줘.\n\n${shSubjectCard(hit)}${SH_WHO}`;
@@ -526,6 +600,20 @@ export async function suhaengChat(db: any, user: any, message: string, token: st
     }
     t = await shSave(db, t, { status: "analyzed", subject: ns, eval_subject_id: null, eval_task_id: null });
     return shFirstQuestion(t, token, emit);
+  }
+
+  // ⑤-0 주제 확정 — '이 주제로 할게'면 로드맵에 저장하고 쓰기로 · '다시 고를래'면 질문 처음부터
+  if (t.status === "confirm_topic") {
+    if (/^이 주제로/.test(ans) || (!ans && (wantMake || /^(이 주제로|이걸로|좋아|확정)/.test(msg.trim())))) {
+      await shStartRecord(db, { ...t, user_id: t.user_id ?? uid });
+      const go = await shAfterQaGo(db, t);
+      return `**저장했어** — 내 입시 로드맵 ${clean(t.subject, 20) || "진로"} 칸에 '하는 중'으로 들어갔어. 다 쓰면 완성본으로 바뀌어.\n\n${go}`;
+    }
+    if (/^다시 고를래/.test(ans)) {
+      t = await shSave(db, t, { status: "analyzed", qa: [] });
+      return shFirstQuestion(t, token, emit);
+    }
+    return ans ? shConfirmText(t) : null;
   }
 
   // ⑤ 객관식 질문

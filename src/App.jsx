@@ -4,14 +4,13 @@ import { AuthProvider } from "./lib/AuthContext";
 import { supabase } from "./lib/supabase";
 import { getClientId } from "./lib/clientId";
 import { saveRefCode } from "./lib/referral";
-import Header from "./components/Header";
+import Header, { BottomTabs } from "./components/Header";
 import SbNotice from "./components/SbNotice";
 import Footer from "./components/Footer";
 import LevelUpHost from "./components/LevelUp";
 import StayTracker from "./components/StayTracker";
 import SurveyPopup from "./components/SurveyPopup";
 import SchoolGate from "./components/SchoolGate";
-import VoiceButton from "./components/VoiceButton";
 import PieceNudge from "./components/PieceNudge";
 import Voice from "./pages/voice/Voice";
 import Suggest from "./pages/mulgyeol/Suggest";
@@ -24,6 +23,8 @@ import AuthCallback from "./pages/auth/AuthCallback";
 import TestLogin from "./pages/auth/TestLogin";
 import MyPage from "./pages/my/MyPage";
 import MyHome from "./pages/my/MyHome";
+import NoteDiagnosis from "./pages/note/NoteDiagnosis";
+import NoteRoadmap from "./pages/note/NoteRoadmap";
 import AdminTopics from "./pages/admin/AdminTopics";
 import AdminOrders from "./pages/admin/AdminOrders";
 import InquiryHome from "./pages/inquiry/InquiryHome";
@@ -36,11 +37,7 @@ import InquiryReport from "./pages/inquiry/InquiryReport";
 import PositionReport from "./pages/ladder/PositionReport";
 import Mulgyeol from "./pages/mulgyeol/Mulgyeol";
 import Sb from "./pages/sb/Sb";
-import Home from "./pages/home/Home";
 import { ColumnList, ColumnRead } from "./pages/columns/Columns";
-import Note from "./pages/note/Note";
-import NoteDiagnosis from "./pages/note/NoteDiagnosis";
-import NoteRoadmap from "./pages/note/NoteRoadmap";
 import Study from "./pages/study/Study";
 import Tail from "./pages/tail/Tail";
 import Agent from "./pages/agent/Agent";
@@ -117,6 +114,7 @@ function Layout({ children }) {
       <Header />
       <main className="flex-1">{children}</main>
       <Footer />
+      <BottomTabs />
       <LevelUpHost />
       <StayTracker />
       {/* 부모님 결제 화면(/pay/코드)에는 학생용 팝업 · 의견 버튼을 띄우지 않는다 */}
@@ -124,7 +122,7 @@ function Layout({ children }) {
         <>
           <SurveyPopup />
           <SchoolGate />
-          <VoiceButton />
+          {/* 생수면 우체통(의견함 떠 있는 버튼)은 없앰 (2026-11-13) — 아래 탭바와 겹치고 화면이 복잡해서. 의견함 화면(/voice)은 그대로 */}
           <PieceNudge />
         </>
       )}
@@ -142,7 +140,10 @@ export default function App() {
         <Layout>
           <Routes>
             {/* 메인 — 검색창(탐구주제 흔한가 입구) · 칼럼 배너 · 메뉴 8칸 · 지금 많이 보는 글 · 내 레벨 */}
-            <Route path="/" element={<Home />} />
+            {/* 첫 화면 = 내 입시 로드맵 (2026-11-12) — 과목 칸에서 수행평가 · 탐구를 누르면 물꼬로 갔다가 끝나면 돌아온다 */}
+            <Route path="/" element={<MyHome simple />} />
+            {/* 예전 메인(검색창 · 레벨 · 많이 보는 글)은 없앰 (2026-11-12) — 예전 주소로 와도 로드맵으로 */}
+            <Route path="/services" element={<Navigate to="/" replace />} />
             {/* 탐구주제 흔한가 — 메인 검색창에서 넘어온다 (?q=주제) */}
             <Route path="/topic" element={<Landing />} />
             {/* 결과는 로그인 없이도 보여야 한다. 잠금은 화면 안에서 처리 */}
@@ -181,10 +182,13 @@ export default function App() {
             <Route path="/board/:id" element={<BoardPost />} />
 
             {/* 내 기록 — 권한은 화면 안에서 확인. /my/… 가 /my 보다 먼저 */}
-            <Route path="/my/note" element={<Note />} />
-            <Route path="/my/note/diagnosis" element={<NoteDiagnosis />} />
-            {/* 내 로드맵 — 고2 로드맵 · 고3 1학기 로드맵 (결제한 학생) */}
+            {/* 생기부 노트 없앰 (2026-11-12) — 활동은 입시 로드맵에서 과목을 눌러 적는다 · 예전 주소는 로드맵으로 */}
+            <Route path="/my/note/*" element={<Navigate to="/" replace />} />
+            {/* AI 입시 방향 진단은 입시 로드맵에서 (활동이 쌓이는 곳 = 진단 재료) · 진단 뒤 다음 학년 로드맵(유료)은 예전 주소 그대로 */}
+            <Route path="/roadmap/diagnosis" element={<NoteDiagnosis />} />
+            <Route path="/my/note/diagnosis" element={<Navigate to="/roadmap/diagnosis" replace />} />
             <Route path="/my/note/roadmap" element={<NoteRoadmap />} />
+            {/* 내 로드맵 — 고2 로드맵 · 고3 1학기 로드맵 (결제한 학생) */}
             {/* 전국 공부법 도감 */}
             <Route path="/study" element={<Study />} />
             {/* 면접 꼬리질문 */}

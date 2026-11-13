@@ -43,7 +43,7 @@ const seasonKey = (m) => (m <= 2 ? "1-2" : m === 3 ? "3" : m <= 5 ? "4-5" : m <=
 const FEATURES = [
   { title: "모집요강·입결", desc: "37개 대학 2027·2028 전형·수능최저 · 일부 대학 입결", q: "경희대 2027이랑 2028 뭐가 달라져?" },
   { title: "흔한가 진단", desc: "내 탐구주제·지원동기·독서가 얼마나 흔한지", q: "내 탐구주제 흔한가 진단해 줘" },
-  { title: "내 생기부 맞춤", desc: "생기부 노트·진단을 보고 학교·전형 추천", q: "내 생기부로 학종 쓰기 좋은 학교 추천해 줘" },
+  { title: "내 생기부 맞춤", desc: "내 생기부(로드맵)를 보고 학교·전형 추천", q: "내 생기부로 학종 쓰기 좋은 학교 추천해 줘" },
   { title: "학습법", desc: "성적·많이 틀리는 단원으로 내 공부법 진단 · 루틴 짜기", q: "내 공부법 진단해 줘" },
   { title: "세특·독서", desc: "희망 학과에 맞는 세특 방향 · 이어 읽을 책 추천", q: "내 학과에 맞는 세특 방향이랑 읽을 책 추천해 줘" },
   { title: "입시 플랜", desc: "목표 대학·학과로 과목·활동·이번 주 미션까지", q: "내 입시 플랜 짜 줘" },
@@ -53,14 +53,6 @@ const FEATURES = [
 ];
 // 수행평가는 준비 중 — 타일을 누르거나 채팅으로 물으면 서버에 보내지 않고 바로 안내 (AI 비용 없음)
 //   '수행평가 주제' · '수행평가 탐구'처럼 주제를 찾는 질문은 그대로 물꼬가 답한다 (탐구주제로 돕기)
-// 바로 가기 4개 — 메인 화면에 있던 타일(면접 준비 · 선배 생기부 · 생기부 진단 · 입시 플랜)을 물꼬 화면으로 옮겼다 · 누르면 그 화면으로 이동
-const SHORTCUTS = [
-  { ask: "수행평가 완성하기", title: "수행평가 완성", desc: "고르고 답하면 완성본 · 채점까지", badge: "NEW" },
-  { to: "/prep", title: "수시 면접 준비", desc: "지원 대학별 면접 4단계" },
-  { to: "/sb", title: "선배 생기부 보기", desc: "대학별 합격 사례" },
-  { to: "/my/note", title: "내 생기부 진단", desc: "다 적으면 AI 입시 진단" },
-  { to: "/plan", title: "내 입시 플랜", desc: "학년별 · 이번 주 할 일" },
-];
 const EXAMPLES = [
   "간호학과 합격 선배는 고1 때 뭐 했어?",
   "내 생기부로 학종 쓰기 좋은 학교 추천해 줘",
@@ -1063,7 +1055,7 @@ async function askAgent(payload, onStep) {
   return last ?? { status: 500, result: { error: "답을 받지 못했어요" } };
 }
 
-const OPENING_GAP = 3 * 3600 * 1000; // 먼저 말 걸기 팝업을 닫은 뒤 다시 띄우기까지 (3시간)
+export const OPENING_GAP = 3 * 3600 * 1000; // 먼저 말 걸기 팝업을 닫은 뒤 다시 띄우기까지 (3시간)
 
 /* 물꼬가 먼저 말 걸기 팝업 — 물꼬 캐릭터 + 말풍선 + 버튼 (휴대폰은 아래에서 올라옴) */
 /* 이번 달 학교 수행평가 — 이미 낸 건 체크 (물꼬 첫 팝업 · sql/sm_121 eval_checks) */
@@ -1105,7 +1097,7 @@ export function TaskChecklist({ plan, onCheck, onAsk, limit = 6 }) {
   );
 }
 
-function OpeningPopup({ text, onClose, plan, onCheck }) {
+export function OpeningPopup({ text, onClose, plan, onCheck }) { // 첫 화면(입시 로드맵)에서도 같은 팝업을 띄운다
   const { body, questions } = splitChoices(text);
   const opts = questions[0]?.opts ?? [];
   const nav = useNavigate();
@@ -1124,7 +1116,7 @@ function OpeningPopup({ text, onClose, plan, onCheck }) {
             <Rich text={body} />
           </div>
           {plan?.months?.[0]?.tasks?.length > 0 && (
-            <button onClick={() => { onClose(); nav("/my/home"); }} className="w-full py-1 text-center text-[12.5px] font-bold text-sm-navy">내 입시 홈에서 생기부 · 할 일 전체 보기 ›</button>
+            window.location.pathname !== "/" && <button onClick={() => { onClose(); nav("/"); }} className="w-full py-1 text-center text-[12.5px] font-bold text-sm-navy">입시 로드맵에서 과목별로 보기 ›</button>
           )}
         </div>
         <div className="mt-3 flex flex-none flex-col gap-2">
@@ -1193,6 +1185,10 @@ export default function Agent() {
   const [opening, setOpening] = useState(""); // 물꼬가 먼저 거는 말 (팝업 · 지난번에 한 것 → 우리 학교 수행평가 → 이어서 할 순서)
   const [openPop, setOpenPop] = useState(false); // 먼저 말 걸기 팝업
   const [openPlan, setOpenPlan] = useState(null); // 팝업 안 이번 달 할 일 (agent month_plan)
+  // 로드맵(첫 화면) 과목 칸에서 온 '그 과제만 하는 화면' — { kind: "sh" | "tp", subj } (주소 ?do=sh&subj=영어 · 새로고침해도 ?f=sh:영어 로 유지)
+  const [focus, setFocus] = useState(null);
+  const focusRef = useRef(null);
+  const goRoad = useNavigate();
   async function checkTask(t) {
     const on = !t.checked;
     const set = (v) => setOpenPlan((p) => p && { ...p, months: p.months.map((m) => ({ ...m, tasks: m.tasks.map((x) => (x.id === t.id ? { ...x, checked: v, done: v } : x)) })) });
@@ -1275,10 +1271,15 @@ export default function Agent() {
     const c = Number(params.get("c"));
     const q = (params.get("q") || "").trim();
     const sh = params.get("sh"); // 메뉴 '수행평가 완성' → 들어오자마자 채팅에서 시작
+    const dox = ["sh", "tp"].includes(params.get("do")) ? params.get("do") : ""; // 로드맵 과목 칸 버튼
+    const go = (params.get("go") || "").trim().slice(0, 300); // 로드맵 첫 팝업에서 누른 버튼 — 들어오자마자 보낸다
+    const fp = String(params.get("f") || "").match(/^(sh|tp):(.*)$/);
+    const fNow = dox ? { kind: dox, subj: (params.get("subj") || "").slice(0, 20) } : c && fp ? { kind: fp[1], subj: fp[2].slice(0, 20) } : null;
+    if (fNow) { focusRef.current = fNow; setFocus(fNow); }
     // 물꼬가 먼저 말 걸기 — 팝업 (보던 대화를 여는 게 아닐 때 · 회원마다 · 닫으면 3시간 동안은 다시 안 뜸)
     let seen = false;
     try { seen = Date.now() - Number(localStorage.getItem(`sm_opening_${user.id}`) || 0) < OPENING_GAP; } catch { /* 저장소를 못 쓰면 띄운다 */ }
-    if (!c && !q && !sh && !seen) Promise.all([
+    if (!c && !q && !sh && !dox && !go && !seen) Promise.all([
       supabase.functions.invoke("agent", { body: { action: "opening" } }),
       supabase.functions.invoke("agent", { body: { action: "month_plan" } }).catch(() => ({ data: null })), // 이번 달 할 일 체크 목록
     ]).then(([{ data }, mp]) => {
@@ -1288,7 +1289,17 @@ export default function Agent() {
       setOpenPop(true);
       track("opening_view");
     });
-    if (sh && !askedRef.current) {
+    if (go && !askedRef.current) {
+      askedRef.current = true;
+      setParams({}, { replace: true });
+      setTimeout(() => send(go), 200);
+    } else if (dox && !askedRef.current) {
+      // 새 대화로 그 과목 과제를 바로 시작 (하던 대화 · 과제와 섞이지 않게 — 서버 router ROAD_START)
+      askedRef.current = true;
+      setParams({}, { replace: true });
+      track(`road_start_${dox}`);
+      setTimeout(() => send(`(로드맵) ${fNow.subj} ${dox === "tp" ? "탐구" : "수행평가"} 하자`), 200);
+    } else if (sh && !askedRef.current) {
       askedRef.current = true;
       setParams({}, { replace: true });
       setTimeout(() => send("수행평가 완성하기"), 200);
@@ -1417,7 +1428,7 @@ export default function Agent() {
       return;
     }
     setChatId(data.chat_id);
-    if (String(data.chat_id) !== params.get("c")) setParams({ c: String(data.chat_id) }, { replace: true });
+    if (String(data.chat_id) !== params.get("c")) setParams({ c: String(data.chat_id), ...(focusRef.current ? { f: `${focusRef.current.kind}:${focusRef.current.subj}` } : {}) }, { replace: true });
     setMsgs((m) => [...m, { role: "assistant", content: data.answer, at: Date.now() }]);
     watchMemory(msgs.length + (withOpening ? 2 : 1)); // 방금 받은 답의 번호 (내 질문 다음 칸)
     setClosedCard(false);
@@ -1461,7 +1472,7 @@ export default function Agent() {
      {practice > 0 && <PracticeRoom taskId={practice} onClose={() => setPractice(0)} onDone={(t) => send(t)} />}
      <div className="mx-auto flex max-w-6xl">
       {/* 컴퓨터: 왼쪽 대화 목록 */}
-      <aside className="hidden w-[260px] shrink-0 border-r border-gray-100 px-3 py-5 md:block">
+      <aside className={`${focus ? "hidden" : "hidden md:block"} w-[260px] shrink-0 border-r border-gray-100 px-3 py-5`}>
         <div className="sticky top-20 h-[calc(100vh-7rem)]">
           <ChatList chats={chats} chatId={chatId} onOpen={openChat} onNew={newChat} onDelete={deleteChat} top={<><UsageBar usage={usage} pending={pending} /><MemoryBox refreshKey={msgs.length} /></>} />
         </div>
@@ -1477,6 +1488,16 @@ export default function Agent() {
 
      <main className="min-w-0 flex-1">
       <div className={`${WIDTH} pb-6 pt-6`}>
+        {focus ? (
+          // 그 과제만 하는 화면 — 위에 '로드맵으로' · 과목 이름 (대화 목록 · 새 대화 · 바로 가기 없음)
+          <div className="flex items-center justify-between gap-3 border-b border-gray-200 pb-3">
+            <button onClick={() => goRoad("/")} className="h-9 flex-none border border-gray-300 bg-white px-3 text-[13px] font-bold text-gray-700 hover:border-gray-500">‹ 로드맵으로</button>
+            <p className="min-w-0 truncate text-[16px] font-black text-gray-900">
+              {focus.subj && !/^(진로|기타)$/.test(focus.subj) ? `${focus.subj} ` : focus.subj === "진로" ? "진로 " : ""}{focus.kind === "tp" ? "탐구" : "수행평가"}
+            </p>
+            <span className="w-[86px] flex-none" />
+          </div>
+        ) : (
         <div className="flex items-center justify-between gap-3">
           <p className="text-[22px] font-extrabold" style={{ color: NAVY }}>물꼬 입시 AI</p>
           <div className="flex shrink-0 gap-1.5 md:hidden">
@@ -1484,9 +1505,10 @@ export default function Agent() {
             <button onClick={newChat} className="h-9 rounded px-3 text-[12.5px] font-extrabold text-white" style={{ background: NAVY }}>새 대화</button>
           </div>
         </div>
+        )}
 
         {/* 사용량 — 컴퓨터는 왼쪽 목록 위 · 휴대폰은 위쪽 ☰ 전체 서비스 안 (components/Header) · 그 사이 폭(태블릿)만 여기 */}
-        <div className="hidden sm:block md:hidden"><UsageBar usage={usage} pending={pending} /></div>
+        <div className={focus ? "mt-3" : "hidden sm:block md:hidden"}><UsageBar usage={usage} pending={pending} /></div>
         {openPop && opening && <OpeningPopup text={opening} onClose={closeOpening} plan={openPlan} onCheck={checkTask} />}
         {limitPop && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-6" onClick={() => setLimitPop(false)}>
@@ -1514,33 +1536,13 @@ export default function Agent() {
         )}
 
 
-        {msgs.length === 0 && (
+        {msgs.length === 0 && !focus && (
           <div className="mt-8 pb-10 sm:mt-10">
-            {/* 바로 가기 — 생수면 주황 · 휴대폰은 옆으로 밀어서 보는 한 줄 (☰ 메뉴 '입시 준비'에도 같은 4개) */}
-            {/* 가운데 정렬 — 한 줄에 다 들어가면 가운데, 넘치면 옆으로 밀어서 본다 */}
-            <div className="-mx-4 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] sm:mx-0 sm:px-0">
-             <div className="mx-auto flex w-max gap-2">
-              {SHORTCUTS.map((t) => {
-                const cls = "flex flex-none items-center gap-1.5 whitespace-nowrap rounded bg-sm-orange px-4 py-2.5 text-[14px] font-extrabold text-white shadow-sm hover:bg-sm-orange-d sm:px-5 sm:py-3 sm:text-[15px]";
-                const inner = (
-                  <>
-                    {t.title}
-                    {t.badge && <small className="rounded bg-white/20 px-1.5 text-[10px] font-bold">{t.badge}</small>}
-                    <span className="text-white/60">›</span>
-                  </>
-                );
-                // ask: 다른 화면으로 가지 않고 이 채팅에서 바로 시작 (수행평가 완성)
-                return t.ask
-                  ? <button key={t.title} onClick={() => send(t.ask)} className={cls}>{inner}</button>
-                  : <Link key={t.to} to={t.to} className={cls}>{inner}</Link>;
-              })}
-             </div>
-            </div>
-
+            {/* 바로 가기 주황 버튼 줄은 없앰 (2026-11-13) — 수행평가 · 탐구는 입시 로드맵 과목에서, 면접은 아래 탭 '면접'에서 */}
             {/* 물꼬 캐릭터 — 버튼과 인사 사이 (그림: public/images/mulkko.png) */}
-            <img src="/images/mulkko.png" alt="물꼬" className="mx-auto mt-12 w-44 select-none sm:mt-14 sm:w-52" draggable="false" />
+            <img src="/images/mulkko.png" alt="물꼬" className="mx-auto mt-4 w-44 select-none sm:mt-6 sm:w-52" draggable="false" />
 
-            {/* 인사 — 바로 가기 4개 밑 */}
+            {/* 인사 — 물꼬 그림 밑 */}
             <p className="mt-6 text-center text-[13.5px] leading-relaxed text-gray-600">
               <b className="font-extrabold text-gray-900">안녕하세요, 물꼬예요.</b>
               <br />
@@ -1607,10 +1609,10 @@ export default function Agent() {
                       </Link>
                     )}
                     {note && (
-                      <Link to="/my/note" state={{ from: "agent" }} className="mt-2 flex items-center justify-between gap-3 rounded bg-white p-4 ring-1 ring-black/10 hover:ring-black/20">
+                      <Link to="/" className="mt-2 flex items-center justify-between gap-3 rounded bg-white p-4 ring-1 ring-black/10 hover:ring-black/20">
                         <span>
-                          <b className="block text-[14.5px] font-extrabold text-gray-900">내 생기부 노트에 활동 적기</b>
-                          <small className="text-[12.5px] text-gray-500">지난 학년 활동을 적어 두면 물꼬가 이어서 맞춰 줘요</small>
+                          <b className="block text-[14.5px] font-extrabold text-gray-900">입시 로드맵에 지난 학년 활동 적기</b>
+                          <small className="text-[12.5px] text-gray-500">과목을 눌러 그때 한 수행평가 · 탐구를 적으면 물꼬가 이어서 맞춰 줘요</small>
                         </span>
                         <span className="flex h-9 flex-none items-center rounded bg-sm-orange px-3.5 text-[13px] font-extrabold text-white">적으러 가기 ›</span>
                       </Link>
@@ -1726,6 +1728,14 @@ export default function Agent() {
               {FREE_OPEN ? null : pending
                 ? <p className="mt-3 rounded bg-[#FFF7ED] px-3 py-2.5 text-[12.5px] font-bold text-[#C2410C]">이용권 입금 확인 중이에요. 확인되면 바로 열려요.</p>
                 : <button onClick={() => setBuy({ reason: "limit" })} className="mt-3 h-12 w-full rounded bg-sm-navy text-[14.5px] font-extrabold text-white">요금제 보기 ›</button>}
+            </div>
+          )}
+          {/* 로드맵에서 온 과제를 끝냈으면 — 내 생기부에 들어갔으니 로드맵으로 */}
+          {focus && !busy && msgs.some((m) => m.role === "assistant" && /내 입시 홈 → 내 생기부/.test(m.content ?? "")) && (
+            <div className="mt-4 border border-sm-navy bg-[#EEF2FF] p-4">
+              <p className="text-[14.5px] font-extrabold text-gray-900">내 생기부에 들어갔어요</p>
+              <p className="mt-1 text-[13px] text-gray-600">로드맵 {focus.subj && !/^(기타)$/.test(focus.subj) ? `${focus.subj} 칸` : ""}에서 완성본 · PDF를 다시 볼 수 있어요. 여기서 계속 고치거나 발표 연습을 해도 돼요.</p>
+              <button onClick={() => goRoad("/")} className="mt-3 h-11 w-full bg-sm-navy text-[14px] font-extrabold text-white">로드맵에서 보기 ›</button>
             </div>
           )}
           <div ref={endRef} className="h-2 scroll-mb-28" />

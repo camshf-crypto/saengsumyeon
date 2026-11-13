@@ -107,7 +107,7 @@ async function studentContext(db: any, task: any) {
   const uid = task.user_id;
   const [my, acts, inq, topics, reads, past, mem] = await Promise.all([
     db.from("sm_my").select("grade,department").eq("user_id", uid).maybeSingle(),
-    db.from("record_activities").select("grade,kind,subject,title,content").eq("user_id", uid).order("created_at", { ascending: false }).limit(30),
+    db.from("record_activities").select("grade,kind,subject,title,content,source").eq("user_id", uid).order("created_at", { ascending: false }).limit(30),
     db.from("inquiries").select("grade,subject,department,topic,suggestion,created_at").eq("user_id", uid).order("created_at", { ascending: false }).limit(10),
     db.from("topic_queries").select("grade,subject,department,topic,created_at").eq("user_id", uid).order("created_at", { ascending: false }).limit(10),
     db.from("reading_queries").select("title,author,department,subject,grade").eq("user_id", uid).order("created_at", { ascending: false }).limit(20),
@@ -115,6 +115,8 @@ async function studentContext(db: any, task: any) {
     // 물꼬 노트 (agent_memory · sql/sm_96) — 채팅에서 학생이 말한 관심 · 목표 · 고민
     db.from("agent_memory").select("facts,notes").eq("user_id", uid).maybeSingle(),
   ]);
+  // 입시 로드맵에서 고른 학년별 과목 (sql/sm_122) — 지난 학년에 배운 과목과 이어지게
+  const { data: subs } = await db.from("my_subjects").select("grade,subjects").eq("user_id", uid).then((r: any) => r, () => ({ data: null }));
   // 학생이 물꼬 채팅에서 '실험은 싫다 · 못 한다'고 했는지 (과제에 적힌 표시 · 최근 대화 학생 말)
   const { data: chat } = await db.from("agent_chats").select("messages").eq("user_id", uid).order("updated_at", { ascending: false }).limit(1).maybeSingle();
   const said = arr(chat?.messages).slice(-16).filter((m: any) => m?.role === "user").map((m: any) => String(m.content ?? "")).join("\n");
@@ -128,7 +130,8 @@ async function studentContext(db: any, task: any) {
     focus,
     noExp,
     department: dept,
-    activities: (acts.data ?? []).map((a: any) => ({ grade: gradeLabel(a.grade), kind: str(a.kind, 10), subject: str(a.subject, 30), title: str(a.title, 60), did: str(a.content, 200) })),
+    mySubjects: Object.fromEntries((subs ?? []).map((r: any) => [r.grade, arr(r.subjects).slice(0, 15).map((x: any) => str(x, 30))])),
+    activities: (acts.data ?? []).map((a: any) => ({ grade: gradeLabel(a.grade), kind: str(a.kind, 10), type: /suhaeng/.test(a.source ?? "") ? "수행평가" : /tamgu|inquiry/.test(a.source ?? "") ? "탐구" : "", subject: str(a.subject, 30), title: str(a.title, 60), did: str(a.content, 200) })),
     inquiries: (inq.data ?? []).map((r: any) => ({ grade: gradeLabel(r.grade), subject: str(r.subject, 30), topic: str(r.topic || r.suggestion, 120) })),
     topics: (topics.data ?? []).map((r: any) => ({ grade: gradeLabel(r.grade), subject: str(r.subject, 30), topic: str(r.topic, 120) })),
     readings: (reads.data ?? []).map((b: any) => ({ title: str(b.title, 80), author: str(b.author, 40), subject: str(b.subject, 30) })).filter((b: any) => b.title),

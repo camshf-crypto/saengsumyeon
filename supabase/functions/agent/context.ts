@@ -3,12 +3,14 @@ import { clean, logUsage, openai } from "./core.ts";
 import { YEAR_OF, dday, schoolCalendar, schoolContext, seasonOf, termDates, ymdText } from "./school.ts";
 
 
+// 생기부 활동이 어디서 왔는지 (sql/sm_120 · sm_122)
+const ACT_TYPE: Record<string, string> = { suhaeng: "수행평가", tamgu: "탐구", inquiry: "탐구 보고서", self_suhaeng: "수행평가", self_tamgu: "탐구" };
 /* ───────── 학생 정보 (생수면에서 한 것들) — 대화마다 짧게 붙인다 */
 export async function studentContext(db: any, userId: string, meta: any = {}) {
   const [prof, my, acts, diag, iv, mot, grades, tails, inq, pl] = await Promise.all([
     db.from("profiles").select("name,school,grade").eq("id", userId).maybeSingle(),
     db.from("sm_my").select("grade,department").eq("user_id", userId).maybeSingle(),
-    db.from("record_activities").select("grade,kind,subject,title,content").eq("user_id", userId).order("created_at", { ascending: false }).limit(40),
+    db.from("record_activities").select("grade,kind,subject,title,content,source").eq("user_id", userId).order("created_at", { ascending: false }).limit(40),
     db.from("note_diagnoses").select("departments,result,created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
     db.from("interview_queries").select("university,department,targets,created_at").eq("user_id", userId).neq("status", "failed").order("created_at", { ascending: false }).limit(5),
     db.from("motive_queries").select("university,department,motive").eq("user_id", userId).order("created_at", { ascending: false }).limit(3),
@@ -17,12 +19,15 @@ export async function studentContext(db: any, userId: string, meta: any = {}) {
     db.from("inquiries").select("department,grade,subject,topic,suggestion,created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(5),
     db.from("study_plans").select("grade,department,created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
+  // 입시 로드맵에서 고른 학년별 과목 (sql/sm_122) — 지난 학년 과목도 보고 이어지는 탐구 · 수행평가를 짠다
+  const { data: subs } = await db.from("my_subjects").select("grade,subjects").eq("user_id", userId).then((r: any) => r, () => ({ data: null }));
   const L: string[] = [];
   const p = prof.data ?? {}, m = my.data ?? {};
   // 가입할 때 적은 정보 + 마이페이지 '내 정보' (마이페이지 화면과 같은 순서: 내 정보 학년 → 가입 학년)
   const grade = m.grade || meta?.grade || p.grade || "모름";
   L.push(`[가입·마이페이지 정보] 학년: ${grade} · 학교: ${meta?.school || p.school || "모름"} (학생이 '학교 · 학년 바꾸기'로 저장한 학교 — 이것만 쓴다) · 희망 학과: ${m.department || meta?.major || "모름"}`
     + ` (가입 때 적은 학년: ${meta?.grade || p.grade || "없음"}${m.grade ? ` · 마이페이지 내 정보 학년: ${m.grade}` : ""})`);
+  if ((subs ?? []).length) L.push(`[내가 듣는(들은) 과목 · 로드맵에서 고름] ${(subs ?? []).sort((a: any, b: any) => String(a.grade).localeCompare(String(b.grade))).map((r: any) => `${r.grade}: ${(r.subjects ?? []).slice(0, 15).join(", ")}`).join(" / ")}`);
   // 학년 상태 — 지난 학년 활동을 생기부 노트에 적었는지 (고2면 고1, 고3이면 고1·고2)
   {
     const gnum = Number(String(grade).match(/[123]/)?.[0] ?? 0);
@@ -58,7 +63,7 @@ export async function studentContext(db: any, userId: string, meta: any = {}) {
   const a = acts.data ?? [];
   if (a.length) {
     L.push(`[생기부 활동 ${a.length}개 — 최근 것 요약, 자세히는 my_record 도구]`);
-    for (const r of a.slice(0, 25)) L.push(`- ${r.grade ?? ""} ${r.kind ?? ""} ${r.subject ?? ""}${r.title ? ` · ${r.title}` : ""}: ${clean(r.content, 110)}`);
+    for (const r of a.slice(0, 25)) L.push(`- ${r.grade ?? ""} ${r.kind ?? ""} ${r.subject ?? ""}${ACT_TYPE[r.source] ? ` [${ACT_TYPE[r.source]}]` : ""}${r.title ? ` · ${r.title}` : ""}: ${clean(r.content, 110)}`);
   } else L.push("[생기부 활동] 아직 생수면에 적은 활동 없음");
   const ivs = iv.data ?? [];
   if (ivs.length) {
