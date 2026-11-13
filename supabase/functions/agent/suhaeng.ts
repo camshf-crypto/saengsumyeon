@@ -116,6 +116,22 @@ export async function shActive(db: any, uid: string) {
   if (Date.now() - new Date(data.updated_at).getTime() > SH_TTL) { await db.from("school_tasks").update({ in_chat: false }).eq("id", data.id); return null; }
   return data;
 }
+// 평가계획이 없을 때 과목 카드 — 학생이 로드맵에서 고른 그 학년 과목 · 없으면 고1은 공통과목 6개 · 고2 · 고3은 큰 갈래
+const G1_COMMON = ["공통국어", "공통수학", "공통영어", "한국사", "통합사회", "통합과학"];
+export async function freeSubjects(db: any, uid: string, g: number): Promise<string[]> {
+  let mine: string[] = [];
+  try {
+    const { data } = await db.from("my_subjects").select("subjects").eq("user_id", uid).eq("grade", `고${g}`).maybeSingle();
+    mine = (data?.subjects ?? []).map((x: unknown) => clean(x, 30).replace(/[|\]\[]/g, " ")).filter(Boolean);
+  } catch { /* 표가 없으면 기본 */ }
+  if (mine.length) return mine.slice(0, 7);
+  return g === 1 ? G1_COMMON : ["국어", "수학", "영어", "사회", "과학"];
+}
+const freeCard = (list: string[], other = true) =>
+  `[[질문: 어떤 과목 수행평가야? | ${[...list, ...(other ? ["그 밖의 과목 — 카드 아래 칸에 과목 이름 적기"] : [])].join(" | ")}]]`;
+// 고1 과목 카드에서 '국어 · 수학 · 영어 · 사회 · 과학'을 고르면 고1 공통과목 이름으로 (로드맵 '공통국어' 칸에 모이게)
+export const g1Name = (s: string, g: number) =>
+  g === 1 ? ({ 국어: "공통국어", 수학: "공통수학", 영어: "공통영어", 사회: "통합사회", 과학: "통합과학" } as Record<string, string>)[s.trim()] ?? s : s;
 export async function shSave(db: any, t: any, patch: any) {
   const { data } = await db.from("school_tasks").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", t.id).select().single();
   return data ?? { ...t, ...patch };
@@ -476,7 +492,7 @@ ${shOutNext(t)}`;
     if (!nt) { console.error("suhaeng insert", error); return `수행평가를 시작하지 못했어. 잠시 뒤 다시 해 줘. (${clean(error?.message, 80)})`; }
     // 학년을 모르면 학년부터 (짐작하지 않는다)
     if (!gnum) {
-      await shSave(db, nt, { status: "grade", analysis: { hint: clean(prep ? prep[1] : roadSubject(msg) || msg.replace(SH_START, "").replace(/수행\s*평가.*$/, ""), 40) } });
+      await shSave(db, nt, { status: "grade", analysis: { hint: clean(prep ? prep[1] : roadSubject(msg) || msg.replace(SH_START, "").replace(/수행\s*평가.*$/, ""), 40), road: Boolean(roadSubject(msg)) } });
       return `좋아, 수행평가 같이 끝내 보자! 먼저 몇 학년이야?\n\n[[질문: 몇 학년이야? | 고1 | 고2 | 고3]]${SH_WHO}`;
     }
     const { name, subjects } = await shSubjects(db, school, gnum);
@@ -491,9 +507,15 @@ ${shOutNext(t)}`;
       await shSave(db, nt, { status: "need_source", subject: hit[0].subject, eval_subject_id: hit[0].id });
       return `좋아, **${hit[0].subject}** 수행평가 같이 끝내 보자!\n\n${shAskNotice(sum, hit[0].subject)}${SH_WHO}`;
     }
+    // 로드맵 과목 칸에서 왔으면 과목은 이미 정해졌다 — 평가계획에 없거나(학교 자료 없음) 이름이 달라도 그 과목으로 바로 안내문 받기
+    const road = clean(roadSubject(msg), 30);
+    if (road && hit.length !== 1) {
+      await shSave(db, nt, { status: "need_source", subject: road });
+      return `좋아, **${road}** 수행평가 같이 끝내 보자!\n\n${shAskNotice("", road)}${SH_WHO}`;
+    }
     if (!subjects.length) {
       await shSave(db, nt, { status: "subject_free" });
-      return `좋아, 수행평가 같이 끝내 보자! 어떤 과목이야?\n${school ? `(${school} ${gnum}학년 평가계획은 아직 생수면에 없어서, 과목만 알려 주면 안내문으로 할게)` : "(학교를 알려 주면 그 학교 평가계획 채점 기준까지 맞춰 줄게)"}\n\n[[질문: 어떤 과목 수행평가야? | 국어 | 수학 | 영어 | 사회 | 과학 | 그 밖의 과목 — 카드 아래 칸에 과목 이름 적기]]${SH_WHO}`;
+      return `좋아, 수행평가 같이 끝내 보자! 어떤 과목이야?\n${school ? `(${school} ${gnum}학년 평가계획은 아직 생수면에 없어서, 과목만 알려 주면 안내문으로 할게)` : "(학교를 알려 주면 그 학교 평가계획 채점 기준까지 맞춰 줄게)"}\n\n${freeCard(await freeSubjects(db, uid, gnum))}${SH_WHO}`;
     }
     return `좋아, 수행평가 같이 끝내 보자! 어떤 과목이야?\n**${name} ${gnum}학년** 평가계획에서 수행평가가 있는 과목만 골라 왔어 (이번 달 · 다음 달 수행평가 있는 과목 먼저).\n\n${shSubjectCard(subjects)}${SH_WHO}`;
   }
@@ -521,9 +543,14 @@ ${shOutNext(t)}`;
       return shAskNotice(sum, hit[0].subject);
     }
     if (hit.length > 1 && hit.length < subjects.length) return `**${name} ${g}학년** 평가계획에 있는 과목 중에서 골라 줘.\n\n${shSubjectCard(hit)}`;
+    // 로드맵 과목 칸에서 왔으면(hint) 그 과목으로 바로
+    if (t.analysis?.road && t.analysis?.hint) {
+      await shSave(db, t, { status: "need_source", subject: clean(t.analysis.hint, 30) });
+      return shAskNotice("", clean(t.analysis.hint, 30));
+    }
     return subjects.length
       ? `**${name} ${g}학년** 평가계획에서 수행평가가 있는 과목만 골라 왔어.\n\n${shSubjectCard(subjects)}`
-      : `어떤 과목이야?\n\n[[질문: 어떤 과목 수행평가야? | 국어 | 수학 | 영어 | 사회 | 과학 | 그 밖의 과목 — 카드 아래 칸에 과목 이름 적기]]`;
+      : `어떤 과목이야?\n\n${freeCard(await freeSubjects(db, uid, g))}`;
   }
 
   // ② 과목 고르기 (평가계획 과목 · 평가계획이 없으면 자유)
@@ -535,8 +562,8 @@ ${shOutNext(t)}`;
     if (!ans) return null; // 카드 답이 아니면 평소 물꼬 대화
     const gnum = Number(String(t.grade ?? "").match(/[123]/)?.[0] ?? 0);
     if (t.status === "subject_free") {
-      if (ans.startsWith("그 밖의 과목") || nonAnswer(ans)) return `카드 아래 칸에 과목 이름을 적어 줘 (예: 화법과 언어). 과목은 내가 짐작해서 정하지 않아.\n\n[[질문: 어떤 과목 수행평가야? | 국어 | 수학 | 영어 | 사회 | 과학]]`;
-      t = await shSave(db, t, { status: "need_source", subject: clean(ans.split(" — ")[0], 30) });
+      if (ans.startsWith("그 밖의 과목") || nonAnswer(ans)) return `카드 아래 칸에 과목 이름을 적어 줘 (예: 화법과 언어). 과목은 내가 짐작해서 정하지 않아.\n\n${freeCard(await freeSubjects(db, uid, gnum), false)}`;
+      t = await shSave(db, t, { status: "need_source", subject: g1Name(clean(ans.split(" — ")[0], 30), gnum) });
       return shAskNotice("", t.subject);
     }
     const { name, subjects } = await shSubjects(db, t.school ?? "", gnum);

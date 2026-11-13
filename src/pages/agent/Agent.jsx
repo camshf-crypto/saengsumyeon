@@ -78,7 +78,7 @@ function splitChoices(text) {
   const body = t.replace(/\[\[\s*(질문|선택지)\s*[:：]\s*([^\]]+)\]\]/g, (_, kind, inner) => {
     const parts = inner.split("|").map((x) => x.trim()).filter(Boolean);
     const q = kind === "질문" ? parts.shift() : "";
-    const opts = parts.slice(0, 6).map((o) => { const [label, ...d] = o.split(/\s+[—–-]\s+/); return { label: label.trim(), desc: d.join(" — ").trim() }; });
+    const opts = parts.slice(0, 8).map((o) => { const [label, ...d] = o.split(/\s+[—–-]\s+/); return { label: label.trim(), desc: d.join(" — ").trim() }; });
     if (opts.length) qs.push({ q, opts });
     return "";
   }).trim();
@@ -1447,6 +1447,7 @@ export default function Agent() {
     setNeedPay(false);
     setClosedCard(false);
     setParams({ c: String(data.id) }, { replace: true });
+    focusRef.current = null; setFocus(null); // 옆 목록에서 다른 대화를 열면 '그 과제만 하는 화면'은 풀린다
   }
   function newChat() {
     setMemNote(null);
@@ -1456,6 +1457,7 @@ export default function Agent() {
     setNeedPay(false);
     setShowList(false);
     setParams({}, { replace: true });
+    focusRef.current = null; setFocus(null);
   }
   async function deleteChat(id) {
     if (!window.confirm("이 대화를 지울까요?")) return;
@@ -1473,7 +1475,7 @@ export default function Agent() {
      {practice > 0 && <PracticeRoom taskId={practice} onClose={() => setPractice(0)} onDone={(t) => send(t)} />}
      <div className="mx-auto flex max-w-6xl">
       {/* 컴퓨터: 왼쪽 대화 목록 */}
-      <aside className={`${focus ? "hidden" : "hidden md:block"} w-[260px] shrink-0 border-r border-gray-100 px-3 py-5`}>
+      <aside className={`hidden md:block w-[260px] shrink-0 border-r border-gray-100 px-3 py-5`}>
         <div className="sticky top-20 h-[calc(100vh-7rem)]">
           <ChatList chats={chats} chatId={chatId} onOpen={openChat} onNew={newChat} onDelete={deleteChat} top={<><UsageBar usage={usage} pending={pending} /><MemoryBox refreshKey={msgs.length} /></>} />
         </div>
@@ -1509,7 +1511,7 @@ export default function Agent() {
         )}
 
         {/* 사용량 — 컴퓨터는 왼쪽 목록 위 · 휴대폰은 위쪽 ☰ 전체 서비스 안 (components/Header) · 그 사이 폭(태블릿)만 여기 */}
-        <div className={focus ? "mt-3" : "hidden sm:block md:hidden"}><UsageBar usage={usage} pending={pending} /></div>
+        <div className={focus ? "mt-3 md:hidden" : "hidden sm:block md:hidden"}><UsageBar usage={usage} pending={pending} /></div>
         {openPop && opening && <OpeningPopup text={opening} onClose={closeOpening} plan={openPlan} onCheck={checkTask} />}
         {limitPop && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-6" onClick={() => setLimitPop(false)}>

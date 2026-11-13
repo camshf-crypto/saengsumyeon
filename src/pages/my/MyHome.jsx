@@ -115,8 +115,10 @@ function RoadList({ rows, grade, mine, plan, user, onGo, onAsk, onAdd, onReload,
     const names = [];
     const add = (n) => { if (n && !names.some((x) => skey(x) === skey(n))) names.push(n); };
     (mine?.[tab] ?? []).forEach(add);
-    list.filter((r) => r.kind === "subject" && r.grade === tab).forEach((r) => add(r.subject));
-    if (!names.length && tab === "고1") COMMON_G1.forEach(add);
+    // 고1인데 과목을 안 골랐으면 공통과목부터 (기록에 '국어'처럼 적힌 것도 '공통국어' 칸으로 모이게)
+    if (!mine?.[tab]?.length && tab === "고1") COMMON_G1.forEach(add);
+    // 기록에만 있는 과목 — 이미 있는 과목과 이름이 겹치면('국어' ↔ '공통국어', '한국사2' ↔ '한국사') 그 칸으로 모으고 새 줄을 만들지 않는다
+    list.filter((r) => r.kind === "subject" && r.grade === tab).forEach((r) => { if (!names.some((x) => sameSubj(x, r.subject))) add(r.subject); });
     return names.map((name) => ({
       name,
       family: familyOf(name).key,
