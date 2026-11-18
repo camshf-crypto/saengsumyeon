@@ -1658,6 +1658,16 @@ export default function AdminTopics() {
         </button>
       </div>
 
+      {/* 전체 회원 수 — 어느 탭에서든 늘 보이게 (2026-11-18 · 예전엔 '흔한가 진단 › 요약' 안에만 있었다) */}
+      <div className="mt-5 flex flex-wrap items-baseline gap-x-5 gap-y-1 border border-gray-200 bg-white px-5 py-3.5">
+        <span className="text-[13px] font-bold text-gray-500">전체 회원</span>
+        <b className="text-[24px] font-extrabold tabular-nums text-gray-900">{members ? `${num(members.total).toLocaleString()}명` : "-"}</b>
+        <span className="text-[13px] text-gray-500">
+          {rangeLabel(from, to)} 새 회원 <b className="text-gray-900">{num(funnel?.signup_done).toLocaleString()}명</b>
+          {members && <> · 최근 7일 로그인 <b className="text-gray-900">{num(members.active_7d).toLocaleString()}명</b></>}
+        </span>
+      </div>
+
       {/* 탭 — 묶음 4개 → 그 안의 탭 */}
       <div className="mt-6 grid grid-cols-2 gap-2 lg:grid-cols-4">
         {GROUPS.map((g) => {
