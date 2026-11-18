@@ -3,7 +3,6 @@ import { checkLevel } from "./LevelUp";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
 import { supabase } from "../lib/supabase";
-import Avatar from "./Avatar";
 
 /*
  * 댓글 (입시 칼럼 · 옥상에서 외쳐!가 같이 쓴다)
@@ -128,10 +127,7 @@ export default function Comments({ kind, target, toast, onCount }) {
             <span className={`flex h-[22px] w-[22px] flex-none items-center justify-center rounded-full text-[11px] font-bold text-white ${c.author.op ? "bg-sm-orange" : "bg-gray-400"}`}>
               {c.author.op ? "글" : "익"}
             </span>
-          ) : (
-            <Avatar src={c.author?.avatar} nick={c.author?.nick} color={c.author?.color} size={22} round />
-          )}
-          <LvTag author={c.author} />
+          ) : null /* 2026-11-18 닉네임만 — 프로필 사진 · 레벨(물결) 꼬리표는 빼서 줄을 가볍게 */}
           <b className={`font-bold ${c.author?.op ? "text-sm-orange" : "text-gray-900"}`}>{nameOf(c.author)}</b>
           {c.author?.anon && c.author.grade && <span className="text-gray-400">· {c.author.grade}</span>}
           <span className="text-gray-400">{ago(c.created_at)}</span>
@@ -178,7 +174,6 @@ export default function Comments({ kind, target, toast, onCount }) {
           등록
         </button>
       </form>
-      <p className="mt-1.5 text-[11.5px] text-gray-400">연락처 · SNS 아이디 · 링크는 쓸 수 없어요</p>
 
       <div className="mt-3">
         {roots.map((c) => {

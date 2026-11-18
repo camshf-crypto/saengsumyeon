@@ -6,7 +6,7 @@ import { supabase } from "../../lib/supabase";
 import Comments from "../../components/Comments";
 
 /*
- * 입시 칼럼
+ * 입시 칼럼 — 2026-11-18 매일 아침 7시 '오늘의 입시 뉴스' 자동 (news_column 함수) · 둥근 모서리 · 이모지 없이 회색
  *   /columns      목록 — 다음 칼럼 예고 + 공개된 칼럼
  *   /columns/:id  읽기 — 본문 · 체크리스트(회원만) · 끝까지 읽기 · 관련 서비스 버튼 · 댓글
  * 본문 쓰는 법 (관리자 화면): 빈 줄 = 문단 나누기, "## " = 소제목, "> " = 강조 문장
@@ -31,12 +31,15 @@ function dateLabel(iso) {
 }
 
 function Thumb({ c, big }) {
+  // 사진이 있을 때만 — 없으면 날짜 칸 (그림 · 이모지 없이)
   const isImg = c.thumb && /^https?:\/\//.test(c.thumb);
-  const size = big ? "h-[120px] w-full" : "h-[72px] w-[72px] sm:h-20 sm:w-20";
-  if (isImg) return <img src={c.thumb} alt="" className={`${size} flex-none rounded-xl object-cover`} />;
+  const size = big ? "h-[120px] w-full" : "h-[64px] w-[64px] sm:h-[72px] sm:w-[72px]";
+  if (isImg) return <img src={c.thumb} alt="" className={`${size} flex-none object-cover`} />;
+  const d = new Date(c.publish_at);
   return (
-    <span className={`${size} flex flex-none items-center justify-center rounded-xl bg-[#F4F5F7] text-[28px]`}>
-      {c.thumb || "📰"}
+    <span className={`${size} flex flex-none flex-col items-center justify-center border border-gray-200 bg-gray-50 text-gray-700`}>
+      <small className="text-[11px] font-semibold text-gray-500">{d.getMonth() + 1}월</small>
+      <b className="text-[22px] font-bold leading-none tabular-nums">{d.getDate()}</b>
     </span>
   );
 }
@@ -50,7 +53,7 @@ function useToast() {
     t.current = setTimeout(() => setMsg(""), 1800);
   };
   const node = msg ? (
-    <div className="fixed bottom-24 left-1/2 md:bottom-8 z-50 -translate-x-1/2 rounded-[10px] bg-sm-navy/95 px-4 py-2.5 text-[13.5px] font-semibold text-white">
+    <div className="fixed bottom-24 left-1/2 md:bottom-8 z-50 -translate-x-1/2 bg-gray-900/95 px-4 py-2.5 text-[13.5px] font-semibold text-white">
       {msg}
     </div>
   ) : null;
@@ -73,7 +76,7 @@ export function ColumnList() {
   // 시리즈별 진행 (읽은 수 / 전체)
   const series = {};
   (list || []).forEach((c) => {
-    if (!c.series) return;
+    if (!c.series || c.series === "오늘의 입시 뉴스") return; // 매일 나오는 뉴스는 진행 막대 없이
     series[c.series] = series[c.series] || { total: 0, read: 0 };
     series[c.series].total += 1;
     if (c.read) series[c.series].read += 1;
@@ -82,28 +85,28 @@ export function ColumnList() {
   return (
     <div className="min-h-screen bg-[#F4F5F7]">
       <div className="mx-auto max-w-3xl px-4 pb-16 pt-6 sm:px-6 sm:pt-10">
-        <h1 className="text-[24px] font-bold tracking-tight text-sm-navy">입시 칼럼</h1>
-        <p className="mt-1 text-[13.5px] text-gray-500">매주 목요일 오후 5시 · 3분이면 읽어요</p>
+        <h1 className="text-[24px] font-bold tracking-tight text-gray-900">입시 칼럼</h1>
+        <p className="mt-1 text-[13.5px] text-gray-500">매일 아침 7시 · 어제오늘 입시 뉴스를 3분 요약으로</p>
 
         {next && (
-          <div className="relative mt-5 overflow-hidden rounded-2xl bg-sm-navy px-6 py-6 text-white">
-            <small className="relative text-[12px] font-bold text-orange-300">다음 칼럼 · {whenLabel(next.publish_at)} 공개</small>
+          <div className="relative mt-5 overflow-hidden bg-gray-900 px-6 py-6 text-white">
+            <small className="relative text-[12px] font-bold text-gray-400">다음 칼럼 · {whenLabel(next.publish_at)} 공개</small>
             <b className="relative mt-1.5 block text-[19px] font-bold tracking-tight">{next.title}</b>
-            <span className="relative mt-1.5 block text-[12.5px] text-slate-300">물결 단계(Lv.11)부터는 하루 먼저 볼 수 있어요</span>
+            <span className="relative mt-1.5 block text-[12.5px] text-gray-400">물결 단계(Lv.11)부터는 하루 먼저 볼 수 있어요</span>
           </div>
         )}
 
         {Object.keys(series).length > 0 && (
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
             {Object.entries(series).map(([name, s]) => (
-              <div key={name} className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+              <div key={name} className="border border-gray-200 bg-white px-4 py-3">
                 <div className="flex items-baseline justify-between">
                   <b className="text-[14px] font-bold text-gray-900">{name}</b>
                   <small className="text-[12px] tabular-nums text-gray-500">{s.read}/{s.total}편 읽음</small>
                 </div>
                 <div className="mt-2 flex gap-1">
                   {Array.from({ length: s.total }).map((_, i) => (
-                    <i key={i} className={`h-1 flex-1 rounded-full ${i < s.read ? "bg-sm-orange" : "bg-gray-200"}`} />
+                    <i key={i} className={`h-1 flex-1 ${i < s.read ? "bg-gray-800" : "bg-gray-200"}`} />
                   ))}
                 </div>
               </div>
@@ -111,23 +114,23 @@ export function ColumnList() {
           </div>
         )}
 
-        <div className="mt-5 rounded-2xl border border-gray-200 bg-white px-4 sm:px-5">
+        <div className="mt-5 border border-gray-200 bg-white px-4 sm:px-5">
           {list === null && <p className="py-12 text-center text-[14px] text-gray-500">불러오는 중…</p>}
           {list?.length === 0 && <p className="py-12 text-center text-[14px] text-gray-500">첫 칼럼을 준비하고 있어요</p>}
           {list?.map((c) => (
             <Link key={c.id} to={`/columns/${c.id}`} className="flex items-center gap-4 border-b border-gray-100 py-4 last:border-0">
               <Thumb c={c} />
               <div className="min-w-0 flex-1">
-                <span className="text-[11.5px] font-bold text-indigo-700">
+                <span className="text-[11.5px] font-bold text-gray-500">
                   {c.series ? `${c.series} ${c.series_no ?? ""}편` : "입시 칼럼"}
-                  {c.early && <em className="ml-1.5 rounded bg-indigo-50 px-1.5 py-px not-italic text-indigo-700">물결 먼저 보기</em>}
+                  {c.early && <em className="ml-1.5 bg-gray-100 px-1.5 py-px not-italic text-gray-600">물결 먼저 보기</em>}
                 </span>
                 <h3 className="mt-0.5 text-[15.5px] font-semibold leading-snug text-gray-900">{c.title}</h3>
                 <div className="mt-1 flex gap-2 text-[12.5px] text-gray-500">
                   <span>{dateLabel(c.publish_at)}</span>
                   <span>{c.minutes}분</span>
                   <span>댓글 {c.comments}</span>
-                  {c.read ? <span className="font-semibold text-emerald-600">✓ 읽음</span> : c.is_new && <span className="font-bold text-sm-orange">NEW</span>}
+                  {c.read ? <span className="font-semibold text-gray-400">읽음</span> : c.is_new && <span className="font-bold text-gray-900">NEW</span>}
                 </div>
               </div>
             </Link>
@@ -143,10 +146,20 @@ export function ColumnList() {
 function Body({ text }) {
   const blocks = (text || "").split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
   return blocks.map((b, i) => {
-    if (b.startsWith("## ")) return <h2 key={i} className="mb-2 mt-8 text-[18px] font-bold tracking-tight text-sm-navy">{b.slice(3)}</h2>;
+    if (b.startsWith("## ")) return <h2 key={i} className="mb-2 mt-9 border-t border-gray-200 pt-6 text-[18px] font-bold tracking-tight text-gray-900 first:mt-0">{b.slice(3)}</h2>;
+    // 출처 줄 — "출처 연합뉴스 · 11월 18일 https://…" → 이름은 글자, 주소는 링크
+    if (b.startsWith("출처 ")) {
+      const m = b.match(/^출처 (.*?)\s*(https:\/\/\S+)$/);
+      return (
+        <p key={i} className="my-3 text-[12.5px] text-gray-500">
+          출처 · {m ? <a href={m[2]} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-gray-800">{m[1].trim()} 기사 보기</a> : b.slice(3)}
+        </p>
+      );
+    }
+    if (b.startsWith("대상 · ")) return <p key={i} className="my-3 inline-block bg-gray-100 px-2 py-1 text-[12.5px] font-semibold text-gray-700">{b}</p>;
     if (b.startsWith("> "))
       return (
-        <p key={i} className="my-6 border-l-4 border-sm-orange py-1 pl-4 text-[16px] font-bold leading-relaxed text-sm-navy">
+        <p key={i} className="my-5 border-l-4 border-gray-800 py-1 pl-4 text-[15.5px] font-bold leading-relaxed text-gray-900">
           {b.replace(/^>\s?/gm, "")}
         </p>
       );
@@ -202,25 +215,25 @@ export function ColumnRead() {
     return (
       <div className="mx-auto max-w-2xl px-4 py-24 text-center">
         <p className="text-[15px] text-gray-600">{err}</p>
-        <Link to="/columns" className="mt-4 inline-block font-bold text-sm-navy">칼럼 목록으로</Link>
+        <Link to="/columns" className="mt-4 inline-block font-bold text-gray-900">칼럼 목록으로</Link>
       </div>
     );
   if (!c) return <div className="py-24 text-center text-[14px] text-gray-500">불러오는 중…</div>;
 
-  const cta = CTA[c.cta];
+  const cta = c.series === "오늘의 입시 뉴스" ? null : CTA[c.cta]; // 매일 뉴스 칼럼 밑에는 서비스 버튼 없이
 
   return (
     <div className="bg-white">
       <article className="mx-auto max-w-2xl px-5 pb-20 pt-6 sm:pt-10">
-        <Link to="/columns" className="text-[13px] font-semibold text-gray-500 hover:text-sm-navy">‹ 입시 칼럼</Link>
+        <Link to="/columns" className="text-[13px] font-semibold text-gray-500 hover:text-gray-900">‹ 입시 칼럼</Link>
 
-        <div className="mt-5 text-[12px] font-bold text-indigo-700">
+        <div className="mt-5 text-[12px] font-bold text-gray-500">
           {c.series ? `${c.series} ${c.series_no ?? ""}편` : "입시 칼럼"}
           {c.series && c.series_total > 0 && <span className="ml-2 font-semibold text-gray-400">{c.series_read}/{c.series_total}편 읽음</span>}
         </div>
-        <h1 className="mt-2 text-[24px] font-bold leading-snug tracking-tight text-sm-navy sm:text-[28px]">{c.title}</h1>
+        <h1 className="mt-2 text-[24px] font-bold leading-snug tracking-tight text-gray-900 sm:text-[28px]">{c.title}</h1>
         <div className="mt-2 text-[12.5px] text-gray-500">생수면 입시연구소 · {dateLabel(c.publish_at)} · {c.minutes}분</div>
-        {c.summary && <p className="mt-5 rounded-xl bg-[#F4F5F7] px-4 py-3.5 text-[14px] leading-relaxed text-gray-700">{c.summary}</p>}
+        {c.summary && <p className="mt-5 bg-gray-100 px-4 py-3.5 text-[14px] leading-relaxed text-gray-700">{c.summary}</p>}
 
         <div className="mt-4">
           <Body text={c.body} />
@@ -228,8 +241,8 @@ export function ColumnRead() {
 
         {/* 체크리스트 — 회원만 */}
         {c.checklist_count > 0 && (
-          <div className="relative mt-8 overflow-hidden rounded-2xl border-[1.5px] border-sm-navy p-5">
-            <h4 className="mb-2 text-[15px] font-bold text-sm-navy">내 생기부에 바로 쓰는 체크리스트</h4>
+          <div className="relative mt-8 overflow-hidden border border-gray-800 p-5">
+            <h4 className="mb-2 text-[15px] font-bold text-gray-900">이번 주에 해 볼 것</h4>
             {c.locked ? (
               <>
                 <ul className="select-none blur-[5px]">
@@ -238,9 +251,9 @@ export function ColumnRead() {
                   ))}
                 </ul>
                 <div className="absolute inset-x-0 bottom-0 top-[56px] flex flex-col items-center justify-center gap-2 bg-white/70 px-4 text-center">
-                  <b className="text-[14.5px] text-sm-navy">체크리스트는 회원만 볼 수 있어요</b>
+                  <b className="text-[14.5px] text-gray-900">회원만 볼 수 있어요</b>
                   <span className="text-[12.5px] text-gray-500">가입하면 바로 Lv.2에서 시작해요</span>
-                  <button onClick={() => nav("/signup")} className="mt-1 rounded-[10px] bg-[#FEE500] px-5 py-2.5 text-[14px] font-bold text-[#191919]">
+                  <button onClick={() => nav("/signup")} className="mt-1 bg-[#FEE500] px-5 py-2.5 text-[14px] font-bold text-[#191919]">
                     카카오로 시작하기
                   </button>
                 </div>
@@ -249,7 +262,7 @@ export function ColumnRead() {
               <ul>
                 {(c.checklist || []).map((t, i) => (
                   <li key={i} className="flex gap-2.5 py-1.5 text-[14.5px] text-gray-800">
-                    <span className="mt-0.5 flex h-[18px] w-[18px] flex-none items-center justify-center rounded-[5px] border-[1.5px] border-sm-orange" />
+                    <span className="mt-0.5 flex h-[18px] w-[18px] flex-none border-[1.5px] border-gray-400" />
                     {t}
                   </li>
                 ))}
@@ -260,16 +273,16 @@ export function ColumnRead() {
 
         <div ref={endRef} />
         {uid && read && (
-          <div className="mt-5 rounded-xl bg-emerald-50 py-3 text-center text-[13.5px] font-bold text-emerald-700">끝까지 읽었어요</div>
+          <div className="mt-5 bg-gray-100 py-3 text-center text-[13.5px] font-bold text-gray-700">끝까지 읽었어요</div>
         )}
 
         {cta && (
-          <Link to={cta.to} className="mt-5 flex items-center gap-3 rounded-2xl border-[1.5px] border-sm-orange bg-orange-50/60 p-4">
+          <Link to={cta.to} className="mt-5 flex items-center gap-3 border border-gray-300 bg-gray-50 p-4 hover:border-gray-500">
             <div className="min-w-0">
-              <b className="block text-[15px] font-bold text-[#7C2D12]">{cta.title}</b>
-              <span className="text-[12.5px] text-[#9A3412]">{cta.sub}</span>
+              <b className="block text-[15px] font-bold text-gray-900">{cta.title}</b>
+              <span className="text-[12.5px] text-gray-500">{cta.sub}</span>
             </div>
-            <span className="ml-auto text-[20px] text-sm-orange">→</span>
+            <span className="ml-auto text-[18px] text-gray-400">›</span>
           </Link>
         )}
 

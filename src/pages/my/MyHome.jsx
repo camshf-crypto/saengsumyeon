@@ -106,7 +106,13 @@ function RoadList({ rows, grade, mine, plan, user, onGo, onAsk, onAdd, onReload,
   const [open, setOpen] = useState(null); // 누른 과목 { name, rows, tasks } 또는 창체 { area, rows }
   useEffect(() => setTab(now), [now]);
   const listRef = useRef(null);
-  useEffect(() => { if (tabReq?.g) { setTab(tabReq.g); listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); } }, [tabReq]);
+  const [pendingOpen, setPendingOpen] = useState(null); // 진단 창에서 누른 칸 — 그 과목 · 창체 창을 바로 연다
+  useEffect(() => {
+    if (!tabReq?.g) return;
+    setTab(tabReq.g);
+    if (tabReq.open) setPendingOpen(tabReq.open);
+    else listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [tabReq]);
   const list = rows ?? [];
   const tasksNow = (plan?.months?.[0]?.tasks ?? []);
 
@@ -127,6 +133,15 @@ function RoadList({ rows, grade, mine, plan, user, onGo, onAsk, onAdd, onReload,
     })).sort((a, b) => FAMILY.findIndex((f) => f.key === a.family) - FAMILY.findIndex((f) => f.key === b.family));
   }, [list, mine, tab, now, tasksNow]);
   const areas = AREAS.map((a) => ({ ...a, rows: list.filter((r) => r.kind === a.kind && r.grade === tab) }));
+  useEffect(() => {
+    if (!pendingOpen || tab !== tabReq?.g) return;
+    const a = areas.find((x) => x.kind === pendingOpen || x.label === pendingOpen);
+    const it = a ? null : items.find((x) => sameSubj(x.name, pendingOpen));
+    if (a) setOpen({ area: a, name: a.label, rows: a.rows, tasks: [] });
+    else setOpen(it ? { ...it } : { name: pendingOpen, rows: [], tasks: [] });
+    setPendingOpen(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingOpen, tab, items]);
   const cnt = (rs, src) => rs.filter((r) => r.source === src).length;
   // 완료 = 수행평가 · 탐구를 둘 다 끝냄 · 또는 학생이 직접 '완료'로 누름 (탐구를 안 하는 과목도 있어서)
   const shOf = (rs) => rs.filter((r) => !doingRow(r) && /suhaeng/.test(r.source || "")).length;
@@ -713,6 +728,49 @@ function Item({ it, onLocked, onDelete }) {
   return <Link to={it.link || "/my"} className={box}>{head}</Link>;
 }
 
+/* 오늘의 입시 뉴스 — 매일 아침 7시 자동 칼럼 (news_column 함수 · /columns) 중 가장 최근 것 한 줄
+ *   이틀 안에 나온 것만 보인다 · 누르면 칼럼 읽기 (2026-11-18) */
+// 제목 앞 '(요약)' · '최근 48시간(날짜)' 같은 군더더기는 화면에서 뺀다
+const newsTitle = (t) => {
+  const s = String(t || "").trim();
+  return !s || /^\(?요약\)?|최근\s*\d+\s*시간|\d{4}-\d{2}-\d{2}/.test(s) ? "오늘의 대입 핵심 뉴스" : s;
+};
+
+function TodayNews() {
+  const [c, setC] = useState(null);
+  useEffect(() => {
+    supabase.rpc("col_list", { p_limit: 10 }).then(({ data }) => {
+      const list = (data || []).filter((x) => new Date(x.publish_at) <= new Date());
+      const hit = list.find((x) => x.series === "오늘의 입시 뉴스") || null;
+      setC(hit && Date.now() - new Date(hit.publish_at).getTime() < 2 * 86400e3 ? hit : { none: true });
+    }, () => setC({ none: true }));
+  }, []);
+  if (!c) return null;
+  // 아직 오늘 뉴스가 없을 때도 칼럼으로 가는 줄은 늘 보인다
+  if (c.none)
+    return (
+      <Link to="/columns" onClick={() => track("home_news")} className="mt-4 flex items-center gap-3 border border-gray-200 bg-[#FAFAFA] px-4 py-3 hover:border-gray-400">
+        <span className="flex-none text-[12px] font-extrabold text-sm-orange">입시 칼럼</span>
+        <span className="min-w-0 flex-1 border-l border-gray-200 pl-3">
+          <b className="block truncate text-[14px] font-extrabold text-gray-900">매일 아침 7시, 입시 뉴스 3분 요약</b>
+          <small className="text-[12px] text-gray-500">수능 · 수시 · 정시 · 대학 발표를 고등학생 눈높이로</small>
+        </span>
+        <span className="flex-none text-[13px] font-extrabold text-gray-400">›</span>
+      </Link>
+    );
+  const d = new Date(c.publish_at);
+  return (
+    <Link to={`/columns/${c.id}`} onClick={() => track("home_news")} className="mt-4 flex items-center gap-3 border border-gray-200 bg-[#FAFAFA] px-4 py-3 hover:border-gray-400">
+      <span className="flex-none text-[12px] font-extrabold text-sm-orange">오늘의 입시 뉴스<br /><span className="font-semibold text-gray-500">{d.getMonth() + 1}월 {d.getDate()}일</span></span>
+      <span className="min-w-0 flex-1 border-l border-gray-200 pl-3">
+        <b className="block truncate text-[14px] font-extrabold text-gray-900">{newsTitle(c.title)}</b>
+        <small className="text-[12px] text-gray-500">{c.minutes}분 · {c.read ? "읽음" : "3분 요약 읽기"}</small>
+      </span>
+      <span className="flex-none text-[13px] font-extrabold text-gray-400">›</span>
+    </Link>
+  );
+}
+
 export default function MyHome({ simple = false }) { // simple: 첫 화면 (로드맵만) · /my/home 은 이번 달 할 일 · 최근 기록까지
   const { user, loading } = useAuth();
   const [feed, setFeed] = useState(null); // { items, open_all, free_days }
@@ -861,6 +919,8 @@ export default function MyHome({ simple = false }) { // simple: 첫 화면 (로�
         </div>
 
 
+        <TodayNews />
+
         {/* AI 입시 방향 진단 — 고1 칸(세특 10과목 + 자율 · 동아리 · 진로) 10칸이 차면 열린다 (진단 화면 /roadmap/diagnosis)
             · 잠겨 있어도 누르면 창: 진단으로 무엇을 받는지 + 채운 칸 · 남은 칸 + '고1 칸 채우러 가기' */}
         {user && record && (() => {
@@ -904,17 +964,26 @@ export default function MyHome({ simple = false }) { // simple: 첫 화면 (로�
                     const base = (mine["고1"]?.length ? mine["고1"] : COMMON_G1);
                     const names = [...subs, ...base.filter((x) => !subs.some((y) => skey(y) === skey(x)))];
                     const typ = (r) => (/suhaeng/.test(r.source || "") ? "수행평가" : /tamgu|inquiry/.test(r.source || "") ? "탐구" : "활동");
-                    const Row = ({ name, list, unit, hint = "그때 한 수행평가 · 탐구 적기" }) => (
-                      <button onClick={() => { setDiagInfo(false); setTabReq({ g: "고1", n: Date.now() }); }} className="flex w-full items-start gap-3 border-b border-gray-100 py-2.5 text-left last:border-0 hover:bg-[#FAFAFA]">
+                    // 칸을 누르면 — 로드맵에서 그 과목 · 창체 창을 바로 연다 (고1 탭 찾아서 또 누를 필요 없게)
+                    //   지금 고1인 학생의 빈 과목은 '물꼬랑 수행평가 · 탐구' 버튼으로 바로 채팅
+                    const openCell = (key) => { setDiagInfo(false); setTabReq({ g: "고1", n: Date.now(), open: key }); };
+                    const Row = ({ name, list, unit, kind = "subject", hint = "그때 한 수행평가 · 탐구 적기" }) => (
+                      <div role="button" tabIndex={0} onClick={() => openCell(kind === "subject" ? name : kind)} className="flex w-full cursor-pointer items-start gap-3 border-b border-gray-100 py-2.5 text-left last:border-0 hover:bg-[#FAFAFA]">
                         <span className={`mt-0.5 w-7 flex-none text-center text-[11px] font-extrabold ${list.length ? "bg-gray-900 py-0.5 text-white" : "border border-gray-300 py-0.5 text-gray-400"}`}>{list.length ? unit : "빈칸"}</span>
                         <span className="min-w-0 flex-1">
                           <b className="block text-[13.5px] font-bold text-gray-900">{name}</b>
                           {list.length ? list.slice(0, 3).map((r, i) => (
-                            <span key={i} className="mt-0.5 block truncate text-[12.5px] text-gray-600"><span className="text-gray-400">{typ(r)} · </span>{String(r.title || "").replace(/^진행 중 — /, "")}{/^진행 중/.test(r.content || r.title || "") ? " (하는 중)" : ""}</span>
+                            <span key={i} className="mt-0.5 block truncate text-[12.5px] text-gray-600"><span className="text-gray-400">{typ(r)} · </span>{String(r.title || r.content || "").replace(/^진행 중 — /, "")}{/^진행 중/.test(r.content || r.title || "") ? " (하는 중)" : ""}</span>
                           )).concat(list.length > 3 ? [<span key="m" className="mt-0.5 block text-[12px] text-gray-400">외 {list.length - 3}개</span>] : [])
-                            : <span className="mt-0.5 block text-[12.5px] text-gray-400">아직 없어요 · 눌러서 {hint}</span>}
+                            : kind === "subject" && grade === "고1" ? (
+                              <span className="mt-1.5 flex flex-wrap gap-1.5">
+                                <button onClick={(e) => { e.stopPropagation(); setDiagInfo(false); go("sh", name); }} className="h-8 border border-gray-900 bg-gray-900 px-3 text-[12px] font-bold text-white">물꼬랑 수행평가 ›</button>
+                                <button onClick={(e) => { e.stopPropagation(); setDiagInfo(false); go("tp", name); }} className="h-8 border border-gray-900 bg-white px-3 text-[12px] font-bold text-gray-900">물꼬랑 탐구 ›</button>
+                                <button onClick={(e) => { e.stopPropagation(); openCell(name); }} className="h-8 px-1 text-[12px] font-bold text-gray-500 underline underline-offset-4">이미 한 것 적기</button>
+                              </span>
+                            ) : <span className="mt-0.5 block text-[12.5px] text-gray-400">아직 없어요 · 눌러서 바로 {hint} ›</span>}
                         </span>
-                      </button>
+                      </div>
                     );
                     return (
                       <>
@@ -924,7 +993,7 @@ export default function MyHome({ simple = false }) { // simple: 첫 화면 (로�
                         </div>
                         <p className="mt-5 text-[12.5px] font-bold text-gray-400">고1 창의적 체험활동 · {areas.filter((x) => x.ok).length}/3칸</p>
                         <div className="mt-1">
-                          {[["autonomy", "자율 · 자치활동"], ["club", "동아리활동"], ["career", "진로활동"]].map(([k, l]) => <Row key={k} name={l} unit="1칸" hint="그때 한 활동 한 줄 적기" list={g1.filter((r) => r.kind === k)} />)}
+                          {[["autonomy", "자율 · 자치활동"], ["club", "동아리활동"], ["career", "진로활동"]].map(([k, l]) => <Row key={k} kind={k} name={l} unit="1칸" hint="그때 한 활동 적기" list={g1.filter((r) => r.kind === k)} />)}
                         </div>
                       </>
                     );

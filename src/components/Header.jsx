@@ -57,6 +57,8 @@ const NAV = [
   { to: "/prep", label: "면접", icon: "mic", color: "#E8590C" },
   { to: "/mulgyeol", label: "나만 그래?", icon: "poll", color: "#E8590C" },
   { to: "/board", label: "옥상에서 외쳐!", short: "옥상", icon: "speak", color: "#DB2777" },
+  // 2026-11-18 매일 아침 7시 입시 뉴스 칼럼 — 위 글자 메뉴 · ☰ 에만 (휴대폰 아래 탭바는 5칸 그대로)
+  { to: "/columns", label: "입시 칼럼", icon: "news", color: "#18224F", noTab: true },
 ];
 const SECTIONS = [{ title: "생수면", items: NAV }];
 
@@ -70,7 +72,7 @@ export function BottomTabs() {
     <>
       <div className="h-16 sm:hidden" />{/* 탭바에 마지막 내용이 가리지 않게 */}
       <nav className="fixed inset-x-0 bottom-0 z-40 grid h-16 grid-cols-5 border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom)] sm:hidden">
-        {NAV.map((n) => {
+        {NAV.filter((n) => !n.noTab).map((n) => {
           const on = n.to === "/" ? pathname === "/" || pathname === "/my/home" : pathname.startsWith(n.to);
           return (
             // 아이콘 없이 글자만 — 지금 화면은 위에 굵은 선 + 진한 글자
